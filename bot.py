@@ -37,7 +37,7 @@ IQ_EMAIL = os.environ.get("IQ_EMAIL")
 IQ_PASSWORD = os.environ.get("IQ_PASSWORD")
 
 TIMEFRAME = 60
-MONTO = 2000
+MONTO = 2450
 EXPIRACION = 1
 
 PAR = "EURUSD-OTC"
@@ -73,24 +73,31 @@ def esperar_apertura():
 
 
 # ==========================
-# FILTRO DE VELA FUERTE
+# FILTRO VELA PROFESIONAL
 # ==========================
-def vela_fuerte(c):
+def vela_valida(c):
+
     cuerpo = abs(c["close"] - c["open"])
     rango = c["max"] - c["min"]
 
     if rango == 0:
         return False
 
-    # cuerpo dominante (sin indecisión)
-    if cuerpo / rango < 0.6:
+    ratio = cuerpo / rango
+
+    # ❌ indecisión (doji)
+    if ratio < 0.6:
         return False
 
-    # evitar mechas grandes (martillos / doji)
     upper = c["max"] - max(c["close"], c["open"])
     lower = min(c["close"], c["open"]) - c["min"]
 
-    if upper > cuerpo * 0.5 or lower > cuerpo * 0.5:
+    # ❌ martillo / mechas grandes
+    if upper > cuerpo * 0.4 or lower > cuerpo * 0.4:
+        return False
+
+    # ❌ agotamiento comprador (mecha superior dominante)
+    if upper > cuerpo * 0.3:
         return False
 
     return True
@@ -113,8 +120,8 @@ def analizar(iq):
     if not señal:
         return None
 
-    # 🔥 FILTRO CLAVE
-    if not vela_fuerte(candles[-1]):
+    # 🔥 FILTRO FINAL DE VELA
+    if not vela_valida(candles[-1]):
         return None
 
     return señal
@@ -135,7 +142,7 @@ def run():
         señal = analizar(iq)
 
         if not señal:
-            print("⚠️ Vela sin fuerza real, esperando...")
+            print("⚠️ Vela sin continuidad real, esperando...")
             continue
 
         score = señal["score"]
