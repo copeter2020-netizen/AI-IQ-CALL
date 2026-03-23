@@ -40,9 +40,7 @@ TIMEFRAME = 60
 MONTO = 2000
 EXPIRACION = 1
 
-MAX_PARES = 25  # 🔥 VELOCIDAD
-
-BLACKLIST = ["USDJPY", "USDSGD", "NZDUSD"]
+PAR = "EURUSD-OTC"
 
 
 # ==========================
@@ -56,39 +54,9 @@ def connect():
 
         if iq.check_connect():
             print("✅ Conectado")
-            silent(iq.get_all_open_time)
             return iq
         else:
             time.sleep(5)
-
-
-# ==========================
-# FILTRAR PARES
-# ==========================
-def get_pairs(iq):
-
-    pairs = []
-
-    assets = silent(iq.get_all_open_time)
-
-    if not assets or "binary" not in assets:
-        return []
-
-    for par in assets["binary"]:
-        try:
-            if assets["binary"][par]["open"] and "-OTC" in par:
-
-                limpio = par.replace("-OTC", "").replace("/", "")
-
-                if limpio in BLACKLIST:
-                    continue
-
-                pairs.append(par)
-
-        except:
-            continue
-
-    return pairs[:MAX_PARES]  # 🔥 SOLO LOS MEJORES
 
 
 # ==========================
@@ -107,10 +75,10 @@ def esperar_apertura():
 # ==========================
 # ANALIZAR
 # ==========================
-def analizar(iq, pair):
+def analizar(iq):
 
     candles = silent(
-        iq.get_candles, pair, TIMEFRAME, 30, time.time()
+        iq.get_candles, PAR, TIMEFRAME, 30, time.time()
     )
 
     if not candles:
@@ -131,38 +99,24 @@ def run():
         print("⏳ Esperando cierre...")
         esperar_cierre()
 
-        pairs = get_pairs(iq)
+        señal = analizar(iq)
 
-        mejor = None
-        mejor_pair = None
-        mejor_score = 0
-
-        print(f"🔎 Analizando {len(pairs)} pares...")
-
-        for pair in pairs:
-
-            señal = analizar(iq, pair)
-
-            if not señal:
-                continue
-
-            if señal["score"] > mejor_score:
-                mejor_score = señal["score"]
-                mejor = señal
-                mejor_pair = pair
-
-        if not mejor:
-            print("❌ Sin entrada válida")
+        if not señal:
+            print("⚠️ Sin señal fuerte, esperando siguiente vela...")
             continue
 
-        print(f"🎯 {mejor_pair} (score {mejor_score:.2f})")
+        score = señal["score"]
+
+        print(f"🎯 {PAR} (score {score})")
 
         esperar_apertura()
 
-        send_message(f"🎯 {mejor_pair}\nVENTA\n⏱ 1m")
+        send_message(
+            f"📈 CALL {PAR}\n⏱ 1m\n📊 Score: {score}\n📍 Max: {señal['maximo']}\n📍 Min: {señal['minimo']}"
+        )
 
         status, trade_id = silent(
-            iq.buy, MONTO, mejor_pair, "put", EXPIRACION
+            iq.buy, MONTO, PAR, "call", EXPIRACION
         )
 
         if not status:
