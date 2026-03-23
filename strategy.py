@@ -57,6 +57,29 @@ def tendencia_alcista(df):
     return verdes >= 3
 
 # ==========================
+# DETECTAR MARTILLO INVERTIDO VERDE
+# ==========================
+def es_martillo_invertido_verde(c):
+
+    if not is_bullish(c):
+        return False
+
+    cuerpo = body(c)
+    rango = candle_range(c)
+
+    if rango == 0:
+        return False
+
+    upper = c["max"] - max(c["close"], c["open"])
+    lower = min(c["close"], c["open"]) - c["min"]
+
+    # mecha superior grande + cuerpo pequeño abajo
+    if upper > cuerpo * 2 and lower < cuerpo * 0.3:
+        return True
+
+    return False
+
+# ==========================
 # CONTINUIDAD ALCISTA
 # ==========================
 def continuidad_alcista(df):
@@ -64,18 +87,15 @@ def continuidad_alcista(df):
     c1 = df.iloc[-1]
     c2 = df.iloc[-2]
 
-    # debe venir de retroceso
     if not is_bearish(c2):
         return False
 
-    # vela fuerte alcista
     if not is_bullish(c1):
         return False
 
     if fuerza(c1) < 0.6:
         return False
 
-    # rompe máximo anterior
     if c1["close"] <= c2["max"]:
         return False
 
@@ -99,15 +119,16 @@ def analyze_market(c1, c5, c15):
 
         last = df.iloc[-1]
 
-        # SOLO TENDENCIA ALCISTA
         if not tendencia_alcista(df):
             return None
 
-        # SOLO CONTINUIDAD
         if not continuidad_alcista(df):
             return None
 
-        # confirmaciones
+        # ❌ FILTRO NUEVO
+        if es_martillo_invertido_verde(last):
+            return None
+
         if last["close"] < last["ema"]:
             return None
 
