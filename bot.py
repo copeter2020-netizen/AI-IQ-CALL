@@ -140,7 +140,7 @@ def run():
                 mejor_pair = pair
 
         if not mejor:
-            print("⚠️ Sin continuidad alcista en ningún par")
+            print("⚠️ Sin señal válida")
             continue
 
         print(f"🎯 {mejor_pair} (score {mejor_score:.2f})")
@@ -148,7 +148,7 @@ def run():
         esperar_apertura()
 
         send_message(
-            f"📈 CALL {mejor_pair}\n⏱ 1m\n📊 Score: {mejor_score:.2f}\n📍 Max: {mejor['maximo']}\n📍 Min: {mejor['minimo']}\n🔥 Continuidad alcista"
+            f"📈 CALL {mejor_pair}\n⏱ 1m\n📊 Score: {mejor_score:.2f}\n📍 Max: {mejor['maximo']}\n📍 Min: {mejor['minimo']}"
         )
 
         status, trade_id = silent(
