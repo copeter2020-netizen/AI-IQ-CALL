@@ -37,10 +37,8 @@ IQ_EMAIL = os.environ.get("IQ_EMAIL")
 IQ_PASSWORD = os.environ.get("IQ_PASSWORD")
 
 TIMEFRAME = 60
-MONTO = 2545
+MONTO = 13000
 EXPIRACION = 1
-
-PAR = "EURUSD-OTC"
 
 
 # ==========================
@@ -60,6 +58,28 @@ def connect():
 
 
 # ==========================
+# OBTENER PARES OTC
+# ==========================
+def get_pairs(iq):
+
+    pairs = []
+
+    assets = silent(iq.get_all_open_time)
+
+    if not assets or "binary" not in assets:
+        return []
+
+    for par in assets["binary"]:
+        try:
+            if assets["binary"][par]["open"] and "-OTC" in par:
+                pairs.append(par)
+        except:
+            continue
+
+    return pairs
+
+
+# ==========================
 # TIEMPO
 # ==========================
 def esperar_cierre():
@@ -73,12 +93,12 @@ def esperar_apertura():
 
 
 # ==========================
-# ANALIZAR
+# ANALIZAR PAR
 # ==========================
-def analizar(iq):
+def analizar(iq, pair):
 
     candles = silent(
-        iq.get_candles, PAR, TIMEFRAME, 30, time.time()
+        iq.get_candles, pair, TIMEFRAME, 30, time.time()
     )
 
     if not candles:
@@ -99,24 +119,40 @@ def run():
         print("⏳ Esperando cierre...")
         esperar_cierre()
 
-        señal = analizar(iq)
+        pairs = get_pairs(iq)
 
-        if not señal:
-            print("⚠️ Esperando continuidad alcista real...")
+        mejor = None
+        mejor_pair = None
+        mejor_score = 0
+
+        print(f"🔎 Analizando {len(pairs)} pares...")
+
+        for pair in pairs:
+
+            señal = analizar(iq, pair)
+
+            if not señal:
+                continue
+
+            if señal["score"] > mejor_score:
+                mejor_score = señal["score"]
+                mejor = señal
+                mejor_pair = pair
+
+        if not mejor:
+            print("⚠️ Sin continuidad alcista en ningún par")
             continue
 
-        score = señal["score"]
-
-        print(f"🎯 {PAR} (score {score})")
+        print(f"🎯 {mejor_pair} (score {mejor_score:.2f})")
 
         esperar_apertura()
 
         send_message(
-            f"📈 CALL {PAR}\n⏱ 1m\n📊 Score: {score}\n📍 Max: {señal['maximo']}\n📍 Min: {señal['minimo']}\n🔥 Continuidad confirmada"
+            f"📈 CALL {mejor_pair}\n⏱ 1m\n📊 Score: {mejor_score:.2f}\n📍 Max: {mejor['maximo']}\n📍 Min: {mejor['minimo']}\n🔥 Continuidad alcista"
         )
 
         status, trade_id = silent(
-            iq.buy, MONTO, PAR, "call", EXPIRACION
+            iq.buy, MONTO, mejor_pair, "call", EXPIRACION
         )
 
         if not status:
