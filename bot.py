@@ -37,7 +37,7 @@ IQ_EMAIL = os.environ.get("IQ_EMAIL")
 IQ_PASSWORD = os.environ.get("IQ_PASSWORD")
 
 TIMEFRAME = 60
-MONTO = 2450
+MONTO = 2545
 EXPIRACION = 1
 
 PAR = "EURUSD-OTC"
@@ -73,37 +73,6 @@ def esperar_apertura():
 
 
 # ==========================
-# FILTRO VELA PROFESIONAL
-# ==========================
-def vela_valida(c):
-
-    cuerpo = abs(c["close"] - c["open"])
-    rango = c["max"] - c["min"]
-
-    if rango == 0:
-        return False
-
-    ratio = cuerpo / rango
-
-    # ❌ indecisión (doji)
-    if ratio < 0.6:
-        return False
-
-    upper = c["max"] - max(c["close"], c["open"])
-    lower = min(c["close"], c["open"]) - c["min"]
-
-    # ❌ martillo / mechas grandes
-    if upper > cuerpo * 0.4 or lower > cuerpo * 0.4:
-        return False
-
-    # ❌ agotamiento comprador (mecha superior dominante)
-    if upper > cuerpo * 0.3:
-        return False
-
-    return True
-
-
-# ==========================
 # ANALIZAR
 # ==========================
 def analizar(iq):
@@ -115,16 +84,7 @@ def analizar(iq):
     if not candles:
         return None
 
-    señal = analyze_market(candles, None, None)
-
-    if not señal:
-        return None
-
-    # 🔥 FILTRO FINAL DE VELA
-    if not vela_valida(candles[-1]):
-        return None
-
-    return señal
+    return analyze_market(candles, None, None)
 
 
 # ==========================
@@ -142,7 +102,7 @@ def run():
         señal = analizar(iq)
 
         if not señal:
-            print("⚠️ Vela sin continuidad real, esperando...")
+            print("⚠️ Esperando continuidad alcista real...")
             continue
 
         score = señal["score"]
@@ -152,7 +112,7 @@ def run():
         esperar_apertura()
 
         send_message(
-            f"📈 CALL {PAR}\n⏱ 1m\n📊 Score: {score}\n📍 Max: {señal['maximo']}\n📍 Min: {señal['minimo']}"
+            f"📈 CALL {PAR}\n⏱ 1m\n📊 Score: {score}\n📍 Max: {señal['maximo']}\n📍 Min: {señal['minimo']}\n🔥 Continuidad confirmada"
         )
 
         status, trade_id = silent(
