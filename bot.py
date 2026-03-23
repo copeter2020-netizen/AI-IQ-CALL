@@ -73,6 +73,30 @@ def esperar_apertura():
 
 
 # ==========================
+# FILTRO DE VELA FUERTE
+# ==========================
+def vela_fuerte(c):
+    cuerpo = abs(c["close"] - c["open"])
+    rango = c["max"] - c["min"]
+
+    if rango == 0:
+        return False
+
+    # cuerpo dominante (sin indecisión)
+    if cuerpo / rango < 0.6:
+        return False
+
+    # evitar mechas grandes (martillos / doji)
+    upper = c["max"] - max(c["close"], c["open"])
+    lower = min(c["close"], c["open"]) - c["min"]
+
+    if upper > cuerpo * 0.5 or lower > cuerpo * 0.5:
+        return False
+
+    return True
+
+
+# ==========================
 # ANALIZAR
 # ==========================
 def analizar(iq):
@@ -84,7 +108,16 @@ def analizar(iq):
     if not candles:
         return None
 
-    return analyze_market(candles, None, None)
+    señal = analyze_market(candles, None, None)
+
+    if not señal:
+        return None
+
+    # 🔥 FILTRO CLAVE
+    if not vela_fuerte(candles[-1]):
+        return None
+
+    return señal
 
 
 # ==========================
@@ -102,7 +135,7 @@ def run():
         señal = analizar(iq)
 
         if not señal:
-            print("⚠️ Sin señal fuerte, esperando siguiente vela...")
+            print("⚠️ Vela sin fuerza real, esperando...")
             continue
 
         score = señal["score"]
