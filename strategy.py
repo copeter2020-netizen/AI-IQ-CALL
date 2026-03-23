@@ -1,5 +1,5 @@
 import pandas as pd
-
+import numpy as np
 
 # ==========================
 # UTILIDADES
@@ -7,81 +7,110 @@ import pandas as pd
 def body(c):
     return abs(c["close"] - c["open"])
 
-
 def candle_range(c):
     return c["max"] - c["min"]
 
+def is_bullish(c):
+    return c["close"] > c["open"]
 
 def is_bearish(c):
     return c["close"] < c["open"]
 
+# ==========================
+# INDICADORES
+# ==========================
+def ema(df, period=20):
+    return df["close"].ewm(span=period).mean()
+
+def rsi(df, period=14):
+    delta = df["close"].diff()
+    gain = (delta.where(delta > 0, 0)).rolling(period).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(period).mean()
+    rs = gain / loss
+    return 100 - (100 / (1 + rs))
 
 # ==========================
-# FUERZA REAL
+# SOPORTE Y RESISTENCIA
 # ==========================
-def fuerza(c):
-    r = candle_range(c)
-    if r == 0:
-        return 0
-    return body(c) / r
-
+def soporte_resistencia(df):
+    soporte = df["min"].rolling(20).min().iloc[-1]
+    resistencia = df["max"].rolling(20).max().iloc[-1]
+    return soporte, resistencia
 
 # ==========================
-# CONTAR VELAS ROJAS
+# TENDENCIA ALCISTA REAL
 # ==========================
-def contar_rojas(df):
-    count = 0
-    for i in range(len(df)-1, -1, -1):
-        if is_bearish(df.iloc[i]):
-            count += 1
-        else:
-            break
-    return count
-
-
-# ==========================
-# TENDENCIA BAJISTA REAL
-# ==========================
-def tendencia_bajista(df):
+def tendencia_alcista(df):
 
     ultimas = df.tail(6)
 
-    rojas = sum(1 for i in range(len(ultimas)) if is_bearish(ultimas.iloc[i]))
+    verdes = sum(1 for i in range(len(ultimas)) if is_bullish(ultimas.iloc[i]))
 
-    lower_highs = True
-
+    higher_lows = True
     for i in range(1, len(ultimas)):
-        if ultimas.iloc[i]["max"] > ultimas.iloc[i-1]["max"]:
-            lower_highs = False
+        if ultimas.iloc[i]["min"] < ultimas.iloc[i-1]["min"]:
+            higher_lows = False
 
-    return rojas >= 4 and lower_highs
-
+    return verdes >= 4 and higher_lows
 
 # ==========================
-# IMPULSO BAJISTA
+# IMPULSO ALCISTA
 # ==========================
-def impulso(df):
+def impulso_alcista(df):
     return (
-        is_bearish(df.iloc[-1]) and
-        is_bearish(df.iloc[-2])
+        is_bullish(df.iloc[-1]) and
+        is_bullish(df.iloc[-2])
     )
 
-
 # ==========================
-# CONFIRMACIÓN FUERTE
+# CONFIRMACIÓN ALCISTA
 # ==========================
-def confirmacion(c):
-
-    f = fuerza(c)
-
-    upper = c["max"] - max(c["close"], c["open"])
+def confirmacion_alcista(c):
+    f = body(c) / candle_range(c) if candle_range(c) != 0 else 0
+    lower = min(c["close"], c["open"]) - c["min"]
 
     return (
-        is_bearish(c)
+        is_bullish(c)
         and f > 0.5
-        and upper < body(c) * 0.5
+        and lower < body(c) * 0.5
     )
 
+# ==========================
+# PATRONES ALCISTAS
+# ==========================
+def patron_alcista(df):
+    c1 = df.iloc[-1]
+    c2 = df.iloc[-2]
+
+    # engulfing alcista
+    engulfing = (
+        is_bullish(c1) and
+        is_bearish(c2) and
+        c1["close"] > c2["open"]
+    )
+
+    # indecisión (doji)
+    doji = body(c1) < candle_range(c1) * 0.2
+
+    return engulfing or doji
+
+# ==========================
+# RUPTURA ALCISTA
+# ==========================
+def ruptura_alcista(df, resistencia):
+    return df.iloc[-1]["close"] > resistencia
+
+# ==========================
+# FALSO ROMPIMIENTO ALCISTA
+# ==========================
+def falso_rompimiento(df, resistencia):
+    last = df.iloc[-1]
+    prev = df.iloc[-2]
+
+    return (
+        prev["close"] > resistencia and
+        last["close"] < resistencia
+    )
 
 # ==========================
 # FUNCIÓN PRINCIPAL
@@ -89,35 +118,51 @@ def confirmacion(c):
 def analyze_market(c1, c5, c15):
 
     try:
-
         df = pd.DataFrame(c1)
 
-        if len(df) < 25:
+        if len(df) < 50:
             return None
+
+        # indicadores
+        df["ema"] = ema(df)
+        df["rsi"] = rsi(df)
+
+        soporte, resistencia = soporte_resistencia(df)
 
         last = df.iloc[-1]
 
-        # 🔴 BLOQUEOS
-        if not tendencia_bajista(df):
+        # condiciones
+        if not tendencia_alcista(df):
             return None
 
-        if not impulso(df):
+        if not impulso_alcista(df):
             return None
 
-        rojas = contar_rojas(df)
-
-        # 🔴 SOLO PRIMERA O SEGUNDA
-        if rojas > 2:
+        if not confirmacion_alcista(last):
             return None
 
-        if not confirmacion(last):
+        if not patron_alcista(df):
             return None
 
-        score = fuerza(last)
+        if last["rsi"] < 50:
+            return None
+
+        score = 0
+
+        if ruptura_alcista(df, resistencia):
+            score += 2
+
+        if not falso_rompimiento(df, resistencia):
+            score += 1
+
+        if last["close"] > last["ema"]:
+            score += 1
 
         return {
-            "action": "put",
-            "score": score
+            "action": "call",
+            "score": score,
+            "maximo": resistencia,
+            "minimo": soporte
         }
 
     except:
