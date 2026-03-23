@@ -49,62 +49,37 @@ def soporte_resistencia(df):
     return soporte, resistencia
 
 # ==========================
-# TENDENCIA ALCISTA (SUAVIZADA)
+# TENDENCIA ALCISTA
 # ==========================
 def tendencia_alcista(df):
-
     ultimas = df.tail(6)
-
     verdes = sum(1 for i in range(len(ultimas)) if is_bullish(ultimas.iloc[i]))
-
-    return verdes >= 3  # antes 4 (muy restrictivo)
-
-# ==========================
-# IMPULSO
-# ==========================
-def impulso_alcista(df):
-    return is_bullish(df.iloc[-1])
+    return verdes >= 3
 
 # ==========================
-# CONFIRMACIÓN
+# CONTINUIDAD ALCISTA
 # ==========================
-def confirmacion_alcista(c):
-    f = fuerza(c)
-    return f > 0.4  # antes 0.5
+def continuidad_alcista(df):
 
-# ==========================
-# SCORE INTELIGENTE
-# ==========================
-def calcular_score(df, soporte, resistencia):
+    c1 = df.iloc[-1]
+    c2 = df.iloc[-2]
 
-    last = df.iloc[-1]
-    score = 0
+    # debe venir de retroceso
+    if not is_bearish(c2):
+        return False
 
-    # tendencia
-    if tendencia_alcista(df):
-        score += 2
+    # vela fuerte alcista
+    if not is_bullish(c1):
+        return False
 
-    # impulso
-    if impulso_alcista(df):
-        score += 1
+    if fuerza(c1) < 0.6:
+        return False
 
-    # fuerza
-    if confirmacion_alcista(last):
-        score += 1
+    # rompe máximo anterior
+    if c1["close"] <= c2["max"]:
+        return False
 
-    # EMA
-    if last["close"] > last["ema"]:
-        score += 1
-
-    # RSI
-    if last["rsi"] > 50:
-        score += 1
-
-    # rebote en soporte
-    if last["close"] > soporte:
-        score += 1
-
-    return score
+    return True
 
 # ==========================
 # FUNCIÓN PRINCIPAL
@@ -122,21 +97,31 @@ def analyze_market(c1, c5, c15):
 
         soporte, resistencia = soporte_resistencia(df)
 
-        score = calcular_score(df, soporte, resistencia)
+        last = df.iloc[-1]
 
-        # 🔥 AQUÍ ESTABA TU PROBLEMA
-        # antes exigías TODO → ahora elegimos lo mejor disponible
+        # SOLO TENDENCIA ALCISTA
+        if not tendencia_alcista(df):
+            return None
 
-        if score >= 4:  # umbral inteligente
+        # SOLO CONTINUIDAD
+        if not continuidad_alcista(df):
+            return None
 
-            return {
-                "action": "call",
-                "score": score,
-                "maximo": resistencia,
-                "minimo": soporte
-            }
+        # confirmaciones
+        if last["close"] < last["ema"]:
+            return None
 
-        return None
+        if last["rsi"] < 55:
+            return None
+
+        score = fuerza(last)
+
+        return {
+            "action": "call",
+            "score": score,
+            "maximo": resistencia,
+            "minimo": soporte
+        }
 
     except:
         return None
