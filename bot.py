@@ -6,9 +6,6 @@ from strategy import analyze_market
 from telegram_bot import send_message
 
 
-# ==========================
-# SILENCIAR LOGS
-# ==========================
 class DevNull:
     def write(self, msg): pass
     def flush(self): pass
@@ -28,9 +25,6 @@ def silent(func, *args, **kwargs):
         sys.stderr = old_stderr
 
 
-# ==========================
-# CONFIG
-# ==========================
 IQ_EMAIL = os.environ.get("IQ_EMAIL")
 IQ_PASSWORD = os.environ.get("IQ_PASSWORD")
 
@@ -48,9 +42,6 @@ PARES = [
 ]
 
 
-# ==========================
-# CONEXIÓN
-# ==========================
 def connect():
     while True:
         iq = IQ_Option(IQ_EMAIL, IQ_PASSWORD)
@@ -63,66 +54,17 @@ def connect():
             time.sleep(5)
 
 
-# ==========================
-# PARES
-# ==========================
-def get_pairs():
-    return PARES
-
-
-# ==========================
-# ESPERA EXACTA NUEVA VELA
-# ==========================
-def esperar_nueva_vela():
-    print("⏭ Esperando segundo exacto (00)...")
-
-    while True:
-        t = time.time()
-        if int(t) % 60 == 0:
-            break
-        time.sleep(0.001)  # 🔥 precisión máxima
-
-
-# ==========================
-# ESPERAR CIERRE
-# ==========================
 def esperar_cierre():
     while int(time.time()) % 60 != 59:
         time.sleep(0.01)
 
 
-# ==========================
-# CONTINUIDAD
-# ==========================
-def contar_color(candles):
-    count = 0
-    tipo = None
-
-    for i in range(len(candles)-1, -1, -1):
-        c = candles[i]
-
-        if c["close"] > c["open"]:
-            if tipo in [None, "verde"]:
-                tipo = "verde"
-                count += 1
-            else:
-                break
-
-        elif c["close"] < c["open"]:
-            if tipo in [None, "roja"]:
-                tipo = "roja"
-                count += 1
-            else:
-                break
-        else:
-            break
-
-    return tipo, count
+# 🔥 NUEVA ENTRADA ÓPTIMA (ligero retraso)
+def entrada_optimizada():
+    while int(time.time()) % 60 != 1:  # entra en segundo 1
+        time.sleep(0.001)
 
 
-# ==========================
-# ANALIZAR
-# ==========================
 def analizar(iq, pair):
 
     candles = silent(
@@ -132,39 +74,25 @@ def analizar(iq, pair):
     if not candles or len(candles) < 30:
         return None
 
-    tipo, count = contar_color(candles)
-
-    if count < 2 or count > 3:
-        return None
-
     return analyze_market(candles, None, None)
 
 
-# ==========================
-# EJECUTAR OPERACIÓN (MEJORADO)
-# ==========================
 def ejecutar_operacion(iq, pair, action):
 
-    print("🚀 Ejecutando operación EXACTA...")
-
-    for intento in range(5):  # 🔥 más intentos
-
+    for _ in range(5):
         data = silent(iq.buy, MONTO, pair, action, EXPIRACION)
 
         if data and isinstance(data, tuple):
             status, trade_id = data
 
             if status:
-                print("✅ Entrada ejecutada")
                 break
         else:
             status = False
 
-        print(f"⚠️ Reintento {intento+1}")
         time.sleep(0.3)
 
     if not status:
-        print("❌ No se pudo ejecutar la operación")
         return None
 
     while True:
@@ -186,9 +114,6 @@ def ejecutar_operacion(iq, pair, action):
         return result
 
 
-# ==========================
-# BOT PRINCIPAL
-# ==========================
 def run():
 
     iq = connect()
@@ -198,15 +123,13 @@ def run():
         print("⏳ Esperando cierre de vela...")
         esperar_cierre()
 
-        pares = get_pairs()
-
-        print(f"🔎 Analizando {len(pares)} pares...")
-
         mejor = None
         mejor_pair = None
         mejor_score = 0
 
-        for pair in pares:
+        print(f"🔎 Analizando {len(PARES)} pares...")
+
+        for pair in PARES:
 
             señal = analizar(iq, pair)
 
@@ -224,13 +147,13 @@ def run():
 
         action = mejor["action"]
 
-        print(f"📡 Señal detectada en {mejor_pair} ({action})")
+        print(f"📡 Señal en {mejor_pair} ({action})")
 
-        # 🔥 ESPERA EXACTA
-        esperar_nueva_vela()
+        # 🔥 entrada más efectiva
+        entrada_optimizada()
 
         send_message(
-            f"📊 {action.upper()} {mejor_pair}\n⏱ 1m\n📊 Score: {mejor_score}\n🎯 Entrada EXACTA"
+            f"📊 {action.upper()} {mejor_pair}\n⏱ 1m\n📊 Score: {mejor_score}\n⚡ Entrada optimizada"
         )
 
         resultado = ejecutar_operacion(iq, mejor_pair, action)
