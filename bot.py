@@ -37,7 +37,7 @@ IQ_EMAIL = os.environ.get("IQ_EMAIL")
 IQ_PASSWORD = os.environ.get("IQ_PASSWORD")
 
 TIMEFRAME = 60
-MONTO = 2545
+MONTO = 7545
 EXPIRACION = 1
 
 PAR = "EURUSD-OTC"
@@ -73,7 +73,21 @@ def esperar_apertura():
 
 
 # ==========================
-# ANALIZAR + FILTRO VELA ANTERIOR
+# CONTAR VELAS VERDES CONSECUTIVAS
+# ==========================
+def contar_verdes(candles):
+    count = 0
+    for i in range(len(candles)-1, -1, -1):
+        c = candles[i]
+        if c["close"] > c["open"]:
+            count += 1
+        else:
+            break
+    return count
+
+
+# ==========================
+# ANALIZAR + FILTRO
 # ==========================
 def analizar(iq):
 
@@ -84,10 +98,10 @@ def analizar(iq):
     if not candles:
         return None
 
-    # 🔥 NUEVO FILTRO: NO operar si la vela anterior es roja
-    vela_anterior = candles[-2]
+    verdes = contar_verdes(candles)
 
-    if vela_anterior["close"] < vela_anterior["open"]:
+    # 🔥 SOLO 2DA Y 3RA VELA VERDE
+    if verdes < 2 or verdes > 3:
         return None
 
     return analyze_market(candles, None, None)
@@ -108,7 +122,7 @@ def run():
         señal = analizar(iq)
 
         if not señal:
-            print("⚠️ Esperando vela verde previa...")
+            print("⚠️ Esperando 2da o 3ra vela verde...")
             continue
 
         score = señal["score"]
@@ -118,7 +132,7 @@ def run():
         esperar_apertura()
 
         send_message(
-            f"📈 CALL {PAR}\n⏱ 1m\n📊 Score: {score}\n📍 Max: {señal['maximo']}\n📍 Min: {señal['minimo']}\n🔥 Confirmación con vela verde"
+            f"📈 CALL {PAR}\n⏱ 1m\n📊 Score: {score}\n📍 Max: {señal['maximo']}\n📍 Min: {señal['minimo']}\n🔥 2da/3ra vela verde"
         )
 
         status, trade_id = silent(
