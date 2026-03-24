@@ -6,9 +6,6 @@ from strategy import analyze_market
 from telegram_bot import send_message
 
 
-# ==========================
-# SILENCIAR LOGS
-# ==========================
 class DevNull:
     def write(self, msg): pass
     def flush(self): pass
@@ -17,10 +14,8 @@ class DevNull:
 def silent(func, *args, **kwargs):
     old_stdout = sys.stdout
     old_stderr = sys.stderr
-
     sys.stdout = DevNull()
     sys.stderr = DevNull()
-
     try:
         return func(*args, **kwargs)
     except:
@@ -30,38 +25,26 @@ def silent(func, *args, **kwargs):
         sys.stderr = old_stderr
 
 
-# ==========================
-# CONFIG
-# ==========================
 IQ_EMAIL = os.environ.get("IQ_EMAIL")
 IQ_PASSWORD = os.environ.get("IQ_PASSWORD")
 
 TIMEFRAME = 60
-MONTO = 7545
+MONTO = 10000
 EXPIRACION = 1
 
 PAR = "EURUSD-OTC"
 
 
-# ==========================
-# CONEXIÓN
-# ==========================
 def connect():
     while True:
         iq = IQ_Option(IQ_EMAIL, IQ_PASSWORD)
-
         silent(iq.connect)
-
         if iq.check_connect():
             print("✅ Conectado")
             return iq
-        else:
-            time.sleep(5)
+        time.sleep(5)
 
 
-# ==========================
-# TIEMPO
-# ==========================
 def esperar_cierre():
     while int(time.time()) % 60 != 59:
         time.sleep(0.05)
@@ -72,23 +55,31 @@ def esperar_apertura():
         time.sleep(0.01)
 
 
-# ==========================
-# CONTAR VELAS VERDES
-# ==========================
-def contar_verdes(candles):
+def contar_color(candles):
     count = 0
+    tipo = None
+
     for i in range(len(candles)-1, -1, -1):
         c = candles[i]
+
         if c["close"] > c["open"]:
-            count += 1
+            if tipo in [None, "verde"]:
+                tipo = "verde"
+                count += 1
+            else:
+                break
+        elif c["close"] < c["open"]:
+            if tipo in [None, "roja"]:
+                tipo = "roja"
+                count += 1
+            else:
+                break
         else:
             break
-    return count
+
+    return tipo, count
 
 
-# ==========================
-# ANALIZAR
-# ==========================
 def analizar(iq):
 
     candles = silent(
@@ -98,18 +89,15 @@ def analizar(iq):
     if not candles:
         return None
 
-    verdes = contar_verdes(candles)
+    tipo, count = contar_color(candles)
 
-    # SOLO 2DA Y 3RA VELA VERDE
-    if verdes < 2 or verdes > 3:
+    # 🔥 SOLO 2DA O 3RA CONTINUIDAD (VERDE O ROJA)
+    if count < 2 or count > 3:
         return None
 
     return analyze_market(candles, None, None)
 
 
-# ==========================
-# BOT PRINCIPAL
-# ==========================
 def run():
 
     iq = connect()
@@ -122,29 +110,27 @@ def run():
         señal = analizar(iq)
 
         if not señal:
-            print("⚠️ Esperando 2da o 3ra vela verde...")
+            print("⚠️ Esperando continuidad...")
             continue
 
+        action = señal["action"]
         score = señal["score"]
 
-        print(f"🎯 {PAR} (score {score})")
+        print(f"🎯 {PAR} {action} (score {score})")
 
         esperar_apertura()
 
         send_message(
-            f"📈 CALL {PAR}\n⏱ 1m\n📊 Score: {score}\n📍 Max: {señal['maximo']}\n📍 Min: {señal['minimo']}\n🔥 2da/3ra vela verde"
+            f"📊 {action.upper()} {PAR}\n⏱ 1m\n📊 Score: {score}\n🔥 Continuidad fuerte"
         )
 
         status, trade_id = silent(
-            iq.buy, MONTO, PAR, "call", EXPIRACION
+            iq.buy, MONTO, PAR, action, EXPIRACION
         )
 
         if not status:
             continue
 
-        # ==========================
-        # CORRECCIÓN DEL ERROR AQUÍ
-        # ==========================
         while True:
             result = silent(iq.check_win_v4, trade_id)
 
@@ -152,7 +138,6 @@ def run():
                 time.sleep(1)
                 continue
 
-            # 🔥 si viene como tupla (ganancia, etc)
             if isinstance(result, tuple):
                 result = result[0]
 
