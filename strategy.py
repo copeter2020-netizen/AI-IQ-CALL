@@ -49,28 +49,60 @@ def soporte_resistencia(df):
     return soporte, resistencia
 
 # ==========================
-# TENDENCIA ALCISTA (SUAVIZADA)
+# TENDENCIA ALCISTA
 # ==========================
 def tendencia_alcista(df):
-
     ultimas = df.tail(6)
-
     verdes = sum(1 for i in range(len(ultimas)) if is_bullish(ultimas.iloc[i]))
-
     return verdes >= 3
 
 # ==========================
-# IMPULSO
+# TENDENCIA BAJISTA
 # ==========================
-def impulso_alcista(df):
-    return is_bullish(df.iloc[-1])
+def tendencia_bajista(df):
+    ultimas = df.tail(6)
+    rojas = sum(1 for i in range(len(ultimas)) if is_bearish(ultimas.iloc[i]))
+    return rojas >= 3
 
 # ==========================
-# CONFIRMACIÓN
+# CONTINUIDAD BAJISTA
 # ==========================
-def confirmacion_alcista(c):
+def continuidad_bajista(df):
+    c1 = df.iloc[-1]
+    c2 = df.iloc[-2]
+
+    if not is_bearish(c1):
+        return False
+
+    if fuerza(c1) < 0.5:
+        return False
+
+    # rompe mínimo anterior
+    if c1["close"] >= c2["min"]:
+        return False
+
+    return True
+
+# ==========================
+# EVITAR INDECISIÓN
+# ==========================
+def vela_limpia(c):
+    r = candle_range(c)
+    if r == 0:
+        return False
+
     f = fuerza(c)
-    return f > 0.4
+
+    upper = c["max"] - max(c["close"], c["open"])
+    lower = min(c["close"], c["open"]) - c["min"]
+
+    if f < 0.5:
+        return False
+
+    if upper > body(c) * 0.6 or lower > body(c) * 0.6:
+        return False
+
+    return True
 
 # ==========================
 # SCORE INTELIGENTE
@@ -83,10 +115,10 @@ def calcular_score(df, soporte, resistencia):
     if tendencia_alcista(df):
         score += 2
 
-    if impulso_alcista(df):
+    if is_bullish(last):
         score += 1
 
-    if confirmacion_alcista(last):
+    if fuerza(last) > 0.4:
         score += 1
 
     if last["close"] > last["ema"]:
@@ -116,11 +148,48 @@ def analyze_market(c1, c5, c15):
 
         soporte, resistencia = soporte_resistencia(df)
 
-        score = calcular_score(df, soporte, resistencia)
+        last = df.iloc[-1]
 
-        if score >= 4:
+        # ==========================
+        # 🔼 ALCISTA (tu lógica original)
+        # ==========================
+        if tendencia_alcista(df):
+
+            score = calcular_score(df, soporte, resistencia)
+
+            if score >= 4 and vela_limpia(last):
+                return {
+                    "action": "call",
+                    "score": score,
+                    "maximo": resistencia,
+                    "minimo": soporte
+                }
+
+        # ==========================
+        # 🔽 BAJISTA (nuevo)
+        # ==========================
+        if tendencia_bajista(df):
+
+            if not continuidad_bajista(df):
+                return None
+
+            if not vela_limpia(last):
+                return None
+
+            # evitar soporte (rebote)
+            if last["close"] <= soporte:
+                return None
+
+            if last["close"] > last["ema"]:
+                return None
+
+            if last["rsi"] > 50:
+                return None
+
+            score = fuerza(last)
+
             return {
-                "action": "call",
+                "action": "put",
                 "score": score,
                 "maximo": resistencia,
                 "minimo": soporte
