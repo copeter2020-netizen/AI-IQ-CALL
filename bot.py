@@ -64,42 +64,30 @@ def connect():
 
 
 # ==========================
-# FILTRAR PARES (FIX)
+# PARES
 # ==========================
-def get_open_pairs(iq):
-
-    assets = silent(iq.get_all_open_time)
-
-    # 🔥 SI FALLA → USA TODOS LOS PARES
-    if not assets or "binary" not in assets:
-        return PARES
-
-    activos = []
-
-    for par in PARES:
-        try:
-            if par in assets["binary"] and assets["binary"][par]["open"]:
-                activos.append(par)
-        except:
-            continue
-
-    # 🔥 SI NO HAY ABIERTOS → USA TODOS IGUAL
-    if not activos:
-        return PARES
-
-    return activos
+def get_pairs():
+    return PARES
 
 
 # ==========================
-# TIEMPO
+# ESPERA EXACTA NUEVA VELA
+# ==========================
+def esperar_nueva_vela():
+    print("⏭ Esperando segundo exacto (00)...")
+
+    while True:
+        t = time.time()
+        if int(t) % 60 == 0:
+            break
+        time.sleep(0.001)  # 🔥 precisión máxima
+
+
+# ==========================
+# ESPERAR CIERRE
 # ==========================
 def esperar_cierre():
     while int(time.time()) % 60 != 59:
-        time.sleep(0.05)
-
-
-def esperar_apertura():
-    while int(time.time()) % 60 != 0:
         time.sleep(0.01)
 
 
@@ -153,25 +141,30 @@ def analizar(iq, pair):
 
 
 # ==========================
-# EJECUTAR OPERACIÓN
+# EJECUTAR OPERACIÓN (MEJORADO)
 # ==========================
 def ejecutar_operacion(iq, pair, action):
 
-    status = False
-    trade_id = None
+    print("🚀 Ejecutando operación EXACTA...")
 
-    for _ in range(3):
+    for intento in range(5):  # 🔥 más intentos
+
         data = silent(iq.buy, MONTO, pair, action, EXPIRACION)
 
         if data and isinstance(data, tuple):
             status, trade_id = data
 
-        if status:
-            break
+            if status:
+                print("✅ Entrada ejecutada")
+                break
+        else:
+            status = False
 
-        time.sleep(1)
+        print(f"⚠️ Reintento {intento+1}")
+        time.sleep(0.3)
 
     if not status:
+        print("❌ No se pudo ejecutar la operación")
         return None
 
     while True:
@@ -205,7 +198,7 @@ def run():
         print("⏳ Esperando cierre de vela...")
         esperar_cierre()
 
-        pares = get_open_pairs(iq)
+        pares = get_pairs()
 
         print(f"🔎 Analizando {len(pares)} pares...")
 
@@ -233,17 +226,16 @@ def run():
 
         print(f"📡 Señal detectada en {mejor_pair} ({action})")
 
-        print("⏭ Esperando siguiente vela...")
-        esperar_apertura()
+        # 🔥 ESPERA EXACTA
+        esperar_nueva_vela()
 
         send_message(
-            f"📊 {action.upper()} {mejor_pair}\n⏱ 1m\n📊 Score: {mejor_score}\n🚀 Entrada en siguiente vela"
+            f"📊 {action.upper()} {mejor_pair}\n⏱ 1m\n📊 Score: {mejor_score}\n🎯 Entrada EXACTA"
         )
 
         resultado = ejecutar_operacion(iq, mejor_pair, action)
 
         if resultado is None:
-            print("❌ Error al ejecutar operación")
             continue
 
         if resultado > 0:
