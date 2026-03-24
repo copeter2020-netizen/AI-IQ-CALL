@@ -32,10 +32,19 @@ TIMEFRAME = 60
 MONTO = 2545
 EXPIRACION = 1
 
+# 🔥 SOLO PARES NORMALES (NO OTC)
+PARES = [
+    "EURUSD",
+    "GBPUSD",
+    "USDJPY",
+    "AUDUSD",
+    "USDCAD",
+    "USDCHF",
+    "EURGBP",
+    "EURJPY"
+]
 
-# ==========================
-# CONEXIÓN
-# ==========================
+
 def connect():
     while True:
         iq = IQ_Option(IQ_EMAIL, IQ_PASSWORD)
@@ -46,37 +55,6 @@ def connect():
         time.sleep(5)
 
 
-# ==========================
-# OBTENER PARES REALES
-# ==========================
-def get_pairs(iq):
-
-    assets = silent(iq.get_all_open_time)
-
-    pairs = []
-
-    if not assets or "binary" not in assets:
-        return pairs
-
-    for par in assets["binary"]:
-        try:
-            if assets["binary"][par]["open"]:
-
-                # ❌ eliminar OTC
-                if "-OTC" in par:
-                    continue
-
-                pairs.append(par)
-
-        except:
-            continue
-
-    return pairs
-
-
-# ==========================
-# TIEMPO
-# ==========================
 def esperar_cierre():
     while int(time.time()) % 60 != 59:
         time.sleep(0.05)
@@ -87,9 +65,6 @@ def esperar_apertura():
         time.sleep(0.01)
 
 
-# ==========================
-# CONTAR CONTINUIDAD
-# ==========================
 def contar_color(candles):
     count = 0
     tipo = None
@@ -115,9 +90,6 @@ def contar_color(candles):
     return tipo, count
 
 
-# ==========================
-# ANALIZAR
-# ==========================
 def analizar(iq, pair):
 
     candles = silent(
@@ -135,9 +107,6 @@ def analizar(iq, pair):
     return analyze_market(candles, None, None)
 
 
-# ==========================
-# BOT PRINCIPAL
-# ==========================
 def run():
 
     iq = connect()
@@ -147,15 +116,13 @@ def run():
         print("⏳ Esperando cierre...")
         esperar_cierre()
 
-        pairs = get_pairs(iq)
-
         mejor = None
         mejor_pair = None
         mejor_score = 0
 
-        print(f"🔎 Analizando {len(pairs)} pares reales...")
+        print(f"🔎 Analizando {len(PARES)} pares reales...")
 
-        for pair in pairs:
+        for pair in PARES:
 
             señal = analizar(iq, pair)
 
@@ -168,7 +135,7 @@ def run():
                 mejor_pair = pair
 
         if not mejor:
-            print("⚠️ Sin señal válida en mercado real")
+            print("⚠️ Sin señal en pares reales")
             continue
 
         action = mejor["action"]
