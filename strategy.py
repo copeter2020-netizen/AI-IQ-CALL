@@ -42,8 +42,50 @@ def impulso_alcista(df):
     return is_bullish(df.iloc[-1])
 
 def confirmacion_alcista(c):
-    return fuerza(c) > 0.4
+    return fuerza(c) > 0.5  # 🔥 más estricta
 
+# ==========================
+# FILTRO VELA LIMPIA (NUEVO)
+# ==========================
+def vela_valida(c):
+
+    r = candle_range(c)
+    if r == 0:
+        return False
+
+    f = fuerza(c)
+
+    upper = c["max"] - max(c["close"], c["open"])
+    lower = min(c["close"], c["open"]) - c["min"]
+
+    # ❌ doji / indecisión
+    if f < 0.5:
+        return False
+
+    # ❌ mechas grandes (rechazo)
+    if upper > body(c) * 0.6 or lower > body(c) * 0.6:
+        return False
+
+    return True
+
+# ==========================
+# EVITAR AGOTAMIENTO (NUEVO)
+# ==========================
+def evitar_agotamiento(df):
+
+    ultimas = df.tail(3)
+
+    verdes = sum(1 for i in range(len(ultimas)) if is_bullish(ultimas.iloc[i]))
+
+    # ❌ demasiadas velas seguidas (posible retroceso)
+    if verdes >= 3:
+        return False
+
+    return True
+
+# ==========================
+# SCORE INTELIGENTE
+# ==========================
 def calcular_score(df, soporte, resistencia):
 
     last = df.iloc[-1]
@@ -61,7 +103,7 @@ def calcular_score(df, soporte, resistencia):
     if last["close"] > last["ema"]:
         score += 1
 
-    if last["rsi"] > 50:
+    if last["rsi"] > 55:  # 🔥 más fuerte
         score += 1
 
     if last["close"] > soporte:
@@ -69,6 +111,9 @@ def calcular_score(df, soporte, resistencia):
 
     return score
 
+# ==========================
+# FUNCIÓN PRINCIPAL
+# ==========================
 def analyze_market(c1, c5, c15):
 
     try:
@@ -82,9 +127,19 @@ def analyze_market(c1, c5, c15):
 
         soporte, resistencia = soporte_resistencia(df)
 
+        last = df.iloc[-1]
+
+        # 🔥 NUEVOS FILTROS
+        if not vela_valida(last):
+            return None
+
+        if not evitar_agotamiento(df):
+            return None
+
         score = calcular_score(df, soporte, resistencia)
 
-        if score >= 4:
+        # 🔥 entrada más selectiva
+        if score >= 5:
             return {
                 "action": "call",
                 "score": score,
