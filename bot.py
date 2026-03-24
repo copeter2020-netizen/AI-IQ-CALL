@@ -6,6 +6,9 @@ from strategy import analyze_market
 from telegram_bot import send_message
 
 
+# ==========================
+# SILENCIAR LOGS
+# ==========================
 class DevNull:
     def write(self, msg): pass
     def flush(self): pass
@@ -25,6 +28,9 @@ def silent(func, *args, **kwargs):
         sys.stderr = old_stderr
 
 
+# ==========================
+# CONFIG
+# ==========================
 IQ_EMAIL = os.environ.get("IQ_EMAIL")
 IQ_PASSWORD = os.environ.get("IQ_PASSWORD")
 
@@ -32,7 +38,6 @@ TIMEFRAME = 60
 MONTO = 2545
 EXPIRACION = 1
 
-# 🔥 SOLO PARES NORMALES (NO OTC)
 PARES = [
     "EURUSD",
     "GBPUSD",
@@ -44,16 +49,46 @@ PARES = [
 ]
 
 
+# ==========================
+# CONEXIÓN
+# ==========================
 def connect():
     while True:
         iq = IQ_Option(IQ_EMAIL, IQ_PASSWORD)
         silent(iq.connect)
+
         if iq.check_connect():
             print("✅ Conectado")
             return iq
-        time.sleep(5)
+        else:
+            time.sleep(5)
 
 
+# ==========================
+# FILTRAR PARES ABIERTOS
+# ==========================
+def get_open_pairs(iq):
+
+    assets = silent(iq.get_all_open_time)
+
+    if not assets or "binary" not in assets:
+        return []
+
+    activos = []
+
+    for par in PARES:
+        try:
+            if par in assets["binary"] and assets["binary"][par]["open"]:
+                activos.append(par)
+        except:
+            continue
+
+    return activos
+
+
+# ==========================
+# TIEMPO
+# ==========================
 def esperar_cierre():
     while int(time.time()) % 60 != 59:
         time.sleep(0.05)
@@ -64,6 +99,9 @@ def esperar_apertura():
         time.sleep(0.01)
 
 
+# ==========================
+# CONTINUIDAD
+# ==========================
 def contar_color(candles):
     count = 0
     tipo = None
@@ -77,6 +115,7 @@ def contar_color(candles):
                 count += 1
             else:
                 break
+
         elif c["close"] < c["open"]:
             if tipo in [None, "roja"]:
                 tipo = "roja"
@@ -89,6 +128,9 @@ def contar_color(candles):
     return tipo, count
 
 
+# ==========================
+# ANALIZAR
+# ==========================
 def analizar(iq, pair):
 
     candles = silent(
@@ -100,28 +142,65 @@ def analizar(iq, pair):
 
     tipo, count = contar_color(candles)
 
+    # 🔥 solo 2da o 3ra vela
     if count < 2 or count > 3:
         return None
 
     return analyze_market(candles, None, None)
 
 
+# ==========================
+# EJECUTAR OPERACIÓN
+# ==========================
+def ejecutar_operacion(iq, pair, action):
+
+    status, trade_id = silent(
+        iq.buy, MONTO, pair, action, EXPIRACION
+    )
+
+    if not status:
+        return None
+
+    while True:
+        result = silent(iq.check_win_v4, trade_id)
+
+        if result is None:
+            time.sleep(1)
+            continue
+
+        if isinstance(result, tuple):
+            result = result[0]
+
+        if isinstance(result, str):
+            try:
+                result = float(result)
+            except:
+                result = 0
+
+        return result
+
+
+# ==========================
+# BOT PRINCIPAL
+# ==========================
 def run():
 
     iq = connect()
 
     while True:
 
-        print("⏳ Esperando cierre...")
+        print("⏳ Esperando cierre de vela...")
         esperar_cierre()
+
+        pares = get_open_pairs(iq)
+
+        print(f"🔎 Analizando {len(pares)} pares...")
 
         mejor = None
         mejor_pair = None
         mejor_score = 0
 
-        print(f"🔎 Analizando {len(PARES)} pares reales...")
-
-        for pair in PARES:
+        for pair in pares:
 
             señal = analizar(iq, pair)
 
@@ -134,45 +213,28 @@ def run():
                 mejor_pair = pair
 
         if not mejor:
-            print("⚠️ Sin señal en pares reales")
+            print("⚠️ Sin señal válida")
             continue
 
         action = mejor["action"]
 
-        print(f"🎯 {mejor_pair} {action} (score {mejor_score})")
+        print(f"🎯 ENTRADA: {mejor_pair} {action} (score {mejor_score})")
 
         esperar_apertura()
 
+        # 📤 enviar señal
         send_message(
-            f"📊 {action.upper()} {mejor_pair}\n⏱ 1m\n📊 Score: {mejor_score}\n🔥 Mercado real"
+            f"📊 {action.upper()} {mejor_pair}\n⏱ 1m\n📊 Score: {mejor_score}\n🚀 Ejecutando operación"
         )
 
-        status, trade_id = silent(
-            iq.buy, MONTO, mejor_pair, action, EXPIRACION
-        )
+        # 🚀 ejecutar trade
+        resultado = ejecutar_operacion(iq, mejor_pair, action)
 
-        if not status:
+        if resultado is None:
+            print("❌ Error al ejecutar operación")
             continue
 
-        while True:
-            result = silent(iq.check_win_v4, trade_id)
-
-            if result is None:
-                time.sleep(1)
-                continue
-
-            if isinstance(result, tuple):
-                result = result[0]
-
-            if isinstance(result, str):
-                try:
-                    result = float(result)
-                except:
-                    result = 0
-
-            break
-
-        if result > 0:
+        if resultado > 0:
             print("✅ WIN")
             send_message("✅ WIN")
         else:
