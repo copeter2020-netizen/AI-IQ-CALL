@@ -38,7 +38,6 @@ PARES = [
     "GBPUSD",
     "USDJPY",
     "AUDUSD",
-    "USDCHF",
     "EURGBP",
     "EURJPY"
 ]
