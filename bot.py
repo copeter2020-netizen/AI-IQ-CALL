@@ -73,7 +73,7 @@ def esperar_apertura():
 
 
 # ==========================
-# ANALIZAR
+# ANALIZAR + FILTRO VELA ANTERIOR
 # ==========================
 def analizar(iq):
 
@@ -82,6 +82,12 @@ def analizar(iq):
     )
 
     if not candles:
+        return None
+
+    # 🔥 NUEVO FILTRO: NO operar si la vela anterior es roja
+    vela_anterior = candles[-2]
+
+    if vela_anterior["close"] < vela_anterior["open"]:
         return None
 
     return analyze_market(candles, None, None)
@@ -102,7 +108,7 @@ def run():
         señal = analizar(iq)
 
         if not señal:
-            print("⚠️ Esperando continuidad alcista real...")
+            print("⚠️ Esperando vela verde previa...")
             continue
 
         score = señal["score"]
@@ -112,7 +118,7 @@ def run():
         esperar_apertura()
 
         send_message(
-            f"📈 CALL {PAR}\n⏱ 1m\n📊 Score: {score}\n📍 Max: {señal['maximo']}\n📍 Min: {señal['minimo']}\n🔥 Continuidad confirmada"
+            f"📈 CALL {PAR}\n⏱ 1m\n📊 Score: {score}\n📍 Max: {señal['maximo']}\n📍 Min: {señal['minimo']}\n🔥 Confirmación con vela verde"
         )
 
         status, trade_id = silent(
