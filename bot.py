@@ -37,7 +37,7 @@ IQ_EMAIL = os.environ.get("IQ_EMAIL")
 IQ_PASSWORD = os.environ.get("IQ_PASSWORD")
 
 TIMEFRAME = 60
-MONTO = 13000
+MONTO = 2545
 EXPIRACION = 1
 
 
