@@ -35,7 +35,7 @@ IQ_EMAIL = os.environ.get("IQ_EMAIL")
 IQ_PASSWORD = os.environ.get("IQ_PASSWORD")
 
 TIMEFRAME = 60
-MONTO = 5750
+MONTO = 2545
 EXPIRACION = 1
 
 PARES = [
@@ -64,14 +64,15 @@ def connect():
 
 
 # ==========================
-# FILTRAR PARES ABIERTOS
+# FILTRAR PARES (FIX)
 # ==========================
 def get_open_pairs(iq):
 
     assets = silent(iq.get_all_open_time)
 
+    # 🔥 SI FALLA → USA TODOS LOS PARES
     if not assets or "binary" not in assets:
-        return []
+        return PARES
 
     activos = []
 
@@ -81,6 +82,10 @@ def get_open_pairs(iq):
                 activos.append(par)
         except:
             continue
+
+    # 🔥 SI NO HAY ABIERTOS → USA TODOS IGUAL
+    if not activos:
+        return PARES
 
     return activos
 
@@ -136,7 +141,7 @@ def analizar(iq, pair):
         iq.get_candles, pair, TIMEFRAME, 30, time.time()
     )
 
-    if not candles:
+    if not candles or len(candles) < 30:
         return None
 
     tipo, count = contar_color(candles)
@@ -152,12 +157,18 @@ def analizar(iq, pair):
 # ==========================
 def ejecutar_operacion(iq, pair, action):
 
+    status = False
+    trade_id = None
+
     for _ in range(3):
-        status, trade_id = silent(
-            iq.buy, MONTO, pair, action, EXPIRACION
-        )
+        data = silent(iq.buy, MONTO, pair, action, EXPIRACION)
+
+        if data and isinstance(data, tuple):
+            status, trade_id = data
+
         if status:
             break
+
         time.sleep(1)
 
     if not status:
@@ -222,8 +233,7 @@ def run():
 
         print(f"📡 Señal detectada en {mejor_pair} ({action})")
 
-        # 🔥 ESPERA LA SIGUIENTE VELA (CLAVE)
-        print("⏭ Esperando siguiente vela para entrar...")
+        print("⏭ Esperando siguiente vela...")
         esperar_apertura()
 
         send_message(
