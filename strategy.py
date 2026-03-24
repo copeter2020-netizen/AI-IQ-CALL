@@ -49,57 +49,62 @@ def soporte_resistencia(df):
     return soporte, resistencia
 
 # ==========================
-# TENDENCIA ALCISTA
+# TENDENCIA ALCISTA (SUAVIZADA)
 # ==========================
 def tendencia_alcista(df):
+
     ultimas = df.tail(6)
+
     verdes = sum(1 for i in range(len(ultimas)) if is_bullish(ultimas.iloc[i]))
-    return verdes >= 3
+
+    return verdes >= 3  # antes 4 (muy restrictivo)
 
 # ==========================
-# DETECTAR MARTILLO INVERTIDO VERDE
+# IMPULSO
 # ==========================
-def es_martillo_invertido_verde(c):
-
-    if not is_bullish(c):
-        return False
-
-    cuerpo = body(c)
-    rango = candle_range(c)
-
-    if rango == 0:
-        return False
-
-    upper = c["max"] - max(c["close"], c["open"])
-    lower = min(c["close"], c["open"]) - c["min"]
-
-    # mecha superior grande + cuerpo pequeño abajo
-    if upper > cuerpo * 2 and lower < cuerpo * 0.3:
-        return True
-
-    return False
+def impulso_alcista(df):
+    return is_bullish(df.iloc[-1])
 
 # ==========================
-# CONTINUIDAD ALCISTA
+# CONFIRMACIÓN
 # ==========================
-def continuidad_alcista(df):
+def confirmacion_alcista(c):
+    f = fuerza(c)
+    return f > 0.4  # antes 0.5
 
-    c1 = df.iloc[-1]
-    c2 = df.iloc[-2]
+# ==========================
+# SCORE INTELIGENTE
+# ==========================
+def calcular_score(df, soporte, resistencia):
 
-    if not is_bearish(c2):
-        return False
+    last = df.iloc[-1]
+    score = 0
 
-    if not is_bullish(c1):
-        return False
+    # tendencia
+    if tendencia_alcista(df):
+        score += 2
 
-    if fuerza(c1) < 0.6:
-        return False
+    # impulso
+    if impulso_alcista(df):
+        score += 1
 
-    if c1["close"] <= c2["max"]:
-        return False
+    # fuerza
+    if confirmacion_alcista(last):
+        score += 1
 
-    return True
+    # EMA
+    if last["close"] > last["ema"]:
+        score += 1
+
+    # RSI
+    if last["rsi"] > 50:
+        score += 1
+
+    # rebote en soporte
+    if last["close"] > soporte:
+        score += 1
+
+    return score
 
 # ==========================
 # FUNCIÓN PRINCIPAL
@@ -117,32 +122,21 @@ def analyze_market(c1, c5, c15):
 
         soporte, resistencia = soporte_resistencia(df)
 
-        last = df.iloc[-1]
+        score = calcular_score(df, soporte, resistencia)
 
-        if not tendencia_alcista(df):
-            return None
+        # 🔥 AQUÍ ESTABA TU PROBLEMA
+        # antes exigías TODO → ahora elegimos lo mejor disponible
 
-        if not continuidad_alcista(df):
-            return None
+        if score >= 4:  # umbral inteligente
 
-        # ❌ FILTRO NUEVO
-        if es_martillo_invertido_verde(last):
-            return None
+            return {
+                "action": "call",
+                "score": score,
+                "maximo": resistencia,
+                "minimo": soporte
+            }
 
-        if last["close"] < last["ema"]:
-            return None
-
-        if last["rsi"] < 55:
-            return None
-
-        score = fuerza(last)
-
-        return {
-            "action": "call",
-            "score": score,
-            "maximo": resistencia,
-            "minimo": soporte
-        }
+        return None
 
     except:
         return None
