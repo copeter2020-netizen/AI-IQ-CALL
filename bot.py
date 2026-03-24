@@ -32,12 +32,12 @@ TIMEFRAME = 60
 MONTO = 2545
 EXPIRACION = 1
 
-# 🔥 TUS PARES (SE MANTIENEN)
+# 🔥 SOLO PARES NORMALES (NO OTC)
 PARES = [
     "EURUSD",
     "GBPUSD",
     "USDJPY",
-    "AUDUSD", 
+    "AUDUSD",
     "USDCHF",
     "EURGBP",
     "EURJPY"
@@ -52,28 +52,6 @@ def connect():
             print("✅ Conectado")
             return iq
         time.sleep(5)
-
-
-# ==========================
-# FILTRAR SOLO PARES ABIERTOS
-# ==========================
-def get_open_pairs(iq):
-
-    assets = silent(iq.get_all_open_time)
-
-    if not assets or "binary" not in assets:
-        return []
-
-    abiertos = []
-
-    for par in PARES:
-        try:
-            if par in assets["binary"] and assets["binary"][par]["open"]:
-                abiertos.append(par)
-        except:
-            continue
-
-    return abiertos
 
 
 def esperar_cierre():
@@ -99,7 +77,6 @@ def contar_color(candles):
                 count += 1
             else:
                 break
-
         elif c["close"] < c["open"]:
             if tipo in [None, "roja"]:
                 tipo = "roja"
@@ -138,15 +115,13 @@ def run():
         print("⏳ Esperando cierre...")
         esperar_cierre()
 
-        pares_activos = get_open_pairs(iq)
-
-        print(f"🔎 Analizando {len(pares_activos)} pares activos...")
-
         mejor = None
         mejor_pair = None
         mejor_score = 0
 
-        for pair in pares_activos:
+        print(f"🔎 Analizando {len(PARES)} pares reales...")
+
+        for pair in PARES:
 
             señal = analizar(iq, pair)
 
@@ -159,7 +134,7 @@ def run():
                 mejor_pair = pair
 
         if not mejor:
-            print("⚠️ Sin señal en pares activos")
+            print("⚠️ Sin señal en pares reales")
             continue
 
         action = mejor["action"]
@@ -169,7 +144,7 @@ def run():
         esperar_apertura()
 
         send_message(
-            f"📊 {action.upper()} {mejor_pair}\n⏱ 1m\n📊 Score: {mejor_score}\n🔥 Mercado real activo"
+            f"📊 {action.upper()} {mejor_pair}\n⏱ 1m\n📊 Score: {mejor_score}\n🔥 Mercado real"
         )
 
         status, trade_id = silent(
