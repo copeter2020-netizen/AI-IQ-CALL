@@ -73,7 +73,7 @@ def esperar_apertura():
 
 
 # ==========================
-# CONTAR VELAS VERDES CONSECUTIVAS
+# CONTAR VELAS VERDES
 # ==========================
 def contar_verdes(candles):
     count = 0
@@ -87,7 +87,7 @@ def contar_verdes(candles):
 
 
 # ==========================
-# ANALIZAR + FILTRO
+# ANALIZAR
 # ==========================
 def analizar(iq):
 
@@ -100,7 +100,7 @@ def analizar(iq):
 
     verdes = contar_verdes(candles)
 
-    # 🔥 SOLO 2DA Y 3RA VELA VERDE
+    # SOLO 2DA Y 3RA VELA VERDE
     if verdes < 2 or verdes > 3:
         return None
 
@@ -142,11 +142,21 @@ def run():
         if not status:
             continue
 
+        # ==========================
+        # CORRECCIÓN DEL ERROR AQUÍ
+        # ==========================
         while True:
             result = silent(iq.check_win_v4, trade_id)
-            if result is not None:
-                break
-            time.sleep(1)
+
+            if result is None:
+                time.sleep(1)
+                continue
+
+            # 🔥 si viene como tupla (ganancia, etc)
+            if isinstance(result, tuple):
+                result = result[0]
+
+            break
 
         if result > 0:
             print("✅ WIN")
