@@ -57,7 +57,7 @@ def tendencia_alcista(df):
 
     verdes = sum(1 for i in range(len(ultimas)) if is_bullish(ultimas.iloc[i]))
 
-    return verdes >= 3  # antes 4 (muy restrictivo)
+    return verdes >= 3
 
 # ==========================
 # IMPULSO
@@ -70,7 +70,7 @@ def impulso_alcista(df):
 # ==========================
 def confirmacion_alcista(c):
     f = fuerza(c)
-    return f > 0.4  # antes 0.5
+    return f > 0.4
 
 # ==========================
 # SCORE INTELIGENTE
@@ -80,27 +80,21 @@ def calcular_score(df, soporte, resistencia):
     last = df.iloc[-1]
     score = 0
 
-    # tendencia
     if tendencia_alcista(df):
         score += 2
 
-    # impulso
     if impulso_alcista(df):
         score += 1
 
-    # fuerza
     if confirmacion_alcista(last):
         score += 1
 
-    # EMA
     if last["close"] > last["ema"]:
         score += 1
 
-    # RSI
     if last["rsi"] > 50:
         score += 1
 
-    # rebote en soporte
     if last["close"] > soporte:
         score += 1
 
@@ -124,11 +118,7 @@ def analyze_market(c1, c5, c15):
 
         score = calcular_score(df, soporte, resistencia)
 
-        # 🔥 AQUÍ ESTABA TU PROBLEMA
-        # antes exigías TODO → ahora elegimos lo mejor disponible
-
-        if score >= 4:  # umbral inteligente
-
+        if score >= 4:
             return {
                 "action": "call",
                 "score": score,
