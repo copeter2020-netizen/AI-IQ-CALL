@@ -1,8 +1,5 @@
 import pandas as pd
 
-# ==========================
-# UTILIDADES
-# ==========================
 def body(c):
     return abs(c["close"] - c["open"])
 
@@ -15,24 +12,15 @@ def is_bullish(c):
 def is_bearish(c):
     return c["close"] < c["open"]
 
-# ==========================
-# FUERZA
-# ==========================
 def fuerza(c):
     r = candle_range(c)
     if r == 0:
         return 0
     return body(c) / r
 
-# ==========================
-# EMA
-# ==========================
 def ema(df, period=20):
     return df["close"].ewm(span=period).mean()
 
-# ==========================
-# RSI
-# ==========================
 def rsi(df, period=14):
     delta = df["close"].diff()
     gain = (delta.where(delta > 0, 0)).rolling(period).mean()
@@ -40,41 +28,22 @@ def rsi(df, period=14):
     rs = gain / loss
     return 100 - (100 / (1 + rs))
 
-# ==========================
-# SOPORTE / RESISTENCIA
-# ==========================
 def soporte_resistencia(df):
     soporte = df["min"].rolling(20).min().iloc[-1]
     resistencia = df["max"].rolling(20).max().iloc[-1]
     return soporte, resistencia
 
-# ==========================
-# TENDENCIA ALCISTA (SUAVIZADA)
-# ==========================
 def tendencia_alcista(df):
-
     ultimas = df.tail(6)
-
     verdes = sum(1 for i in range(len(ultimas)) if is_bullish(ultimas.iloc[i]))
-
     return verdes >= 3
 
-# ==========================
-# IMPULSO
-# ==========================
 def impulso_alcista(df):
     return is_bullish(df.iloc[-1])
 
-# ==========================
-# CONFIRMACIÓN
-# ==========================
 def confirmacion_alcista(c):
-    f = fuerza(c)
-    return f > 0.4
+    return fuerza(c) > 0.4
 
-# ==========================
-# SCORE INTELIGENTE
-# ==========================
 def calcular_score(df, soporte, resistencia):
 
     last = df.iloc[-1]
@@ -100,9 +69,6 @@ def calcular_score(df, soporte, resistencia):
 
     return score
 
-# ==========================
-# FUNCIÓN PRINCIPAL
-# ==========================
 def analyze_market(c1, c5, c15):
 
     try:
