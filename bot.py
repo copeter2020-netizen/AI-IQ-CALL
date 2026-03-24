@@ -29,7 +29,7 @@ IQ_EMAIL = os.environ.get("IQ_EMAIL")
 IQ_PASSWORD = os.environ.get("IQ_PASSWORD")
 
 TIMEFRAME = 60
-MONTO = 10000
+MONTO = 2545
 EXPIRACION = 1
 
 PAR = "EURUSD-OTC"
@@ -91,7 +91,7 @@ def analizar(iq):
 
     tipo, count = contar_color(candles)
 
-    # 🔥 SOLO 2DA O 3RA CONTINUIDAD (VERDE O ROJA)
+    # SOLO 2DA O 3RA VELA (VERDE O ROJA)
     if count < 2 or count > 3:
         return None
 
@@ -131,6 +131,7 @@ def run():
         if not status:
             continue
 
+        # 🔥 CORRECCIÓN COMPLETA
         while True:
             result = silent(iq.check_win_v4, trade_id)
 
@@ -138,8 +139,16 @@ def run():
                 time.sleep(1)
                 continue
 
+            # tuple → tomar primer valor
             if isinstance(result, tuple):
                 result = result[0]
+
+            # string → convertir a float
+            if isinstance(result, str):
+                try:
+                    result = float(result)
+                except:
+                    result = 0
 
             break
 
