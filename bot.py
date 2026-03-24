@@ -42,6 +42,9 @@ PARES = [
 ]
 
 
+# ==========================
+# CONEXIÓN
+# ==========================
 def connect():
     while True:
         iq = IQ_Option(IQ_EMAIL, IQ_PASSWORD)
@@ -50,21 +53,27 @@ def connect():
         if iq.check_connect():
             print("✅ Conectado")
             return iq
-        else:
-            time.sleep(5)
+        time.sleep(5)
 
 
-def esperar_cierre():
-    while int(time.time()) % 60 != 59:
-        time.sleep(0.01)
+# ==========================
+# TIEMPO REAL BROKER
+# ==========================
+def esperar_entrada_real():
 
+    # 🔥 usa tiempo del broker (CLAVE)
+    while True:
+        server_time = iq.get_server_timestamp()
 
-# 🔥 NUEVA ENTRADA ÓPTIMA (ligero retraso)
-def entrada_optimizada():
-    while int(time.time()) % 60 != 1:  # entra en segundo 1
+        if int(server_time) % 60 == 1:
+            break
+
         time.sleep(0.001)
 
 
+# ==========================
+# ANALIZAR
+# ==========================
 def analizar(iq, pair):
 
     candles = silent(
@@ -77,23 +86,35 @@ def analizar(iq, pair):
     return analyze_market(candles, None, None)
 
 
+# ==========================
+# EJECUTAR OPERACIÓN (FIX REAL)
+# ==========================
 def ejecutar_operacion(iq, pair, action):
 
-    for _ in range(5):
+    print(f"🚀 Intentando entrada en {pair}...")
+
+    for intento in range(5):
+
         data = silent(iq.buy, MONTO, pair, action, EXPIRACION)
 
         if data and isinstance(data, tuple):
             status, trade_id = data
 
             if status:
-                break
-        else:
-            status = False
+                print("✅ ENTRADA REALIZADA")
+                return trade_id
 
-        time.sleep(0.3)
+        print(f"⚠️ Reintento {intento+1}")
+        time.sleep(0.5)
 
-    if not status:
-        return None
+    print("❌ No se pudo entrar")
+    return None
+
+
+# ==========================
+# RESULTADO
+# ==========================
+def verificar_resultado(iq, trade_id):
 
     while True:
         result = silent(iq.check_win_v4, trade_id)
@@ -114,14 +135,19 @@ def ejecutar_operacion(iq, pair, action):
         return result
 
 
+# ==========================
+# BOT PRINCIPAL
+# ==========================
 def run():
 
+    global iq
     iq = connect()
 
     while True:
 
         print("⏳ Esperando cierre de vela...")
-        esperar_cierre()
+        while int(time.time()) % 60 != 59:
+            time.sleep(0.01)
 
         mejor = None
         mejor_pair = None
@@ -149,17 +175,19 @@ def run():
 
         print(f"📡 Señal en {mejor_pair} ({action})")
 
-        # 🔥 entrada más efectiva
-        entrada_optimizada()
+        # 🔥 ESPERA REAL (SINCRONIZADO CON IQ OPTION)
+        esperar_entrada_real()
 
         send_message(
-            f"📊 {action.upper()} {mejor_pair}\n⏱ 1m\n📊 Score: {mejor_score}\n⚡ Entrada optimizada"
+            f"📊 {action.upper()} {mejor_pair}\n⏱ 1m\n📊 Score: {mejor_score}\n⚡ Entrada real"
         )
 
-        resultado = ejecutar_operacion(iq, mejor_pair, action)
+        trade_id = ejecutar_operacion(iq, mejor_pair, action)
 
-        if resultado is None:
+        if not trade_id:
             continue
+
+        resultado = verificar_resultado(iq, trade_id)
 
         if resultado > 0:
             print("✅ WIN")
