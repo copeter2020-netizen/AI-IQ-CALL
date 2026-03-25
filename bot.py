@@ -40,22 +40,28 @@ PARES = [
 
 
 # ==========================
-# CONEXIÓN (SIN DIGITAL)
+# 🔥 BLOQUEO TOTAL DIGITAL (FIX REAL)
+# ==========================
+def bloquear_digital(iq):
+    try:
+        iq.api.digital_thread = None
+        iq.api.get_digital_underlying_list_data = lambda *a, **k: {"underlying": []}
+        iq.api.subscribe_instrument_quites_generated = lambda *a, **k: None
+        iq.api.unsubscribe_instrument_quites_generated = lambda *a, **k: None
+    except:
+        pass
+
+
+# ==========================
+# CONEXIÓN
 # ==========================
 def connect():
     while True:
         iq = IQ_Option(IQ_EMAIL, IQ_PASSWORD)
-
-        # 🔥 BLOQUEO DIGITAL
-        try:
-            iq.api.digital_thread = None
-            iq.api.get_digital_underlying_list_data = lambda *a, **k: {"underlying": []}
-        except:
-            pass
-
         iq.connect()
 
         if iq.check_connect():
+            bloquear_digital(iq)
             print("✅ Conectado")
             send_message("✅ BOT ACTIVO")
             return iq
@@ -64,7 +70,7 @@ def connect():
 
 
 # ==========================
-# PARES ABIERTOS REALES
+# PARES ABIERTOS (ROBUSTO)
 # ==========================
 def get_open_pairs(iq):
 
@@ -76,10 +82,15 @@ def get_open_pairs(iq):
             if par in assets["binary"] and assets["binary"][par]["open"]:
                 abiertos.append(par)
 
+        # 🔥 SI FALLA API → USAR LISTA FIJA
+        if not abiertos:
+            print("⚠️ API falló, usando lista fija")
+            return PARES
+
         return abiertos
 
     except:
-        return []
+        return PARES
 
 
 # ==========================
@@ -109,28 +120,28 @@ def analizar(iq, pair):
 
 
 # ==========================
-# EJECUCIÓN REAL (CLAVE)
+# 🔥 EJECUCIÓN FORZADA REAL
 # ==========================
 def ejecutar(iq, pair, action):
 
-    print(f"🚀 Intentando {pair} {action}")
+    print(f"🚀 FORZANDO {pair} {action}")
 
-    # 🔥 VALIDAR JUSTO ANTES DE ENTRAR
+    # validar activo en ese segundo
     try:
         assets = iq.get_all_open_time()
         if not assets["binary"][pair]["open"]:
-            print("⚠️ Par cerrado en ese segundo")
+            print("⚠️ Cerrado justo ahora")
             return None
     except:
-        return None
+        pass
 
-    # 🔥 REINTENTO INTELIGENTE
-    for _ in range(3):
-
+    # 🔥 entrada rápida + reintento
+    for i in range(3):
         try:
             status, trade_id = iq.buy(MONTO, pair, action, EXPIRACION)
 
             if status:
+                print("✅ Entrada ejecutada")
                 send_message(f"🚀 {pair} {action}")
                 break
 
@@ -166,7 +177,7 @@ def ejecutar(iq, pair, action):
 
 
 # ==========================
-# BOT
+# BOT PRINCIPAL
 # ==========================
 def run():
 
@@ -178,10 +189,6 @@ def run():
         esperar_cierre()
 
         pares = get_open_pairs(iq)
-
-        if not pares:
-            print("⚠️ No hay pares abiertos")
-            continue
 
         print(f"🔎 Analizando {len(pares)} pares...")
 
@@ -196,7 +203,6 @@ def run():
             score = señal["score"]
 
             print(f"📡 SEÑAL {pair} {action} ({score})")
-            send_message(f"📡 {pair} {action} | Score {score}")
 
             esperar_entrada()
 
