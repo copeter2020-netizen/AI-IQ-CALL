@@ -31,8 +31,8 @@ def silent(func, *args, **kwargs):
 # ==========================
 # CONFIG
 # ==========================
-IQ_EMAIL = os.environ.get("IQ_EMAIL")
-IQ_PASSWORD = os.environ.get("IQ_PASSWORD")
+IQ_EMAIL = os.getenv("IQ_EMAIL")
+IQ_PASSWORD = os.getenv("IQ_PASSWORD")
 
 TIMEFRAME = 60
 MONTO = 1500
@@ -51,13 +51,14 @@ def connect():
 
         if iq.check_connect():
             print("✅ Conectado")
+            send_message("✅ BOT CONECTADO")
             return iq
 
         time.sleep(5)
 
 
 # ==========================
-# TIEMPO PRECISO
+# TIEMPO
 # ==========================
 def esperar_cierre():
     while int(time.time()) % 60 != 59:
@@ -100,6 +101,7 @@ def ejecutar(iq, action):
 
     if not status:
         print("❌ Broker rechazó")
+        send_message("❌ Broker rechazó")
         return None
 
     while True:
@@ -121,7 +123,7 @@ def ejecutar(iq, action):
 
 
 # ==========================
-# BOT PRINCIPAL
+# BOT
 # ==========================
 def run():
 
@@ -143,11 +145,9 @@ def run():
 
         print(f"🎯 {action.upper()} | {tipo}")
 
-        esperar_apertura()
+        send_message(f"📡 SEÑAL {action.upper()} | {tipo}")
 
-        send_message(
-            f"📊 {action.upper()} {PAR}\n⏱ 1m\n🏦 HEDGE FUND MODE\n📌 {tipo}"
-        )
+        esperar_apertura()
 
         resultado = ejecutar(iq, action)
 
