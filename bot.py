@@ -66,10 +66,8 @@ def esperar_cierre():
 
 
 def esperar_apertura():
-    while True:
-        t = time.time()
-        if int(t) % 60 == 0 and (t - int(t)) < 0.15:
-            break
+    while int(time.time()) % 60 != 0:
+        time.sleep(0.001)
 
 
 # ==========================
@@ -92,7 +90,6 @@ def analizar(iq):
 # ==========================
 def ejecutar(iq, action):
 
-    print(f"🚀 EJECUTANDO {action.upper()}")
     send_message(f"🚀 {action.upper()} {PAR}")
 
     status, trade_id = silent(
@@ -100,7 +97,6 @@ def ejecutar(iq, action):
     )
 
     if not status:
-        print("❌ Broker rechazó")
         send_message("❌ Broker rechazó")
         return None
 
@@ -131,21 +127,16 @@ def run():
 
     while True:
 
-        print("⏳ Esperando cierre vela...")
         esperar_cierre()
 
         señal = analizar(iq)
 
         if not señal:
-            print("⚠️ Sin señal hedge fund...")
             continue
 
         action = señal["action"]
-        tipo = señal["tipo"]
 
-        print(f"🎯 {action.upper()} | {tipo}")
-
-        send_message(f"📡 SEÑAL {action.upper()} | {tipo}")
+        send_message(f"📡 SEÑAL {action.upper()}")
 
         esperar_apertura()
 
@@ -155,10 +146,8 @@ def run():
             continue
 
         if resultado > 0:
-            print("✅ WIN")
             send_message("✅ WIN")
         else:
-            print("❌ LOSS")
             send_message("❌ LOSS")
 
 
