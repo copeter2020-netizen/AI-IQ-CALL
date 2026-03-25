@@ -34,31 +34,22 @@ MONTO = 7000
 EXPIRACION = 1
 
 PARES = [
-    "EURUSD",
-    "GBPUSD",
-    "USDJPY",
-    "AUDUSD",
-    "USDCAD",
-    "USDCHF",
-    "EURGBP",
-    "EURJPY"
+    "EURUSD","GBPUSD","USDJPY","AUDUSD",
+    "USDCAD","USDCHF","EURGBP","EURJPY"
 ]
 
 
 # ==========================
-# CONEXIÓN (FIX DEFINITIVO DIGITAL)
+# CONEXIÓN (SIN DIGITAL)
 # ==========================
 def connect():
     while True:
         iq = IQ_Option(IQ_EMAIL, IQ_PASSWORD)
 
-        # 🔥 BLOQUEO TOTAL DEL DIGITAL (ANTES DE CONECTAR)
+        # 🔥 BLOQUEO DIGITAL
         try:
             iq.api.digital_thread = None
-            iq.api.get_digital_open = lambda *args, **kwargs: None
-            iq.api.get_digital_underlying_list_data = lambda *args, **kwargs: {"underlying": []}
-            iq.api.subscribe_digital = lambda *args, **kwargs: None
-            iq.api.unsubscribe_digital = lambda *args, **kwargs: None
+            iq.api.get_digital_underlying_list_data = lambda *a, **k: {"underlying": []}
         except:
             pass
 
@@ -73,7 +64,26 @@ def connect():
 
 
 # ==========================
-# TIEMPO
+# PARES ABIERTOS REALES
+# ==========================
+def get_open_pairs(iq):
+
+    try:
+        assets = iq.get_all_open_time()
+        abiertos = []
+
+        for par in PARES:
+            if par in assets["binary"] and assets["binary"][par]["open"]:
+                abiertos.append(par)
+
+        return abiertos
+
+    except:
+        return []
+
+
+# ==========================
+# TIEMPO EXACTO
 # ==========================
 def esperar_cierre():
     while int(time.time()) % 60 != 59:
@@ -81,9 +91,7 @@ def esperar_cierre():
 
 
 def esperar_entrada():
-    while True:
-        if int(time.time()) % 60 == 0:
-            break
+    while int(time.time()) % 60 != 0:
         time.sleep(0.001)
 
 
@@ -101,22 +109,37 @@ def analizar(iq, pair):
 
 
 # ==========================
-# EJECUCIÓN FORZADA REAL
+# EJECUCIÓN REAL (CLAVE)
 # ==========================
 def ejecutar(iq, pair, action):
 
-    print(f"🚀 EJECUTANDO {pair} {action}")
-    send_message(f"🚀 {pair} {action}")
+    print(f"🚀 Intentando {pair} {action}")
 
-    trade_id = None
-
+    # 🔥 VALIDAR JUSTO ANTES DE ENTRAR
     try:
-        status, trade_id = iq.buy(MONTO, pair, action, EXPIRACION)
-    except Exception as e:
-        print("❌ Error ejecución:", e)
+        assets = iq.get_all_open_time()
+        if not assets["binary"][pair]["open"]:
+            print("⚠️ Par cerrado en ese segundo")
+            return None
+    except:
         return None
 
-    if not status:
+    # 🔥 REINTENTO INTELIGENTE
+    for _ in range(3):
+
+        try:
+            status, trade_id = iq.buy(MONTO, pair, action, EXPIRACION)
+
+            if status:
+                send_message(f"🚀 {pair} {action}")
+                break
+
+        except:
+            pass
+
+        time.sleep(0.2)
+
+    else:
         print("❌ Broker rechazó")
         return None
 
@@ -143,7 +166,7 @@ def ejecutar(iq, pair, action):
 
 
 # ==========================
-# BOT PRINCIPAL
+# BOT
 # ==========================
 def run():
 
@@ -154,9 +177,15 @@ def run():
         print("⏳ Esperando cierre vela...")
         esperar_cierre()
 
-        print("🔎 Analizando pares...")
+        pares = get_open_pairs(iq)
 
-        for pair in PARES:
+        if not pares:
+            print("⚠️ No hay pares abiertos")
+            continue
+
+        print(f"🔎 Analizando {len(pares)} pares...")
+
+        for pair in pares:
 
             señal = analizar(iq, pair)
 
@@ -169,7 +198,6 @@ def run():
             print(f"📡 SEÑAL {pair} {action} ({score})")
             send_message(f"📡 {pair} {action} | Score {score}")
 
-            # 🔥 ENTRADA EXACTA EN NUEVA VELA
             esperar_entrada()
 
             resultado = ejecutar(iq, pair, action)
