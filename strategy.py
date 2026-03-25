@@ -9,9 +9,6 @@ def candle_range(c):
 def is_bullish(c):
     return c["close"] > c["open"]
 
-def is_bearish(c):
-    return c["close"] < c["open"]
-
 def fuerza(c):
     r = candle_range(c)
     if r == 0:
@@ -38,21 +35,7 @@ def tendencia_alcista(df):
     verdes = sum(1 for i in range(len(ultimas)) if is_bullish(ultimas.iloc[i]))
     return verdes >= 3
 
-def impulso_alcista(df):
-    return is_bullish(df.iloc[-1])
-
-def confirmacion_alcista(c):
-    return fuerza(c) > 0.4
-
-# 🔥 NUEVO: validar vela previa fuerte (continuidad real)
-def vela_previa_fuerte(df):
-    prev = df.iloc[-2]
-    return (
-        is_bullish(prev)
-        and fuerza(prev) > 0.5
-    )
-
-def calcular_score(df, soporte, resistencia):
+def calcular_score(df, soporte):
 
     last = df.iloc[-1]
     score = 0
@@ -60,10 +43,7 @@ def calcular_score(df, soporte, resistencia):
     if tendencia_alcista(df):
         score += 2
 
-    if impulso_alcista(df):
-        score += 1
-
-    if confirmacion_alcista(last):
+    if fuerza(last) > 0.4:
         score += 1
 
     if last["close"] > last["ema"]:
@@ -75,11 +55,8 @@ def calcular_score(df, soporte, resistencia):
     if last["close"] > soporte:
         score += 1
 
-    # 🔥 continuidad real
-    if vela_previa_fuerte(df):
-        score += 2
-
     return score
+
 
 def analyze_market(c1, c5, c15):
 
@@ -94,9 +71,15 @@ def analyze_market(c1, c5, c15):
 
         soporte, resistencia = soporte_resistencia(df)
 
-        score = calcular_score(df, soporte, resistencia)
+        last = df.iloc[-1]
 
-        if score >= 5:  # 🔥 más precisión
+        # 🔥 CONDICIÓN CLAVE: vela debe cerrar verde
+        if not is_bullish(last):
+            return None
+
+        score = calcular_score(df, soporte)
+
+        if score >= 4:
             return {
                 "action": "call",
                 "score": score,
