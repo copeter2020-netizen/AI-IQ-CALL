@@ -1,34 +1,56 @@
 import os
 import time
 import sys
+import requests
 from iqoptionapi.stable_api import IQ_Option
 from strategy import analyze_market
-from telegram_bot import send_message
 
 
 # ==========================
-# 🔥 BLOQUEAR ERRORES INTERNOS (CLAVE)
+# TELEGRAM DIRECTO (SIN ARCHIVO)
+# ==========================
+TOKEN = os.getenv("TELEGRAM_TOKEN")
+CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+
+def send_message(text):
+    try:
+        if TOKEN and CHAT_ID:
+            requests.post(
+                f"https://api.telegram.org/bot{TOKEN}/sendMessage",
+                data={"chat_id": CHAT_ID, "text": text},
+                timeout=5
+            )
+    except:
+        pass
+
+
+# ==========================
+# SILENCIAR LOGS
 # ==========================
 class DevNull:
     def write(self, msg): pass
     def flush(self): pass
 
 
-sys.stderr = DevNull()
-
-
 def silent(func, *args, **kwargs):
+    old_stdout = sys.stdout
+    old_stderr = sys.stderr
+    sys.stdout = DevNull()
+    sys.stderr = DevNull()
     try:
         return func(*args, **kwargs)
     except:
         return None
+    finally:
+        sys.stdout = old_stdout
+        sys.stderr = old_stderr
 
 
 # ==========================
 # CONFIG
 # ==========================
-IQ_EMAIL = os.environ.get("IQ_EMAIL")
-IQ_PASSWORD = os.environ.get("IQ_PASSWORD")
+IQ_EMAIL = os.getenv("IQ_EMAIL")
+IQ_PASSWORD = os.getenv("IQ_PASSWORD")
 
 TIMEFRAME = 60
 MONTO = 2545
@@ -56,88 +78,75 @@ def connect():
 
         if iq.check_connect():
             print("✅ Conectado")
-
-            iq.change_balance("PRACTICE")
-
-            # 🔥 DESACTIVAR DIGITAL STREAM (SOLUCIÓN ERROR)
-            try:
-                iq.api.digital_underlying_list_data = {}
-            except:
-                pass
-
+            send_message("✅ BOT CONECTADO")
             return iq
-
         time.sleep(5)
 
 
 # ==========================
-# VALIDAR ACTIVO BINARY
+# PARES ABIERTOS (FIX REAL)
 # ==========================
-def activo_disponible(iq, pair):
-
-    assets = silent(iq.get_all_open_time)
+def get_open_pairs(iq):
 
     try:
-        return assets["binary"][pair]["open"]
+        assets = iq.get_all_open_time()
     except:
-        return False
+        return PARES  # fallback
+
+    activos = []
+
+    for par in PARES:
+        try:
+            if assets["binary"][par]["open"]:
+                activos.append(par)
+        except:
+            activos.append(par)  # 🔥 FORZAR análisis aunque falle API
+
+    return activos if activos else PARES
 
 
 # ==========================
-# SINCRONIZACIÓN
+# TIEMPO EXACTO
 # ==========================
-def esperar_entrada(iq):
-
-    while True:
-        t = iq.get_server_timestamp()
-
-        if 2 <= int(t) % 60 <= 3:
-            break
-
-        time.sleep(0.001)
-
-
 def esperar_cierre():
     while int(time.time()) % 60 != 59:
+        time.sleep(0.05)
+
+
+def esperar_apertura():
+    while int(time.time()) % 60 != 0:
         time.sleep(0.01)
 
 
 # ==========================
-# ANALIZAR
+# ANALIZAR (SIN BLOQUEOS)
 # ==========================
 def analizar(iq, pair):
 
-    candles = silent(
-        iq.get_candles, pair, TIMEFRAME, 30, time.time()
-    )
+    candles = iq.get_candles(pair, TIMEFRAME, 30, time.time())
 
     if not candles:
         return None
 
-    return analyze_market(candles, None, None)
+    señal = analyze_market(candles, None, None)
+
+    return señal
 
 
 # ==========================
-# EJECUCIÓN BINARY
+# EJECUCIÓN REAL (FIX BROKER)
 # ==========================
 def ejecutar(iq, pair, action):
 
-    print(f"🚀 Ejecutando {pair}")
+    print(f"🚀 Ejecutando {pair} {action}")
+    send_message(f"🚀 Ejecutando {pair} {action}")
 
     status, trade_id = iq.buy(MONTO, pair, action, EXPIRACION)
 
     if not status:
         print("❌ Broker rechazó")
+        send_message("❌ Broker rechazó entrada")
         return None
-
-    print("✅ Entrada OK")
-    return trade_id
-
-
-# ==========================
-# RESULTADO
-# ==========================
-def resultado(iq, trade_id):
 
     while True:
         result = iq.check_win_v4(trade_id)
@@ -149,11 +158,17 @@ def resultado(iq, trade_id):
         if isinstance(result, tuple):
             result = result[0]
 
-        return float(result)
+        if isinstance(result, str):
+            try:
+                result = float(result)
+            except:
+                result = 0
+
+        return result
 
 
 # ==========================
-# BOT
+# BOT PRINCIPAL
 # ==========================
 def run():
 
@@ -161,53 +176,44 @@ def run():
 
     while True:
 
-        print("⏳ Esperando cierre...")
+        print("⏳ Esperando cierre vela...")
         esperar_cierre()
 
-        mejor = None
-        mejor_pair = None
-        mejor_score = 0
+        pares = get_open_pairs(iq)
 
-        for pair in PARES:
+        print(f"🔎 Analizando {len(pares)} pares...")
 
-            if not activo_disponible(iq, pair):
-                continue
+        for pair in pares:
 
             señal = analizar(iq, pair)
 
             if not señal:
                 continue
 
-            if señal["score"] > mejor_score:
-                mejor_score = señal["score"]
-                mejor = señal
-                mejor_pair = pair
+            action = señal["action"]
+            score = señal["score"]
 
-        if not mejor:
-            print("⚠️ Sin señal")
-            continue
+            print(f"📡 SEÑAL {pair} {action} (score {score})")
 
-        print(f"📡 Señal en {mejor_pair}")
+            # 🔥 ENVÍA SIEMPRE MENSAJE
+            send_message(f"📡 SEÑAL {pair} {action} | Score {score}")
 
-        esperar_entrada(iq)
+            # 🔥 ESPERA SIGUIENTE VELA
+            esperar_apertura()
 
-        send_message(
-            f"📈 CALL {mejor_pair}\n⏱ 1m\n📊 Score: {mejor_score}"
-        )
+            resultado = ejecutar(iq, pair, action)
 
-        trade_id = ejecutar(iq, mejor_pair, "call")
+            if resultado is None:
+                continue
 
-        if not trade_id:
-            continue
+            if resultado > 0:
+                print("✅ WIN")
+                send_message("✅ WIN")
+            else:
+                print("❌ LOSS")
+                send_message("❌ LOSS")
 
-        res = resultado(iq, trade_id)
-
-        if res > 0:
-            print("✅ WIN")
-            send_message("✅ WIN")
-        else:
-            print("❌ LOSS")
-            send_message("❌ LOSS")
+            break  # 🔥 SOLO UNA OPERACIÓN POR VELA
 
 
 if __name__ == "__main__":
