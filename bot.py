@@ -12,33 +12,34 @@ class DevNull:
 
 
 def silent(func, *args, **kwargs):
-    old_stdout = sys.stdout
-    old_stderr = sys.stderr
-    sys.stdout = DevNull()
-    sys.stderr = DevNull()
     try:
         return func(*args, **kwargs)
     except:
         return None
-    finally:
-        sys.stdout = old_stdout
-        sys.stderr = old_stderr
 
 
 IQ_EMAIL = os.environ.get("IQ_EMAIL")
 IQ_PASSWORD = os.environ.get("IQ_PASSWORD")
 
 TIMEFRAME = 60
-MONTO = 15500
+MONTO = 2545
 EXPIRACION = 1
 
 PARES = [
     "EURUSD",
+    "GBPUSD",
     "USDJPY",
+    "AUDUSD",
+    "USDCAD",
+    "USDCHF",
+    "EURGBP",
     "EURJPY"
 ]
 
 
+# ==========================
+# CONEXIÓN
+# ==========================
 def connect():
     while True:
         iq = IQ_Option(IQ_EMAIL, IQ_PASSWORD)
@@ -46,19 +47,37 @@ def connect():
 
         if iq.check_connect():
             print("✅ Conectado")
+            iq.change_balance("PRACTICE")  # puedes usar REAL
             return iq
 
         time.sleep(5)
 
 
-# 🔥 CLAVE: sincronización REAL con broker
-def esperar_siguiente_vela(iq):
+# ==========================
+# VALIDAR ACTIVO DISPONIBLE
+# ==========================
+def activo_disponible(iq, pair):
+    assets = iq.get_all_open_time()
+
+    try:
+        return (
+            assets["binary"][pair]["open"] or
+            assets["digital"][pair]["open"]
+        )
+    except:
+        return False
+
+
+# ==========================
+# SINCRONIZACIÓN PERFECTA
+# ==========================
+def esperar_entrada(iq):
 
     while True:
-        server_time = iq.get_server_timestamp()
+        t = iq.get_server_timestamp()
 
-        # 🔥 entrar en segundo 2 → evita rechazo
-        if int(server_time) % 60 == 2:
+        # 🔥 mejor ventana real → evita rechazo
+        if 3 <= int(t) % 60 <= 5:
             break
 
         time.sleep(0.001)
@@ -69,6 +88,9 @@ def esperar_cierre():
         time.sleep(0.01)
 
 
+# ==========================
+# ANALIZAR
+# ==========================
 def analizar(iq, pair):
 
     candles = iq.get_candles(pair, TIMEFRAME, 30, time.time())
@@ -79,22 +101,34 @@ def analizar(iq, pair):
     return analyze_market(candles, None, None)
 
 
-# 🔥 EJECUCIÓN REAL SIN RECHAZO
+# ==========================
+# EJECUCIÓN ANTI-RECHAZO
+# ==========================
 def ejecutar(iq, pair, action):
 
     print(f"🚀 Ejecutando {pair}")
 
-    # 🔥 USAR BINARY (NO digital → menos rechazo en pares normales)
+    # 🔥 1. intentar binary
     status, trade_id = iq.buy(MONTO, pair, action, EXPIRACION)
 
-    if not status:
-        print("❌ Broker rechazó")
-        return None
+    if status:
+        print("✅ Binary OK")
+        return trade_id
 
-    print("✅ Entrada realizada")
-    return trade_id
+    # 🔥 2. fallback digital (CLAVE)
+    trade_id = iq.buy_digital_spot(pair, MONTO, action, EXPIRACION)
+
+    if trade_id:
+        print("✅ Digital OK")
+        return trade_id
+
+    print("❌ Broker rechazó TODO")
+    return None
 
 
+# ==========================
+# RESULTADO
+# ==========================
 def resultado(iq, trade_id):
 
     while True:
@@ -110,20 +144,28 @@ def resultado(iq, trade_id):
         return float(result)
 
 
+# ==========================
+# BOT
+# ==========================
 def run():
 
     iq = connect()
 
     while True:
 
-        print("⏳ Esperando cierre vela...")
+        print("⏳ Esperando cierre...")
         esperar_cierre()
 
         mejor = None
         mejor_pair = None
         mejor_score = 0
 
+        print(f"🔎 Analizando pares...")
+
         for pair in PARES:
+
+            if not activo_disponible(iq, pair):
+                continue
 
             señal = analizar(iq, pair)
 
@@ -136,13 +178,12 @@ def run():
                 mejor_pair = pair
 
         if not mejor:
-            print("⚠️ Sin señal")
+            print("⚠️ Sin señal válida")
             continue
 
         print(f"📡 Señal en {mejor_pair}")
 
-        # 🔥 sincronización correcta
-        esperar_siguiente_vela(iq)
+        esperar_entrada(iq)
 
         send_message(
             f"📈 CALL {mejor_pair}\n⏱ 1m\n📊 Score: {mejor_score}"
