@@ -39,6 +39,9 @@ PARES = [
 ]
 
 
+# ==========================
+# CONEXIÓN + BALANCE
+# ==========================
 def connect():
     while True:
         iq = IQ_Option(IQ_EMAIL, IQ_PASSWORD)
@@ -46,19 +49,37 @@ def connect():
 
         if iq.check_connect():
             print("✅ Conectado")
+
+            # 🔥 IMPORTANTE → usar balance real o practice
+            iq.change_balance("PRACTICE")  # o "REAL"
+
             return iq
 
         time.sleep(5)
 
 
-# 🔥 CLAVE: sincronización REAL con broker
-def esperar_siguiente_vela(iq):
+# ==========================
+# VALIDAR PAR ABIERTO
+# ==========================
+def par_abierto(iq, pair):
+    assets = iq.get_all_open_time()
+
+    try:
+        return assets["binary"][pair]["open"]
+    except:
+        return False
+
+
+# ==========================
+# SINCRONIZACIÓN REAL
+# ==========================
+def esperar_entrada(iq):
 
     while True:
         server_time = iq.get_server_timestamp()
 
-        # 🔥 entrar en segundo 2 → evita rechazo
-        if int(server_time) % 60 == 2:
+        # 🔥 ventana válida real (segundos 2–4)
+        if 2 <= int(server_time) % 60 <= 4:
             break
 
         time.sleep(0.001)
@@ -69,6 +90,9 @@ def esperar_cierre():
         time.sleep(0.01)
 
 
+# ==========================
+# ANALIZAR
+# ==========================
 def analizar(iq, pair):
 
     candles = iq.get_candles(pair, TIMEFRAME, 30, time.time())
@@ -79,22 +103,37 @@ def analizar(iq, pair):
     return analyze_market(candles, None, None)
 
 
-# 🔥 EJECUCIÓN REAL SIN RECHAZO
+# ==========================
+# EJECUCIÓN ROBUSTA
+# ==========================
 def ejecutar(iq, pair, action):
+
+    # 🔥 validar que el par esté abierto
+    if not par_abierto(iq, pair):
+        print(f"⚠️ {pair} cerrado")
+        return None
 
     print(f"🚀 Ejecutando {pair}")
 
-    # 🔥 USAR BINARY (NO digital → menos rechazo en pares normales)
     status, trade_id = iq.buy(MONTO, pair, action, EXPIRACION)
 
     if not status:
-        print("❌ Broker rechazó")
-        return None
+        print("❌ Broker rechazó (retry digital)")
+
+        # 🔥 fallback automático a digital
+        trade_id = iq.buy_digital_spot(pair, MONTO, action, EXPIRACION)
+
+        if not trade_id:
+            print("❌ También falló digital")
+            return None
 
     print("✅ Entrada realizada")
     return trade_id
 
 
+# ==========================
+# RESULTADO
+# ==========================
 def resultado(iq, trade_id):
 
     while True:
@@ -110,6 +149,9 @@ def resultado(iq, trade_id):
         return float(result)
 
 
+# ==========================
+# BOT PRINCIPAL
+# ==========================
 def run():
 
     iq = connect()
@@ -123,7 +165,12 @@ def run():
         mejor_pair = None
         mejor_score = 0
 
+        print(f"🔎 Analizando {len(PARES)} pares...")
+
         for pair in PARES:
+
+            if not par_abierto(iq, pair):
+                continue
 
             señal = analizar(iq, pair)
 
@@ -136,13 +183,13 @@ def run():
                 mejor_pair = pair
 
         if not mejor:
-            print("⚠️ Sin señal")
+            print("⚠️ Sin señal válida")
             continue
 
         print(f"📡 Señal en {mejor_pair}")
 
-        # 🔥 sincronización correcta
-        esperar_siguiente_vela(iq)
+        # 🔥 entrada correcta
+        esperar_entrada(iq)
 
         send_message(
             f"📈 CALL {mejor_pair}\n⏱ 1m\n📊 Score: {mejor_score}"
