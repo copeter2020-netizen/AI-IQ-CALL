@@ -6,6 +6,9 @@ from strategy import analyze_market
 from telegram_bot import send_message
 
 
+# ==========================
+# SILENCIAR LOGS
+# ==========================
 class DevNull:
     def write(self, msg): pass
     def flush(self): pass
@@ -18,11 +21,14 @@ def silent(func, *args, **kwargs):
         return None
 
 
+# ==========================
+# CONFIG
+# ==========================
 IQ_EMAIL = os.environ.get("IQ_EMAIL")
 IQ_PASSWORD = os.environ.get("IQ_PASSWORD")
 
 TIMEFRAME = 60
-MONTO = 2545
+MONTO = 5000
 EXPIRACION = 1
 
 PARES = [
@@ -47,37 +53,38 @@ def connect():
 
         if iq.check_connect():
             print("✅ Conectado")
-            iq.change_balance("PRACTICE")  # puedes usar REAL
+
+            # 🔥 IMPORTANTE: tipo de cuenta
+            iq.change_balance("PRACTICE")  # o "REAL"
+
             return iq
 
         time.sleep(5)
 
 
 # ==========================
-# VALIDAR ACTIVO DISPONIBLE
+# VALIDAR ACTIVO BINARY
 # ==========================
 def activo_disponible(iq, pair):
+
     assets = iq.get_all_open_time()
 
     try:
-        return (
-            assets["binary"][pair]["open"] or
-            assets["digital"][pair]["open"]
-        )
+        return assets["binary"][pair]["open"]
     except:
         return False
 
 
 # ==========================
-# SINCRONIZACIÓN PERFECTA
+# SINCRONIZACIÓN EXACTA
 # ==========================
 def esperar_entrada(iq):
 
     while True:
         t = iq.get_server_timestamp()
 
-        # 🔥 mejor ventana real → evita rechazo
-        if 3 <= int(t) % 60 <= 5:
+        # 🔥 ventana exacta para binary (clave)
+        if 2 <= int(t) % 60 <= 3:
             break
 
         time.sleep(0.001)
@@ -102,28 +109,20 @@ def analizar(iq, pair):
 
 
 # ==========================
-# EJECUCIÓN ANTI-RECHAZO
+# EJECUCIÓN BINARY PURA
 # ==========================
 def ejecutar(iq, pair, action):
 
     print(f"🚀 Ejecutando {pair}")
 
-    # 🔥 1. intentar binary
     status, trade_id = iq.buy(MONTO, pair, action, EXPIRACION)
 
-    if status:
-        print("✅ Binary OK")
-        return trade_id
+    if not status:
+        print("❌ Broker rechazó (binary)")
+        return None
 
-    # 🔥 2. fallback digital (CLAVE)
-    trade_id = iq.buy_digital_spot(pair, MONTO, action, EXPIRACION)
-
-    if trade_id:
-        print("✅ Digital OK")
-        return trade_id
-
-    print("❌ Broker rechazó TODO")
-    return None
+    print("✅ Entrada binary OK")
+    return trade_id
 
 
 # ==========================
@@ -141,11 +140,17 @@ def resultado(iq, trade_id):
         if isinstance(result, tuple):
             result = result[0]
 
-        return float(result)
+        if isinstance(result, str):
+            try:
+                result = float(result)
+            except:
+                result = 0
+
+        return result
 
 
 # ==========================
-# BOT
+# BOT PRINCIPAL
 # ==========================
 def run():
 
@@ -153,14 +158,14 @@ def run():
 
     while True:
 
-        print("⏳ Esperando cierre...")
+        print("⏳ Esperando cierre vela...")
         esperar_cierre()
 
         mejor = None
         mejor_pair = None
         mejor_score = 0
 
-        print(f"🔎 Analizando pares...")
+        print("🔎 Analizando pares...")
 
         for pair in PARES:
 
@@ -183,6 +188,7 @@ def run():
 
         print(f"📡 Señal en {mejor_pair}")
 
+        # 🔥 sincronización exacta
         esperar_entrada(iq)
 
         send_message(
