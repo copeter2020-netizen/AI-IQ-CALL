@@ -30,7 +30,7 @@ IQ_EMAIL = os.getenv("IQ_EMAIL")
 IQ_PASSWORD = os.getenv("IQ_PASSWORD")
 
 TIMEFRAME = 60
-MONTO = 7000
+MONTO = 2545
 EXPIRACION = 1
 
 PARES = [
@@ -40,14 +40,14 @@ PARES = [
 
 
 # ==========================
-# 🔥 BLOQUEO TOTAL DIGITAL (FIX REAL)
+# 🔥 BLOQUEO REAL DIGITAL (FIX DEFINITIVO)
 # ==========================
 def bloquear_digital(iq):
     try:
-        iq.api.digital_thread = None
         iq.api.get_digital_underlying_list_data = lambda *a, **k: {"underlying": []}
         iq.api.subscribe_instrument_quites_generated = lambda *a, **k: None
         iq.api.unsubscribe_instrument_quites_generated = lambda *a, **k: None
+        iq.api.digital_thread = None
     except:
         pass
 
@@ -63,17 +63,16 @@ def connect():
         if iq.check_connect():
             bloquear_digital(iq)
             print("✅ Conectado")
-            send_message("✅ BOT ACTIVO")
+            send_message("✅ BOT CONECTADO")
             return iq
 
         time.sleep(5)
 
 
 # ==========================
-# PARES ABIERTOS (ROBUSTO)
+# PARES ABIERTOS
 # ==========================
 def get_open_pairs(iq):
-
     try:
         assets = iq.get_all_open_time()
         abiertos = []
@@ -82,12 +81,7 @@ def get_open_pairs(iq):
             if par in assets["binary"] and assets["binary"][par]["open"]:
                 abiertos.append(par)
 
-        # 🔥 SI FALLA API → USAR LISTA FIJA
-        if not abiertos:
-            print("⚠️ API falló, usando lista fija")
-            return PARES
-
-        return abiertos
+        return abiertos if abiertos else PARES
 
     except:
         return PARES
@@ -101,7 +95,7 @@ def esperar_cierre():
         time.sleep(0.05)
 
 
-def esperar_entrada():
+def esperar_siguiente_vela():
     while int(time.time()) % 60 != 0:
         time.sleep(0.001)
 
@@ -112,51 +106,45 @@ def esperar_entrada():
 def analizar(iq, pair):
     try:
         candles = iq.get_candles(pair, TIMEFRAME, 30, time.time())
+
         if not candles:
             return None
+
         return analyze_market(candles, None, None)
+
     except:
         return None
 
 
 # ==========================
-# 🔥 EJECUCIÓN FORZADA REAL
+# 🔥 EJECUCIÓN EXACTA EN APERTURA
 # ==========================
 def ejecutar(iq, pair, action):
 
-    print(f"🚀 FORZANDO {pair} {action}")
+    print(f"🚀 Entrada {pair} {action}")
+    send_message(f"🚀 {pair} {action}")
 
-    # validar activo en ese segundo
+    # validar activo en ese segundo exacto
     try:
         assets = iq.get_all_open_time()
         if not assets["binary"][pair]["open"]:
-            print("⚠️ Cerrado justo ahora")
+            print("⚠️ Activo cerrado en apertura")
             return None
     except:
         pass
 
-    # 🔥 entrada rápida + reintento
-    for i in range(3):
-        try:
-            status, trade_id = iq.buy(MONTO, pair, action, EXPIRACION)
+    try:
+        status, trade_id = iq.buy(MONTO, pair, action, EXPIRACION)
+    except:
+        return None
 
-            if status:
-                print("✅ Entrada ejecutada")
-                send_message(f"🚀 {pair} {action}")
-                break
-
-        except:
-            pass
-
-        time.sleep(0.2)
-
-    else:
+    if not status:
         print("❌ Broker rechazó")
         return None
 
-    # ==========================
-    # RESULTADO
-    # ==========================
+    print("✅ Entrada ejecutada")
+
+    # resultado
     while True:
         result = iq.check_win_v4(trade_id)
 
@@ -192,33 +180,42 @@ def run():
 
         print(f"🔎 Analizando {len(pares)} pares...")
 
+        señal_detectada = None
+
         for pair in pares:
 
             señal = analizar(iq, pair)
 
-            if not señal:
-                continue
+            if señal:
+                señal_detectada = (pair, señal)
+                break
 
-            action = señal["action"]
-            score = señal["score"]
+        if not señal_detectada:
+            print("⚠️ Sin señal")
+            continue
 
-            print(f"📡 SEÑAL {pair} {action} ({score})")
+        pair, señal = señal_detectada
+        action = señal["action"]
+        score = señal["score"]
 
-            esperar_entrada()
+        print(f"📡 SEÑAL {pair} {action} ({score})")
+        send_message(f"📡 {pair} {action} | Score {score}")
 
-            resultado = ejecutar(iq, pair, action)
+        # 🔥 ENTRAR EN LA SIGUIENTE VELA
+        print("⏭ Esperando apertura de siguiente vela...")
+        esperar_siguiente_vela()
 
-            if resultado is None:
-                continue
+        resultado = ejecutar(iq, pair, action)
 
-            if resultado > 0:
-                print("✅ WIN")
-                send_message("✅ WIN")
-            else:
-                print("❌ LOSS")
-                send_message("❌ LOSS")
+        if resultado is None:
+            continue
 
-            break
+        if resultado > 0:
+            print("✅ WIN")
+            send_message("✅ WIN")
+        else:
+            print("❌ LOSS")
+            send_message("❌ LOSS")
 
 
 if __name__ == "__main__":
