@@ -30,17 +30,22 @@ IQ_EMAIL = os.getenv("IQ_EMAIL")
 IQ_PASSWORD = os.getenv("IQ_PASSWORD")
 
 TIMEFRAME = 60
-MONTO = 2545
+MONTO = 5000
 EXPIRACION = 1
 
 PARES = [
-    "EURUSD","GBPUSD","USDJPY","AUDUSD",
-    "USDCAD","USDCHF","EURGBP","EURJPY"
+    "EURUSD",
+    "GBPUSD",
+    "USDJPY",
+    "AUDUSD",
+    "USDCHF",
+    "EURGBP",
+    "EURJPY"
 ]
 
 
 # ==========================
-# CONEXIÓN (FIX REAL)
+# CONEXIÓN (FIX DIGITAL)
 # ==========================
 def connect():
     while True:
@@ -50,11 +55,12 @@ def connect():
         if iq.check_connect():
             print("✅ Conectado")
 
-            # 🔥 FIX TOTAL DIGITAL (elimina error underlying)
+            # 🔥 BLOQUEO TOTAL DIGITAL
             try:
                 iq.api.digital_underlying_list = {}
                 iq.api.get_digital_underlying_list_data = lambda: {}
                 iq.api.subscribe_digital = lambda *args, **kwargs: None
+                iq.api.get_digital_open = lambda *args, **kwargs: None
             except:
                 pass
 
@@ -65,29 +71,38 @@ def connect():
 
 
 # ==========================
-# VALIDAR ACTIVO REAL
+# PARES ABIERTOS (FIX 0 PARES)
 # ==========================
 def get_open_pairs(iq):
 
     try:
         assets = iq.get_all_open_time()
-        validos = []
+        abiertos = []
 
         for par in PARES:
-            if (
-                par in assets["binary"]
-                and assets["binary"][par]["open"]
-            ):
-                validos.append(par)
+            try:
+                if (
+                    par in assets["binary"]
+                    and assets["binary"][par]["open"]
+                ):
+                    abiertos.append(par)
+            except:
+                continue
 
-        return validos
+        # 🔥 SI FALLA → USAR LISTA
+        if not abiertos:
+            print("⚠️ Broker no respondió, usando lista fija")
+            return PARES
+
+        return abiertos
 
     except:
-        return []
+        print("⚠️ Error obteniendo pares, usando lista fija")
+        return PARES
 
 
 # ==========================
-# TIEMPO PRECISO
+# TIEMPO
 # ==========================
 def esperar_cierre():
     while int(time.time()) % 60 != 59:
@@ -95,11 +110,9 @@ def esperar_cierre():
 
 
 def esperar_entrada_exacta(iq):
-
     while True:
         server_time = iq.get_server_timestamp()
 
-        # 🔥 SEGUNDO IDEAL (NO 0)
         if int(server_time) % 60 == 2:
             break
 
@@ -124,34 +137,33 @@ def analizar(iq, pair):
 
 
 # ==========================
-# EJECUCIÓN REAL (FIX BROKER)
+# EJECUCIÓN
 # ==========================
 def ejecutar(iq, pair, action):
 
     print(f"🚀 Ejecutando {pair} {action}")
 
-    # 🔥 VALIDAR PAGO (EVITA RECHAZO)
+    # 🔥 VALIDAR ACTIVO EN TIEMPO REAL
     try:
-        payout = iq.get_digital_payout(pair)
+        check = iq.get_all_open_time()
+        if not check["binary"][pair]["open"]:
+            print("⚠️ Par cerrado justo ahora")
+            return None
     except:
-        payout = 0
-
-    if payout == 0:
-        print("⚠️ Sin payout válido")
-        return None
+        pass
 
     try:
-        # 🔥 EJECUCIÓN REAL BINARY
         status, trade_id = iq.buy(MONTO, pair, action, EXPIRACION)
-
         time.sleep(0.3)
 
     except Exception as e:
-        print("❌ Error:", e)
+        print("❌ Error ejecución:", e)
+        send_message("❌ Error ejecución")
         return None
 
     if not status:
         print("❌ Broker rechazó")
+        send_message("❌ Broker rechazó")
         return None
 
     send_message(f"🚀 {pair} {action}")
@@ -179,7 +191,7 @@ def ejecutar(iq, pair, action):
 
 
 # ==========================
-# BOT
+# BOT PRINCIPAL
 # ==========================
 def run():
 
@@ -191,10 +203,6 @@ def run():
         esperar_cierre()
 
         pares = get_open_pairs(iq)
-
-        if not pares:
-            print("⚠️ No hay pares abiertos")
-            continue
 
         print(f"🔎 Analizando {len(pares)} pares...")
 
@@ -209,10 +217,9 @@ def run():
             score = señal["score"]
 
             print(f"📡 SEÑAL {pair} {action} ({score})")
-
             send_message(f"📡 {pair} {action} | Score {score}")
 
-            # 🔥 ENTRADA PERFECTA
+            # 🔥 ENTRADA EXACTA
             esperar_entrada_exacta(iq)
 
             resultado = ejecutar(iq, pair, action)
