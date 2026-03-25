@@ -29,7 +29,7 @@ IQ_EMAIL = os.environ.get("IQ_EMAIL")
 IQ_PASSWORD = os.environ.get("IQ_PASSWORD")
 
 TIMEFRAME = 60
-MONTO = 15000
+MONTO = 15500
 EXPIRACION = 1
 
 PARES = [
@@ -50,19 +50,22 @@ def connect():
         time.sleep(5)
 
 
-# 🔥 ESPERA APERTURA EXACTA
-def esperar_apertura_exacta(iq):
-    while True:
-        t = iq.get_server_timestamp()
-        if int(t) % 60 == 0:
-            break
-        time.sleep(0.001)
-
-
 # 🔥 ESPERA CIERRE VELA
 def esperar_cierre():
     while int(time.time()) % 60 != 59:
         time.sleep(0.01)
+
+
+# 🔥 ENTRADA REAL (SEGUNDO 1 → EVITA RECHAZO)
+def esperar_entrada_real(iq):
+    while True:
+        t = iq.get_server_timestamp()
+
+        # 👉 entra en segundo 1 (NO en 0)
+        if int(t) % 60 == 1:
+            break
+
+        time.sleep(0.001)
 
 
 def analizar(iq, pair):
@@ -84,16 +87,16 @@ def ejecutar_operacion(iq, pair, action):
     data = silent(iq.buy, MONTO, pair, action, EXPIRACION)
 
     if not data or not isinstance(data, tuple):
-        print("❌ No entró")
+        print("❌ Fallo ejecución")
         return None
 
     status, trade_id = data
 
     if not status:
-        print("❌ Rechazada")
+        print("❌ Entrada rechazada (broker)")
         return None
 
-    print("✅ Entrada OK")
+    print("✅ Entrada confirmada")
     return trade_id
 
 
@@ -153,11 +156,11 @@ def run():
 
         print(f"📡 Señal en {mejor_pair}")
 
-        # 🔥 ENTRADA EXACTA
-        esperar_apertura_exacta(iq)
+        # 🔥 ENTRADA REAL CORREGIDA
+        esperar_entrada_real(iq)
 
         send_message(
-            f"📊 CALL {mejor_pair}\n⏱ 1m\n📊 Score: {mejor_score}\n🟢 Vela verde confirmada"
+            f"📊 CALL {mejor_pair}\n⏱ 1m\n📊 Score: {mejor_score}\n🟢 Entrada válida"
         )
 
         trade_id = ejecutar_operacion(iq, mejor_pair, action)
