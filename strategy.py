@@ -1,99 +1,123 @@
 import pandas as pd
 
 
-def ema(values, period):
-    return pd.Series(values).ewm(span=period).mean().tolist()
+# ==========================
+# UTILIDADES
+# ==========================
+def body(c):
+    return abs(c["close"] - c["open"])
 
 
-def fuerza_vela(c):
-    cuerpo = abs(c["close"] - c["open"])
-    rango = c["max"] - c["min"]
+def candle_range(c):
+    return c["max"] - c["min"]
 
-    if rango == 0:
+
+def is_bearish(c):
+    return c["close"] < c["open"]
+
+
+# ==========================
+# FUERZA REAL
+# ==========================
+def fuerza(c):
+    r = candle_range(c)
+    if r == 0:
         return 0
+    return body(c) / r
 
-    return cuerpo / rango
+
+# ==========================
+# CONTAR VELAS ROJAS
+# ==========================
+def contar_rojas(df):
+    count = 0
+    for i in range(len(df)-1, -1, -1):
+        if is_bearish(df.iloc[i]):
+            count += 1
+        else:
+            break
+    return count
 
 
-def es_retroceso(c1, c2):
-    # vela roja débil después de verde fuerte
+# ==========================
+# TENDENCIA BAJISTA REAL
+# ==========================
+def tendencia_bajista(df):
+
+    ultimas = df.tail(6)
+
+    rojas = sum(1 for i in range(len(ultimas)) if is_bearish(ultimas.iloc[i]))
+
+    lower_highs = True
+
+    for i in range(1, len(ultimas)):
+        if ultimas.iloc[i]["max"] > ultimas.iloc[i-1]["max"]:
+            lower_highs = False
+
+    return rojas >= 4 and lower_highs
+
+
+# ==========================
+# IMPULSO BAJISTA
+# ==========================
+def impulso(df):
     return (
-        c1["close"] < c1["open"] and
-        (abs(c1["close"] - c1["open"]) < abs(c2["close"] - c2["open"]))
+        is_bearish(df.iloc[-1]) and
+        is_bearish(df.iloc[-2])
     )
 
 
-def analyze_market(candles, c5, c15):
+# ==========================
+# CONFIRMACIÓN FUERTE
+# ==========================
+def confirmacion(c):
+
+    f = fuerza(c)
+
+    upper = c["max"] - max(c["close"], c["open"])
+
+    return (
+        is_bearish(c)
+        and f > 0.5
+        and upper < body(c) * 0.5
+    )
+
+
+# ==========================
+# FUNCIÓN PRINCIPAL
+# ==========================
+def analyze_market(c1, c5, c15):
 
     try:
-        if len(candles) < 20:
+
+        df = pd.DataFrame(c1)
+
+        if len(df) < 25:
             return None
 
-        closes = [c["close"] for c in candles]
+        last = df.iloc[-1]
 
-        ema20 = ema(closes, 20)
-        ema8 = ema(closes, 8)
-
-        last = candles[-1]
-        prev = candles[-2]
-        prev2 = candles[-3]
-
-        # ==========================
-        # FILTRO TENDENCIA
-        # ==========================
-        if closes[-1] < ema20[-1]:
+        # 🔴 BLOQUEOS
+        if not tendencia_bajista(df):
             return None
 
-        if ema8[-1] < ema20[-1]:
+        if not impulso(df):
             return None
 
-        # ==========================
-        # ESTRUCTURA ALCISTA
-        # ==========================
-        if not (last["close"] > prev["close"]):
+        rojas = contar_rojas(df)
+
+        # 🔴 SOLO PRIMERA O SEGUNDA
+        if rojas > 2:
             return None
 
-        # ==========================
-        # RETROCESO INSTITUCIONAL
-        # ==========================
-        retroceso = es_retroceso(prev, prev2)
-
-        # ==========================
-        # CONTINUIDAD O REENTRADA
-        # ==========================
-        if not (
-            # impulso directo
-            (last["close"] > last["open"] and fuerza_vela(last) > 0.5)
-
-            # o retroceso + ruptura
-            or (
-                retroceso and
-                last["close"] > prev["open"]
-            )
-        ):
+        if not confirmacion(last):
             return None
 
-        # ==========================
-        # EVITAR SOBRECOMPRA
-        # ==========================
-        rango = last["max"] - candles[-6]["min"]
-
-        if rango > (last["max"] - last["min"]) * 5:
-            return None
-
-        # ==========================
-        # SCORE INSTITUCIONAL
-        # ==========================
-        score = 0
-
-        score += 2 if last["close"] > ema8[-1] else 0
-        score += 2 if fuerza_vela(last) > 0.6 else 1
-        score += 1 if retroceso else 0
+        score = fuerza(last)
 
         return {
-            "action": "call",
-            "score": score,
-            "tipo": "institucional"
+            "action": "put",
+            "score": score
         }
 
     except:
