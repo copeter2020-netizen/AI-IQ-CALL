@@ -1,8 +1,27 @@
 import pandas as pd
 
 
-def ema(values, period):
-    return pd.Series(values).ewm(span=period).mean().tolist()
+# ==========================
+# INDICADORES
+# ==========================
+def bollinger(df, period=20):
+    ma = df["close"].rolling(period).mean()
+    std = df["close"].rolling(period).std()
+    upper = ma + (2 * std)
+    lower = ma - (2 * std)
+    return upper, lower
+
+
+def atr(df, period=14):
+    df["tr"] = df["max"] - df["min"]
+    return df["tr"].rolling(period).mean()
+
+
+def stochastic(df, k_period=14):
+    low_min = df["min"].rolling(k_period).min()
+    high_max = df["max"].rolling(k_period).max()
+    k = 100 * (df["close"] - low_min) / (high_max - low_min)
+    return k
 
 
 def fuerza(c):
@@ -13,75 +32,88 @@ def fuerza(c):
     return cuerpo / rango
 
 
-def is_bullish(c):
-    return c["close"] > c["open"]
+# ==========================
+# SOPORTE / RESISTENCIA
+# ==========================
+def soporte_resistencia(df):
+    soporte = df["min"].rolling(20).min().iloc[-1]
+    resistencia = df["max"].rolling(20).max().iloc[-1]
+    return soporte, resistencia
 
 
-def is_bearish(c):
-    return c["close"] < c["open"]
-
-
-def liquidity_sweep_high(prev, last):
-    return last["max"] > prev["max"] and last["close"] < prev["max"]
-
-
-def liquidity_sweep_low(prev, last):
-    return last["min"] < prev["min"] and last["close"] > prev["min"]
-
-
+# ==========================
+# ESTRATEGIA
+# ==========================
 def analyze_market(candles, c5, c15):
 
     try:
-        if len(candles) < 30:
+        df = pd.DataFrame(candles)
+
+        if len(df) < 30:
             return None
 
-        closes = [c["close"] for c in candles]
+        df["bb_upper"], df["bb_lower"] = bollinger(df)
+        df["atr"] = atr(df)
+        df["stoch"] = stochastic(df)
 
-        ema20 = ema(closes, 20)
-        ema8 = ema(closes, 8)
+        soporte, resistencia = soporte_resistencia(df)
 
-        last = candles[-1]
-        prev = candles[-2]
-        prev2 = candles[-3]
-
-        alcista = ema8[-1] > ema20[-1]
-        bajista = ema8[-1] < ema20[-1]
+        last = df.iloc[-1]
+        prev = df.iloc[-2]
 
         # ==========================
-        # HEDGE FUND BUY (CALL)
+        # FILTRO SOPORTE/RESISTENCIA
         # ==========================
-        if alcista:
+        rango_sr = (resistencia - soporte) * 0.1
 
-            if (
-                liquidity_sweep_low(prev, last) and
-                is_bullish(last) and
-                fuerza(last) > 0.5 and
-                last["close"] > prev["open"]
-            ):
-                return {
-                    "action": "call",
-                    "score": 6,
-                    "tipo": "liquidity_buy"
-                }
+        if abs(last["close"] - soporte) < rango_sr:
+            return None
+
+        if abs(last["close"] - resistencia) < rango_sr:
+            return None
 
         # ==========================
-        # HEDGE FUND SELL (PUT)
+        # CONTINUIDAD + FUERZA
         # ==========================
-        if bajista:
+        if not (last["close"] > prev["close"] or last["close"] < prev["close"]):
+            return None
 
-            if (
-                liquidity_sweep_high(prev, last) and
-                is_bearish(last) and
-                fuerza(last) > 0.5 and
-                last["close"] < prev["open"]
-            ):
-                return {
-                    "action": "put",
-                    "score": 6,
-                    "tipo": "liquidity_sell"
-                }
+        if fuerza(last) < 0.5:
+            return None
 
-        return None
+        # ==========================
+        # ATR (VOLATILIDAD)
+        # ==========================
+        if last["atr"] < df["atr"].mean():
+            return None
+
+        # ==========================
+        # STOCHASTIC
+        # ==========================
+        if last["stoch"] > 80:
+            action = "put"
+        elif last["stoch"] < 20:
+            action = "call"
+        else:
+            return None
+
+        # ==========================
+        # BOLLINGER
+        # ==========================
+        if action == "call":
+            if last["close"] < last["bb_lower"]:
+                return None
+        else:
+            if last["close"] > last["bb_upper"]:
+                return None
+
+        # ==========================
+        # TODAS LAS CONDICIONES
+        # ==========================
+        return {
+            "action": action,
+            "score": 10
+        }
 
     except:
         return None
