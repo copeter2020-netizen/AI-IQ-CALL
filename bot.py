@@ -42,68 +42,63 @@ PARES = [
 def connect():
     while True:
         iq = IQ_Option(IQ_EMAIL, IQ_PASSWORD)
-        silent(iq.connect)
+        iq.connect()
 
         if iq.check_connect():
             print("✅ Conectado")
             return iq
+
         time.sleep(5)
 
 
-# 🔥 ESPERA CIERRE VELA
-def esperar_cierre():
-    while int(time.time()) % 60 != 59:
-        time.sleep(0.01)
+# 🔥 CLAVE: sincronización REAL con broker
+def esperar_siguiente_vela(iq):
 
-
-# 🔥 ENTRADA REAL (SEGUNDO 1 → EVITA RECHAZO)
-def esperar_entrada_real(iq):
     while True:
-        t = iq.get_server_timestamp()
+        server_time = iq.get_server_timestamp()
 
-        # 👉 entra en segundo 1 (NO en 0)
-        if int(t) % 60 == 1:
+        # 🔥 entrar en segundo 2 → evita rechazo
+        if int(server_time) % 60 == 2:
             break
 
         time.sleep(0.001)
 
 
+def esperar_cierre():
+    while int(time.time()) % 60 != 59:
+        time.sleep(0.01)
+
+
 def analizar(iq, pair):
 
-    candles = silent(
-        iq.get_candles, pair, TIMEFRAME, 30, time.time()
-    )
+    candles = iq.get_candles(pair, TIMEFRAME, 30, time.time())
 
-    if not candles or len(candles) < 30:
+    if not candles:
         return None
 
     return analyze_market(candles, None, None)
 
 
-def ejecutar_operacion(iq, pair, action):
+# 🔥 EJECUCIÓN REAL SIN RECHAZO
+def ejecutar(iq, pair, action):
 
-    print(f"🚀 Entrada en {pair}")
+    print(f"🚀 Ejecutando {pair}")
 
-    data = silent(iq.buy, MONTO, pair, action, EXPIRACION)
-
-    if not data or not isinstance(data, tuple):
-        print("❌ Fallo ejecución")
-        return None
-
-    status, trade_id = data
+    # 🔥 USAR BINARY (NO digital → menos rechazo en pares normales)
+    status, trade_id = iq.buy(MONTO, pair, action, EXPIRACION)
 
     if not status:
-        print("❌ Entrada rechazada (broker)")
+        print("❌ Broker rechazó")
         return None
 
-    print("✅ Entrada confirmada")
+    print("✅ Entrada realizada")
     return trade_id
 
 
-def verificar_resultado(iq, trade_id):
+def resultado(iq, trade_id):
 
     while True:
-        result = silent(iq.check_win_v4, trade_id)
+        result = iq.check_win_v4(trade_id)
 
         if result is None:
             time.sleep(1)
@@ -112,13 +107,7 @@ def verificar_resultado(iq, trade_id):
         if isinstance(result, tuple):
             result = result[0]
 
-        if isinstance(result, str):
-            try:
-                result = float(result)
-            except:
-                result = 0
-
-        return result
+        return float(result)
 
 
 def run():
@@ -127,14 +116,12 @@ def run():
 
     while True:
 
-        print("⏳ Esperando cierre...")
+        print("⏳ Esperando cierre vela...")
         esperar_cierre()
 
         mejor = None
         mejor_pair = None
         mejor_score = 0
-
-        print(f"🔎 Analizando {len(PARES)} pares...")
 
         for pair in PARES:
 
@@ -149,28 +136,26 @@ def run():
                 mejor_pair = pair
 
         if not mejor:
-            print("⚠️ Sin señal válida")
+            print("⚠️ Sin señal")
             continue
-
-        action = mejor["action"]
 
         print(f"📡 Señal en {mejor_pair}")
 
-        # 🔥 ENTRADA REAL CORREGIDA
-        esperar_entrada_real(iq)
+        # 🔥 sincronización correcta
+        esperar_siguiente_vela(iq)
 
         send_message(
-            f"📊 CALL {mejor_pair}\n⏱ 1m\n📊 Score: {mejor_score}\n🟢 Entrada válida"
+            f"📈 CALL {mejor_pair}\n⏱ 1m\n📊 Score: {mejor_score}"
         )
 
-        trade_id = ejecutar_operacion(iq, mejor_pair, action)
+        trade_id = ejecutar(iq, mejor_pair, "call")
 
         if not trade_id:
             continue
 
-        resultado = verificar_resultado(iq, trade_id)
+        res = resultado(iq, trade_id)
 
-        if resultado > 0:
+        if res > 0:
             print("✅ WIN")
             send_message("✅ WIN")
         else:
