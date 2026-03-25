@@ -7,7 +7,7 @@ from telegram_bot import send_message
 
 
 # ==========================
-# SILENCIAR ERRORES
+# SILENCIAR
 # ==========================
 class DevNull:
     def write(self, msg): pass
@@ -57,17 +57,17 @@ def connect():
 
 
 # ==========================
-# TIEMPO EXACTO
+# TIEMPO SNIPER
 # ==========================
 def esperar_cierre():
     while int(time.time()) % 60 != 59:
-        time.sleep(0.03)
+        time.sleep(0.02)
 
 
-def esperar_apertura_pro():
+def esperar_apertura_sniper():
     while True:
         t = time.time()
-        if int(t) % 60 == 0 and (t - int(t)) < 0.2:
+        if int(t) % 60 == 0 and (t - int(t)) < 0.15:
             break
 
 
@@ -87,15 +87,12 @@ def analizar(iq):
 
 
 # ==========================
-# EJECUCIÓN FORZADA
+# EJECUCIÓN
 # ==========================
 def ejecutar(iq, action):
 
-    # 🔥 solo CALL
-    action = "call"
-
-    print("🚀 EJECUTANDO CALL")
-    send_message(f"🚀 CALL {PAR}")
+    print(f"🚀 EJECUTANDO {action.upper()}")
+    send_message(f"🚀 {action.upper()} {PAR}")
 
     status, trade_id = silent(
         iq.buy, MONTO, PAR, action, EXPIRACION
@@ -106,7 +103,7 @@ def ejecutar(iq, action):
         return None
 
     # ==========================
-    # RESULTADO FIX TOTAL
+    # RESULTADO
     # ==========================
     while True:
         result = silent(iq.check_win_v4, trade_id)
@@ -141,21 +138,22 @@ def run():
         señal = analizar(iq)
 
         if not señal:
-            print("⚠️ Sin señal institucional...")
+            print("⚠️ Sin señal sniper...")
             continue
 
-        score = señal["score"]
+        action = señal["action"]
+        tipo = señal["tipo"]
 
-        print(f"🎯 CALL INSTITUCIONAL | score {score}")
+        print(f"🎯 {action.upper()} | {tipo}")
 
-        # 🔥 ENTRADA EXACTA
-        esperar_apertura_pro()
+        # 🔥 ENTRADA SNIPER
+        esperar_apertura_sniper()
 
         send_message(
-            f"📊 CALL {PAR}\n⏱ 1m\n🏦 MODO INSTITUCIONAL\n📊 Score: {score}"
+            f"📊 {action.upper()} {PAR}\n⏱ 1m\n🎯 SNIPER INSTITUCIONAL\n📌 {tipo}"
         )
 
-        resultado = ejecutar(iq, "call")
+        resultado = ejecutar(iq, action)
 
         if resultado is None:
             continue
