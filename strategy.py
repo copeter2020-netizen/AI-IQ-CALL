@@ -35,29 +35,6 @@ def tendencia_alcista(df):
     verdes = sum(1 for i in range(len(ultimas)) if is_bullish(ultimas.iloc[i]))
     return verdes >= 3
 
-def calcular_score(df, soporte):
-
-    last = df.iloc[-1]
-    score = 0
-
-    if tendencia_alcista(df):
-        score += 2
-
-    if fuerza(last) > 0.4:
-        score += 1
-
-    if last["close"] > last["ema"]:
-        score += 1
-
-    if last["rsi"] > 50:
-        score += 1
-
-    if last["close"] > soporte:
-        score += 1
-
-    return score
-
-
 def analyze_market(c1, c5, c15):
 
     try:
@@ -73,11 +50,26 @@ def analyze_market(c1, c5, c15):
 
         last = df.iloc[-1]
 
-        # 🔥 CONDICIÓN CLAVE: vela debe cerrar verde
+        # 🔥 SOLO SI LA VELA CIERRA VERDE
         if not is_bullish(last):
             return None
 
-        score = calcular_score(df, soporte)
+        score = 0
+
+        if tendencia_alcista(df):
+            score += 2
+
+        if fuerza(last) > 0.4:
+            score += 1
+
+        if last["close"] > last["ema"]:
+            score += 1
+
+        if last["rsi"] > 50:
+            score += 1
+
+        if last["close"] > soporte:
+            score += 1
 
         if score >= 4:
             return {
