@@ -51,13 +51,12 @@ PARES = [
 def connect():
     while True:
         iq = IQ_Option(IQ_EMAIL, IQ_PASSWORD)
-
         iq.connect()
 
         if iq.check_connect():
             print("✅ Conectado")
 
-            # 🔥 BLOQUEAR DIGITAL (FIX ERROR)
+            # 🔥 bloquear digital (evita error underlying)
             try:
                 iq.api.digital_underlying_list = {}
             except:
@@ -70,7 +69,7 @@ def connect():
 
 
 # ==========================
-# PARES ABIERTOS (SOLO BINARY)
+# PARES ABIERTOS
 # ==========================
 def get_open_pairs(iq):
 
@@ -79,10 +78,7 @@ def get_open_pairs(iq):
         abiertos = []
 
         for par in PARES:
-            if (
-                par in assets["binary"]
-                and assets["binary"][par]["open"]
-            ):
+            if par in assets["binary"] and assets["binary"][par]["open"]:
                 abiertos.append(par)
 
         return abiertos if abiertos else PARES
@@ -92,16 +88,24 @@ def get_open_pairs(iq):
 
 
 # ==========================
-# TIEMPO EXACTO
+# TIEMPO
 # ==========================
 def esperar_cierre():
     while int(time.time()) % 60 != 59:
         time.sleep(0.05)
 
 
-def esperar_apertura():
-    while int(time.time()) % 60 != 0:
-        time.sleep(0.01)
+# 🔥 SINCRONIZACIÓN REAL (FIX BROKER)
+def esperar_siguiente_vela(iq):
+
+    while True:
+        server_time = iq.get_server_timestamp()
+
+        # 🔥 ENTRADA EXACTA SEGUNDO 2
+        if int(server_time) % 60 == 2:
+            break
+
+        time.sleep(0.001)
 
 
 # ==========================
@@ -122,7 +126,7 @@ def analizar(iq, pair):
 
 
 # ==========================
-# EJECUCIÓN FORZADA (BINARY)
+# EJECUCIÓN (ARREGLADA)
 # ==========================
 def ejecutar(iq, pair, action):
 
@@ -130,8 +134,10 @@ def ejecutar(iq, pair, action):
     send_message(f"🚀 {pair} {action}")
 
     try:
-        # 🔥 SOLO BINARY (FIX REAL)
         status, trade_id = iq.buy(MONTO, pair, action, EXPIRACION)
+
+        # 🔥 pequeño delay anti-rechazo
+        time.sleep(0.2)
 
     except Exception as e:
         print("❌ Error ejecución:", e)
@@ -194,8 +200,8 @@ def run():
             print(f"📡 SEÑAL {pair} {action} ({score})")
             send_message(f"📡 {pair} {action} | Score {score}")
 
-            # 🔥 ENTRAR SIGUIENTE VELA
-            esperar_apertura()
+            # 🔥 ENTRADA PERFECTA (CLAVE)
+            esperar_siguiente_vela(iq)
 
             resultado = ejecutar(iq, pair, action)
 
