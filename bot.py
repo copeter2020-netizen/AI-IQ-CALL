@@ -6,6 +6,9 @@ from strategy import analyze_market
 from telegram_bot import send_message
 
 
+# ==========================
+# SILENCIAR ERRORES
+# ==========================
 class DevNull:
     def write(self, msg): pass
     def flush(self): pass
@@ -25,6 +28,9 @@ def silent(func, *args, **kwargs):
         sys.stderr = old_stderr
 
 
+# ==========================
+# CONFIG
+# ==========================
 IQ_EMAIL = os.environ.get("IQ_EMAIL")
 IQ_PASSWORD = os.environ.get("IQ_PASSWORD")
 
@@ -35,51 +41,39 @@ EXPIRACION = 1
 PAR = "EURUSD-OTC"
 
 
+# ==========================
+# CONEXIÓN
+# ==========================
 def connect():
     while True:
         iq = IQ_Option(IQ_EMAIL, IQ_PASSWORD)
         silent(iq.connect)
+
         if iq.check_connect():
             print("✅ Conectado")
             return iq
+
         time.sleep(5)
 
 
+# ==========================
+# TIEMPO EXACTO
+# ==========================
 def esperar_cierre():
     while int(time.time()) % 60 != 59:
-        time.sleep(0.05)
+        time.sleep(0.03)
 
 
-def esperar_apertura():
-    while int(time.time()) % 60 != 0:
-        time.sleep(0.01)
-
-
-def contar_color(candles):
-    count = 0
-    tipo = None
-
-    for i in range(len(candles)-1, -1, -1):
-        c = candles[i]
-
-        if c["close"] > c["open"]:
-            if tipo in [None, "verde"]:
-                tipo = "verde"
-                count += 1
-            else:
-                break
-        elif c["close"] < c["open"]:
-            if tipo in [None, "roja"]:
-                tipo = "roja"
-                count += 1
-            else:
-                break
-        else:
+def esperar_apertura_pro():
+    while True:
+        t = time.time()
+        if int(t) % 60 == 0 and (t - int(t)) < 0.2:
             break
 
-    return tipo, count
 
-
+# ==========================
+# ANALIZAR
+# ==========================
 def analizar(iq):
 
     candles = silent(
@@ -89,61 +83,84 @@ def analizar(iq):
     if not candles:
         return None
 
-    tipo, count = contar_color(candles)
-
-    # 🔥 SOLO 2DA O 3RA CONTINUIDAD (VERDE O ROJA)
-    if count < 2 or count > 3:
-        return None
-
     return analyze_market(candles, None, None)
 
 
+# ==========================
+# EJECUCIÓN FORZADA
+# ==========================
+def ejecutar(iq, action):
+
+    # 🔥 solo CALL
+    action = "call"
+
+    print("🚀 EJECUTANDO CALL")
+    send_message(f"🚀 CALL {PAR}")
+
+    status, trade_id = silent(
+        iq.buy, MONTO, PAR, action, EXPIRACION
+    )
+
+    if not status:
+        print("❌ Broker rechazó")
+        return None
+
+    # ==========================
+    # RESULTADO FIX TOTAL
+    # ==========================
+    while True:
+        result = silent(iq.check_win_v4, trade_id)
+
+        if result is None:
+            time.sleep(1)
+            continue
+
+        try:
+            if isinstance(result, tuple):
+                result = result[0]
+
+            result = float(result)
+        except:
+            result = 0
+
+        return result
+
+
+# ==========================
+# BOT
+# ==========================
 def run():
 
     iq = connect()
 
     while True:
 
-        print("⏳ Esperando cierre...")
+        print("⏳ Esperando cierre vela...")
         esperar_cierre()
 
         señal = analizar(iq)
 
         if not señal:
-            print("⚠️ Esperando continuidad...")
+            print("⚠️ Sin señal institucional...")
             continue
 
-        action = señal["action"]
         score = señal["score"]
 
-        print(f"🎯 {PAR} {action} (score {score})")
+        print(f"🎯 CALL INSTITUCIONAL | score {score}")
 
-        esperar_apertura()
+        # 🔥 ENTRADA EXACTA
+        esperar_apertura_pro()
 
         send_message(
-            f"📊 {action.upper()} {PAR}\n⏱ 1m\n📊 Score: {score}\n🔥 Continuidad fuerte"
+            f"📊 CALL {PAR}\n⏱ 1m\n🏦 MODO INSTITUCIONAL\n📊 Score: {score}"
         )
 
-        status, trade_id = silent(
-            iq.buy, MONTO, PAR, action, EXPIRACION
-        )
+        resultado = ejecutar(iq, "call")
 
-        if not status:
+        if resultado is None:
             continue
 
-        while True:
-            result = silent(iq.check_win_v4, trade_id)
-
-            if result is None:
-                time.sleep(1)
-                continue
-
-            if isinstance(result, tuple):
-                result = result[0]
-
-            break
-
-        if result > 0:
+        if resultado > 0:
             print("✅ WIN")
             send_message("✅ WIN")
         else:
