@@ -7,11 +7,14 @@ from telegram_bot import send_message
 
 
 # ==========================
-# SILENCIAR LOGS
+# 🔥 BLOQUEAR ERRORES INTERNOS (CLAVE)
 # ==========================
 class DevNull:
     def write(self, msg): pass
     def flush(self): pass
+
+
+sys.stderr = DevNull()
 
 
 def silent(func, *args, **kwargs):
@@ -28,7 +31,7 @@ IQ_EMAIL = os.environ.get("IQ_EMAIL")
 IQ_PASSWORD = os.environ.get("IQ_PASSWORD")
 
 TIMEFRAME = 60
-MONTO = 5000
+MONTO = 2545
 EXPIRACION = 1
 
 PARES = [
@@ -54,8 +57,13 @@ def connect():
         if iq.check_connect():
             print("✅ Conectado")
 
-            # 🔥 IMPORTANTE: tipo de cuenta
-            iq.change_balance("PRACTICE")  # o "REAL"
+            iq.change_balance("PRACTICE")
+
+            # 🔥 DESACTIVAR DIGITAL STREAM (SOLUCIÓN ERROR)
+            try:
+                iq.api.digital_underlying_list_data = {}
+            except:
+                pass
 
             return iq
 
@@ -67,7 +75,7 @@ def connect():
 # ==========================
 def activo_disponible(iq, pair):
 
-    assets = iq.get_all_open_time()
+    assets = silent(iq.get_all_open_time)
 
     try:
         return assets["binary"][pair]["open"]
@@ -76,14 +84,13 @@ def activo_disponible(iq, pair):
 
 
 # ==========================
-# SINCRONIZACIÓN EXACTA
+# SINCRONIZACIÓN
 # ==========================
 def esperar_entrada(iq):
 
     while True:
         t = iq.get_server_timestamp()
 
-        # 🔥 ventana exacta para binary (clave)
         if 2 <= int(t) % 60 <= 3:
             break
 
@@ -100,7 +107,9 @@ def esperar_cierre():
 # ==========================
 def analizar(iq, pair):
 
-    candles = iq.get_candles(pair, TIMEFRAME, 30, time.time())
+    candles = silent(
+        iq.get_candles, pair, TIMEFRAME, 30, time.time()
+    )
 
     if not candles:
         return None
@@ -109,7 +118,7 @@ def analizar(iq, pair):
 
 
 # ==========================
-# EJECUCIÓN BINARY PURA
+# EJECUCIÓN BINARY
 # ==========================
 def ejecutar(iq, pair, action):
 
@@ -118,10 +127,10 @@ def ejecutar(iq, pair, action):
     status, trade_id = iq.buy(MONTO, pair, action, EXPIRACION)
 
     if not status:
-        print("❌ Broker rechazó (binary)")
+        print("❌ Broker rechazó")
         return None
 
-    print("✅ Entrada binary OK")
+    print("✅ Entrada OK")
     return trade_id
 
 
@@ -140,17 +149,11 @@ def resultado(iq, trade_id):
         if isinstance(result, tuple):
             result = result[0]
 
-        if isinstance(result, str):
-            try:
-                result = float(result)
-            except:
-                result = 0
-
-        return result
+        return float(result)
 
 
 # ==========================
-# BOT PRINCIPAL
+# BOT
 # ==========================
 def run():
 
@@ -158,14 +161,12 @@ def run():
 
     while True:
 
-        print("⏳ Esperando cierre vela...")
+        print("⏳ Esperando cierre...")
         esperar_cierre()
 
         mejor = None
         mejor_pair = None
         mejor_score = 0
-
-        print("🔎 Analizando pares...")
 
         for pair in PARES:
 
@@ -183,12 +184,11 @@ def run():
                 mejor_pair = pair
 
         if not mejor:
-            print("⚠️ Sin señal válida")
+            print("⚠️ Sin señal")
             continue
 
         print(f"📡 Señal en {mejor_pair}")
 
-        # 🔥 sincronización exacta
         esperar_entrada(iq)
 
         send_message(
