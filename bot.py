@@ -30,36 +30,42 @@ IQ_EMAIL = os.getenv("IQ_EMAIL")
 IQ_PASSWORD = os.getenv("IQ_PASSWORD")
 
 TIMEFRAME = 60
-MONTO = 5000
+MONTO = 7000
 EXPIRACION = 1
 
 PARES = [
-    "EURUSD","GBPUSD","USDJPY","AUDUSD",
-    "USDCAD","USDCHF","EURGBP","EURJPY"
+    "EURUSD",
+    "GBPUSD",
+    "USDJPY",
+    "AUDUSD",
+    "USDCAD",
+    "USDCHF",
+    "EURGBP",
+    "EURJPY"
 ]
 
 
 # ==========================
-# CONEXIÓN (BLOQUEO TOTAL DIGITAL)
+# CONEXIÓN (FIX DEFINITIVO DIGITAL)
 # ==========================
 def connect():
     while True:
         iq = IQ_Option(IQ_EMAIL, IQ_PASSWORD)
+
+        # 🔥 BLOQUEO TOTAL DEL DIGITAL (ANTES DE CONECTAR)
+        try:
+            iq.api.digital_thread = None
+            iq.api.get_digital_open = lambda *args, **kwargs: None
+            iq.api.get_digital_underlying_list_data = lambda *args, **kwargs: {"underlying": []}
+            iq.api.subscribe_digital = lambda *args, **kwargs: None
+            iq.api.unsubscribe_digital = lambda *args, **kwargs: None
+        except:
+            pass
+
         iq.connect()
 
         if iq.check_connect():
             print("✅ Conectado")
-
-            # 🔥 BLOQUEO AGRESIVO DIGITAL (ERROR UNDERLYING)
-            try:
-                iq.api.digital_underlying_list = {}
-                iq.api.get_digital_underlying_list_data = lambda: {}
-                iq.api.subscribe_digital = lambda *args, **kwargs: None
-                iq.api.get_digital_open = lambda *args, **kwargs: None
-                iq.api.get_digital_payout = lambda *args, **kwargs: 0
-            except:
-                pass
-
             send_message("✅ BOT ACTIVO")
             return iq
 
@@ -75,7 +81,9 @@ def esperar_cierre():
 
 
 def esperar_entrada():
-    while int(time.time()) % 60 != 1:
+    while True:
+        if int(time.time()) % 60 == 0:
+            break
         time.sleep(0.001)
 
 
@@ -93,31 +101,23 @@ def analizar(iq, pair):
 
 
 # ==========================
-# EJECUCIÓN FORZADA
+# EJECUCIÓN FORZADA REAL
 # ==========================
 def ejecutar(iq, pair, action):
 
-    print(f"🚀 FORZANDO ENTRADA {pair} {action}")
-    send_message(f"🚀 ENTRADA {pair} {action}")
+    print(f"🚀 EJECUTANDO {pair} {action}")
+    send_message(f"🚀 {pair} {action}")
 
     trade_id = None
 
-    # 🔥 INTENTO DIRECTO SIN VALIDACIONES
-    for i in range(2):
-        try:
-            status, trade_id = iq.buy(MONTO, pair, action, EXPIRACION)
+    try:
+        status, trade_id = iq.buy(MONTO, pair, action, EXPIRACION)
+    except Exception as e:
+        print("❌ Error ejecución:", e)
+        return None
 
-            if status:
-                break
-
-        except:
-            pass
-
-        time.sleep(0.2)
-
-    if not trade_id:
-        print("❌ No se pudo ejecutar")
-        send_message("❌ No ejecutó")
+    if not status:
+        print("❌ Broker rechazó")
         return None
 
     # ==========================
@@ -143,7 +143,7 @@ def ejecutar(iq, pair, action):
 
 
 # ==========================
-# BOT
+# BOT PRINCIPAL
 # ==========================
 def run():
 
@@ -167,10 +167,9 @@ def run():
             score = señal["score"]
 
             print(f"📡 SEÑAL {pair} {action} ({score})")
-
             send_message(f"📡 {pair} {action} | Score {score}")
 
-            # 🔥 ENTRADA INMEDIATA SIGUIENTE VELA
+            # 🔥 ENTRADA EXACTA EN NUEVA VELA
             esperar_entrada()
 
             resultado = ejecutar(iq, pair, action)
