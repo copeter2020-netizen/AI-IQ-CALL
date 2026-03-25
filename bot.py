@@ -35,7 +35,7 @@ IQ_EMAIL = os.environ.get("IQ_EMAIL")
 IQ_PASSWORD = os.environ.get("IQ_PASSWORD")
 
 TIMEFRAME = 60
-MONTO = 1000
+MONTO = 1500
 EXPIRACION = 1
 
 PAR = "EURUSD-OTC"
@@ -57,14 +57,14 @@ def connect():
 
 
 # ==========================
-# TIEMPO SNIPER
+# TIEMPO PRECISO
 # ==========================
 def esperar_cierre():
     while int(time.time()) % 60 != 59:
         time.sleep(0.02)
 
 
-def esperar_apertura_sniper():
+def esperar_apertura():
     while True:
         t = time.time()
         if int(t) % 60 == 0 and (t - int(t)) < 0.15:
@@ -77,7 +77,7 @@ def esperar_apertura_sniper():
 def analizar(iq):
 
     candles = silent(
-        iq.get_candles, PAR, TIMEFRAME, 30, time.time()
+        iq.get_candles, PAR, TIMEFRAME, 40, time.time()
     )
 
     if not candles:
@@ -87,7 +87,7 @@ def analizar(iq):
 
 
 # ==========================
-# EJECUCIÓN
+# EJECUTAR
 # ==========================
 def ejecutar(iq, action):
 
@@ -102,9 +102,6 @@ def ejecutar(iq, action):
         print("❌ Broker rechazó")
         return None
 
-    # ==========================
-    # RESULTADO
-    # ==========================
     while True:
         result = silent(iq.check_win_v4, trade_id)
 
@@ -124,7 +121,7 @@ def ejecutar(iq, action):
 
 
 # ==========================
-# BOT
+# BOT PRINCIPAL
 # ==========================
 def run():
 
@@ -138,7 +135,7 @@ def run():
         señal = analizar(iq)
 
         if not señal:
-            print("⚠️ Sin señal sniper...")
+            print("⚠️ Sin señal hedge fund...")
             continue
 
         action = señal["action"]
@@ -146,11 +143,10 @@ def run():
 
         print(f"🎯 {action.upper()} | {tipo}")
 
-        # 🔥 ENTRADA SNIPER
-        esperar_apertura_sniper()
+        esperar_apertura()
 
         send_message(
-            f"📊 {action.upper()} {PAR}\n⏱ 1m\n🎯 SNIPER INSTITUCIONAL\n📌 {tipo}"
+            f"📊 {action.upper()} {PAR}\n⏱ 1m\n🏦 HEDGE FUND MODE\n📌 {tipo}"
         )
 
         resultado = ejecutar(iq, action)
