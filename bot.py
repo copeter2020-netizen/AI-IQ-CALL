@@ -34,7 +34,7 @@ EXPIRACION = 1
 
 PARES = [
     "EURUSD",
-    "EURGBP",
+    "USDJPY",
     "EURJPY"
 ]
 
