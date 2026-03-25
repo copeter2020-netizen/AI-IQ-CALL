@@ -34,19 +34,13 @@ MONTO = 2545
 EXPIRACION = 1
 
 PARES = [
-    "EURUSD",
-    "GBPUSD",
-    "USDJPY",
-    "AUDUSD",
-    "USDCAD",
-    "USDCHF",
-    "EURGBP",
-    "EURJPY"
+    "EURUSD","GBPUSD","USDJPY","AUDUSD",
+    "USDCAD","USDCHF","EURGBP","EURJPY"
 ]
 
 
 # ==========================
-# CONEXIÓN (SIN DIGITAL)
+# CONEXIÓN (FIX REAL)
 # ==========================
 def connect():
     while True:
@@ -56,9 +50,11 @@ def connect():
         if iq.check_connect():
             print("✅ Conectado")
 
-            # 🔥 bloquear digital (evita error underlying)
+            # 🔥 FIX TOTAL DIGITAL (elimina error underlying)
             try:
                 iq.api.digital_underlying_list = {}
+                iq.api.get_digital_underlying_list_data = lambda: {}
+                iq.api.subscribe_digital = lambda *args, **kwargs: None
             except:
                 pass
 
@@ -69,43 +65,45 @@ def connect():
 
 
 # ==========================
-# PARES ABIERTOS
+# VALIDAR ACTIVO REAL
 # ==========================
 def get_open_pairs(iq):
 
     try:
         assets = iq.get_all_open_time()
-        abiertos = []
+        validos = []
 
         for par in PARES:
-            if par in assets["binary"] and assets["binary"][par]["open"]:
-                abiertos.append(par)
+            if (
+                par in assets["binary"]
+                and assets["binary"][par]["open"]
+            ):
+                validos.append(par)
 
-        return abiertos if abiertos else PARES
+        return validos
 
     except:
-        return PARES
+        return []
 
 
 # ==========================
-# TIEMPO
+# TIEMPO PRECISO
 # ==========================
 def esperar_cierre():
     while int(time.time()) % 60 != 59:
         time.sleep(0.05)
 
 
-# 🔥 SINCRONIZACIÓN REAL (FIX BROKER)
-def esperar_siguiente_vela(iq):
+def esperar_entrada_exacta(iq):
 
     while True:
         server_time = iq.get_server_timestamp()
 
-        # 🔥 ENTRADA EXACTA SEGUNDO 2
+        # 🔥 SEGUNDO IDEAL (NO 0)
         if int(server_time) % 60 == 2:
             break
 
-        time.sleep(0.001)
+        time.sleep(0.002)
 
 
 # ==========================
@@ -126,28 +124,37 @@ def analizar(iq, pair):
 
 
 # ==========================
-# EJECUCIÓN (ARREGLADA)
+# EJECUCIÓN REAL (FIX BROKER)
 # ==========================
 def ejecutar(iq, pair, action):
 
     print(f"🚀 Ejecutando {pair} {action}")
-    send_message(f"🚀 {pair} {action}")
+
+    # 🔥 VALIDAR PAGO (EVITA RECHAZO)
+    try:
+        payout = iq.get_digital_payout(pair)
+    except:
+        payout = 0
+
+    if payout == 0:
+        print("⚠️ Sin payout válido")
+        return None
 
     try:
+        # 🔥 EJECUCIÓN REAL BINARY
         status, trade_id = iq.buy(MONTO, pair, action, EXPIRACION)
 
-        # 🔥 pequeño delay anti-rechazo
-        time.sleep(0.2)
+        time.sleep(0.3)
 
     except Exception as e:
-        print("❌ Error ejecución:", e)
-        send_message("❌ Error ejecución")
+        print("❌ Error:", e)
         return None
 
     if not status:
         print("❌ Broker rechazó")
-        send_message("❌ Broker rechazó")
         return None
+
+    send_message(f"🚀 {pair} {action}")
 
     # ==========================
     # RESULTADO
@@ -185,6 +192,10 @@ def run():
 
         pares = get_open_pairs(iq)
 
+        if not pares:
+            print("⚠️ No hay pares abiertos")
+            continue
+
         print(f"🔎 Analizando {len(pares)} pares...")
 
         for pair in pares:
@@ -198,10 +209,11 @@ def run():
             score = señal["score"]
 
             print(f"📡 SEÑAL {pair} {action} ({score})")
+
             send_message(f"📡 {pair} {action} | Score {score}")
 
-            # 🔥 ENTRADA PERFECTA (CLAVE)
-            esperar_siguiente_vela(iq)
+            # 🔥 ENTRADA PERFECTA
+            esperar_entrada_exacta(iq)
 
             resultado = ejecutar(iq, pair, action)
 
