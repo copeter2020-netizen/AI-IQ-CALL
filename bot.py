@@ -35,7 +35,7 @@ IQ_EMAIL = os.environ.get("IQ_EMAIL")
 IQ_PASSWORD = os.environ.get("IQ_PASSWORD")
 
 TIMEFRAME = 60
-MONTO = 10000
+MONTO = 1000
 EXPIRACION = 1
 
 PAR = "EURUSD-OTC"
