@@ -38,7 +38,7 @@ def resistencia(df):
 
 
 # ==========================
-# RECHAZO (WICK GRANDE)
+# RECHAZO
 # ==========================
 def rechazo_superior(c):
     upper = c["max"] - max(c["close"], c["open"])
@@ -53,7 +53,7 @@ def es_indecision(c):
 
 
 # ==========================
-# CONTINUIDAD ALCISTA
+# CONTINUIDAD
 # ==========================
 def continuidad_alcista(df):
     ultimas = df.tail(4)
@@ -76,49 +76,27 @@ def analyze_market(candles, c5, c15):
 
         last = df.iloc[-1]
         prev = df.iloc[-2]
-        prev2 = df.iloc[-3]
 
         res = resistencia(df)
 
-        # ==========================
-        # TENDENCIA ALCISTA
-        # ==========================
         if last["close"] < last["ema"]:
             return None
 
-        # ==========================
-        # CONTINUIDAD
-        # ==========================
         if not continuidad_alcista(df):
             return None
 
-        # ==========================
-        # NO INDECISIÓN
-        # ==========================
         if es_indecision(last):
             return None
 
-        # ==========================
-        # NO RECHAZO
-        # ==========================
         if rechazo_superior(last):
             return None
 
-        # ==========================
-        # NO AGOTAMIENTO
-        # ==========================
         if last["close"] <= prev["close"]:
             return None
 
-        # ==========================
-        # NO RESISTENCIA
-        # ==========================
         if abs(last["close"] - res) < (res * 0.002):
             return None
 
-        # ==========================
-        # CONFIRMACIÓN VELA ANTERIOR
-        # ==========================
         if not is_bullish(prev):
             return None
 
@@ -128,15 +106,9 @@ def analyze_market(candles, c5, c15):
         if rechazo_superior(prev):
             return None
 
-        # ==========================
-        # NO RUPTURA / FALSA RUPTURA
-        # ==========================
         if last["max"] > prev["max"] and last["close"] < prev["max"]:
             return None
 
-        # ==========================
-        # TODO CUMPLE
-        # ==========================
         return {
             "action": "call",
             "score": 10
