@@ -29,20 +29,8 @@ IQ_EMAIL = os.environ.get("IQ_EMAIL")
 IQ_PASSWORD = os.environ.get("IQ_PASSWORD")
 
 TIMEFRAME = 60
-MONTO = 60
+MONTO = 65
 EXPIRACION = 1
-
-
-PARES = [
-    "EURUSD-OTC",
-    "GBPUSD-OTC",
-    "AUDUSD-OTC",
-    "USDCAD-OTC",
-    "EURGBP-OTC",
-    "EURJPY-OTC",
-    "GBPJPY-OTC",
-    "AUDJPY-OTC"
-]
 
 
 def connect():
@@ -58,6 +46,26 @@ def connect():
         time.sleep(5)
 
 
+# ==========================
+# 🔥 OBTENER TODOS LOS OTC ABIERTOS
+# ==========================
+def get_otc_abiertos(iq):
+
+    try:
+        activos = iq.get_all_open_time()
+        pares = []
+
+        for par, data in activos["binary"].items():
+
+            if "-OTC" in par and data["open"]:
+                pares.append(par)
+
+        return pares
+
+    except:
+        return []
+
+
 def esperar_cierre():
     while int(time.time()) % 60 != 59:
         time.sleep(0.02)
@@ -69,6 +77,7 @@ def esperar_apertura():
 
 
 def analizar_par(iq, pair):
+
     candles = silent(
         iq.get_candles, pair, TIMEFRAME, 10, time.time()
     )
@@ -114,7 +123,7 @@ def ejecutar_trade(iq, pair, action):
         send_message(f"❌ Entrada rechazada {pair}")
         return
 
-    send_message(f"📊 {action.upper()} {pair}\n⏱ 1m")
+    send_message(f"📊 CALL {pair}\n⏱ 1m\n🔥 2da vela verde")
 
     resultado = obtener_resultado(iq, trade_id)
 
@@ -132,12 +141,17 @@ def run():
 
     while True:
 
-        # 🔥 ESPERAR CIERRE DE VELA
         esperar_cierre()
+
+        pares = get_otc_abiertos(iq)
+
+        if not pares:
+            print("⚠️ No hay OTC abiertos")
+            continue
 
         señales = []
 
-        for par in PARES:
+        for par in pares:
 
             señal = analizar_par(iq, par)
 
@@ -149,14 +163,12 @@ def run():
             continue
 
         par, señal = señales[0]
-        action = señal["action"]
 
-        print(f"🎯 {par} {action} → entrada inmediata")
+        print(f"🎯 {par} CALL → 2da vela verde")
 
-        # 🔥 ENTRA INMEDIATAMENTE EN LA NUEVA VELA
         esperar_apertura()
 
-        ejecutar_trade(iq, par, action)
+        ejecutar_trade(iq, par, "call")
 
 
 if __name__ == "__main__":
