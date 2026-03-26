@@ -2,7 +2,6 @@ import os
 import time
 import sys
 from iqoptionapi.stable_api import IQ_Option
-from strategy import analyze_market
 from telegram_bot import send_message
 
 
@@ -29,7 +28,7 @@ IQ_EMAIL = os.environ.get("IQ_EMAIL")
 IQ_PASSWORD = os.environ.get("IQ_PASSWORD")
 
 TIMEFRAME = 60
-MONTO = 70
+MONTO = 75
 EXPIRACION = 1
 
 
@@ -49,13 +48,10 @@ def connect():
 def get_otc_abiertos(iq):
     try:
         activos = iq.get_all_open_time()
-        pares = []
-
-        for par, data in activos["binary"].items():
-            if "-OTC" in par and data["open"]:
-                pares.append(par)
-
-        return pares
+        return [
+            par for par, data in activos["binary"].items()
+            if "-OTC" in par and data["open"]
+        ]
     except:
         return []
 
@@ -71,36 +67,61 @@ def esperar_apertura():
 
 
 # ==========================
-# 🔥 NUEVA LÓGICA: ROJA → VERDE
+# 🔥 SOPORTE Y RESISTENCIA
+# ==========================
+def detectar_niveles(candles):
+
+    soportes = []
+    resistencias = []
+
+    for i in range(2, len(candles)-2):
+
+        c = candles[i]
+
+        # soporte (mínimo local)
+        if (
+            c["min"] < candles[i-1]["min"] and
+            c["min"] < candles[i+1]["min"]
+        ):
+            soportes.append(c["min"])
+
+        # resistencia (máximo local)
+        if (
+            c["max"] > candles[i-1]["max"] and
+            c["max"] > candles[i+1]["max"]
+        ):
+            resistencias.append(c["max"])
+
+    return soportes[-3:], resistencias[-3:]
+
+
+# ==========================
+# 🔥 PATRÓN ROJA → VERDE
 # ==========================
 def patron_roja_verde(candles):
 
     if len(candles) < 3:
         return False
 
-    c1 = candles[-1]  # última cerrada
+    c1 = candles[-1]
     c2 = candles[-2]
 
-    roja = c2["close"] < c2["open"]
-    verde = c1["close"] > c1["open"]
-
-    return roja and verde
-
-
-def analizar_par(iq, pair):
-
-    candles = silent(
-        iq.get_candles, pair, TIMEFRAME, 10, time.time()
+    return (
+        c2["close"] < c2["open"] and
+        c1["close"] > c1["open"]
     )
 
-    if not candles:
-        return None
 
-    # 🔥 SOLO PATRÓN ROJA → VERDE
-    if not patron_roja_verde(candles):
-        return None
+# ==========================
+# 🔥 FILTRO: NO ENTRAR EN RESISTENCIA
+# ==========================
+def cerca_resistencia(precio, resistencias):
 
-    return {"action": "call"}
+    for r in resistencias:
+        if abs(precio - r) < 0.0005:
+            return True
+
+    return False
 
 
 def obtener_resultado(iq, trade_id):
@@ -138,7 +159,7 @@ def ejecutar_trade(iq, pair):
         send_message(f"❌ Entrada rechazada {pair}")
         return
 
-    send_message(f"📊 CALL {pair}\n🔥 Roja → Verde\n⏱ 1m")
+    send_message(f"📊 CALL {pair}\n🔥 Rebote en soporte")
 
     resultado = obtener_resultado(iq, trade_id)
 
@@ -166,20 +187,40 @@ def run():
 
         for par in pares:
 
-            señal = analizar_par(iq, par)
+            candles = silent(
+                iq.get_candles, par, TIMEFRAME, 50, time.time()
+            )
 
-            if señal:
+            if not candles:
+                continue
 
-                print(f"🎯 {par} → Roja + Verde detectado")
+            soportes, resistencias = detectar_niveles(candles)
 
-                # 🔥 ENTRA EN LA SIGUIENTE VELA
+            precio_actual = candles[-1]["close"]
+
+            # 🔥 ENVIAR NIVELES A TELEGRAM
+            send_message(
+                f"📍 {par}\n"
+                f"Soportes: {soportes}\n"
+                f"Resistencias: {resistencias}"
+            )
+
+            # 🔥 FILTRO DE ENTRADA
+            if cerca_resistencia(precio_actual, resistencias):
+                print(f"🚫 {par} en resistencia")
+                continue
+
+            if patron_roja_verde(candles):
+
+                print(f"🎯 {par} rebote detectado")
+
                 esperar_apertura()
 
                 ejecutar_trade(iq, par)
 
                 break
         else:
-            print("⚠️ Sin patrón...")
+            print("⚠️ Sin señal...")
 
 
 if __name__ == "__main__":
