@@ -29,7 +29,7 @@ IQ_EMAIL = os.getenv("IQ_EMAIL")
 IQ_PASSWORD = os.getenv("IQ_PASSWORD")
 
 TIMEFRAME = 60
-MONTO = 2500
+MONTO = 3300
 EXPIRACION = 1
 
 
@@ -43,16 +43,16 @@ def connect():
 
         if iq.check_connect():
             print("✅ Conectado")
-            send_message("✅ BOT CONECTADO")
+            send_message("✅ BOT ACTIVO")
             return iq
 
         time.sleep(5)
 
 
 # ==========================
-# OBTENER PARES OTC
+# OBTENER OTC
 # ==========================
-def get_otc_pairs(iq):
+def get_pairs(iq):
 
     assets = silent(iq.get_all_open_time)
 
@@ -61,15 +61,12 @@ def get_otc_pairs(iq):
 
     pares = []
 
-    try:
-        for par in assets["binary"]:
-            if (
-                assets["binary"][par]["open"]
-                and "OTC" in par
-            ):
+    for par in assets["binary"]:
+        try:
+            if assets["binary"][par]["open"] and "OTC" in par:
                 pares.append(par)
-    except:
-        pass
+        except:
+            continue
 
     return pares
 
@@ -88,7 +85,7 @@ def esperar_apertura():
 
 
 # ==========================
-# ANALIZAR PAR
+# ANALIZAR
 # ==========================
 def analizar(iq, pair):
 
@@ -113,9 +110,9 @@ def run():
 
         esperar_cierre()
 
-        pares = get_otc_pairs(iq)
+        pares = get_pairs(iq)
 
-        print(f"🔎 Analizando {len(pares)} pares OTC...")
+        print(f"🔎 Analizando {len(pares)} pares...")
 
         mejor = None
         mejor_par = None
@@ -124,29 +121,27 @@ def run():
 
             señal = analizar(iq, par)
 
-            if not señal:
-                continue
-
-            mejor = señal
-            mejor_par = par
-            break  # 🔥 entra en la primera señal válida
+            if señal:
+                mejor = señal
+                mejor_par = par
+                break
 
         if not mejor:
-            print("⚠️ Sin señal")
+            print("⚠️ Sin entrada válida")
             continue
 
-        action = mejor["action"]
+        print(f"🎯 CALL {mejor_par}")
 
-        send_message(f"📡 {action.upper()} {mejor_par}")
+        send_message(f"📈 CALL {mejor_par} | Confirmado")
 
         esperar_apertura()
 
         status, trade_id = silent(
-            iq.buy, MONTO, mejor_par, action, EXPIRACION
+            iq.buy, MONTO, mejor_par, "call", EXPIRACION
         )
 
         if not status:
-            send_message("❌ Broker rechazó")
+            send_message("❌ Entrada rechazada")
             continue
 
         while True:
