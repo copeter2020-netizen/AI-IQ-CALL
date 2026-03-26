@@ -1,6 +1,9 @@
 import pandas as pd
 
 
+# ==========================
+# UTILIDADES
+# ==========================
 def body(c):
     return abs(c["close"] - c["open"])
 
@@ -20,52 +23,46 @@ def is_bullish(c):
     return c["close"] > c["open"]
 
 
-def is_bearish(c):
-    return c["close"] < c["open"]
+# ==========================
+# EMA
+# ==========================
+def ema(df, period=20):
+    return df["close"].ewm(span=period).mean()
 
 
 # ==========================
-# NUEVA LÓGICA INSTITUCIONAL
+# RESISTENCIA
 # ==========================
-def patron_continuidad(df):
-
-    if len(df) < 5:
-        return None
-
-    c1 = df.iloc[-1]  # confirmación
-    c2 = df.iloc[-2]  # retroceso
-    c3 = df.iloc[-3]  # impulso
-    c4 = df.iloc[-4]
-
-    # ======================
-    # COMPRA
-    # ======================
-    if (
-        is_bullish(c3) and
-        c3["close"] > c4["close"] and  # rompimiento
-        is_bearish(c2) and             # retroceso
-        is_bullish(c1) and             # confirmación
-        fuerza(c1) > 0.5
-    ):
-        return "call"
-
-    # ======================
-    # VENTA
-    # ======================
-    if (
-        is_bearish(c3) and
-        c3["close"] < c4["close"] and
-        is_bullish(c2) and
-        is_bearish(c1) and
-        fuerza(c1) > 0.5
-    ):
-        return "put"
-
-    return None
+def resistencia(df):
+    return df["max"].rolling(20).max().iloc[-1]
 
 
 # ==========================
-# TU ESTRATEGIA ORIGINAL + FILTRO NUEVO
+# RECHAZO
+# ==========================
+def rechazo_superior(c):
+    upper = c["max"] - max(c["close"], c["open"])
+    return upper > body(c) * 1.2
+
+
+# ==========================
+# INDECISIÓN
+# ==========================
+def es_indecision(c):
+    return fuerza(c) < 0.3
+
+
+# ==========================
+# CONTINUIDAD
+# ==========================
+def continuidad_alcista(df):
+    ultimas = df.tail(4)
+    verdes = sum(1 for i in range(len(ultimas)) if is_bullish(ultimas.iloc[i]))
+    return verdes >= 3
+
+
+# ==========================
+# FUNCIÓN PRINCIPAL
 # ==========================
 def analyze_market(candles, c5, c15):
 
@@ -75,26 +72,45 @@ def analyze_market(candles, c5, c15):
         if len(df) < 30:
             return None
 
-        # 🔥 TU ESTRATEGIA ORIGINAL (NO MODIFICADA)
+        df["ema"] = ema(df)
+
         last = df.iloc[-1]
         prev = df.iloc[-2]
 
-        if last["close"] < prev["close"]:
+        res = resistencia(df)
+
+        if last["close"] < last["ema"]:
             return None
 
-        if fuerza(last) < 0.5:
+        if not continuidad_alcista(df):
             return None
 
-        # ==========================
-        # NUEVO FILTRO (OBLIGATORIO)
-        # ==========================
-        patron = patron_continuidad(df)
+        if es_indecision(last):
+            return None
 
-        if not patron:
+        if rechazo_superior(last):
+            return None
+
+        if last["close"] <= prev["close"]:
+            return None
+
+        if abs(last["close"] - res) < (res * 0.002):
+            return None
+
+        if not is_bullish(prev):
+            return None
+
+        if fuerza(prev) < 0.5:
+            return None
+
+        if rechazo_superior(prev):
+            return None
+
+        if last["max"] > prev["max"] and last["close"] < prev["max"]:
             return None
 
         return {
-            "action": patron,
+            "action": "call",
             "score": 10
         }
 
