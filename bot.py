@@ -30,7 +30,21 @@ IQ_PASSWORD = os.environ.get("IQ_PASSWORD")
 
 TIMEFRAME = 60
 MONTO = 6000
-EXPIRACION = 1
+EXPIRACION = 1  # 🔥 SOLO 1 MINUTO
+
+
+# 🔥 9 PARES (BINARIAS OTC 1 MIN)
+PARES = [
+    "EURUSD-OTC",
+    "GBPUSD-OTC",
+    "USDJPY-OTC",
+    "AUDUSD-OTC",
+    "USDCAD-OTC",
+    "EURGBP-OTC",
+    "EURJPY-OTC",
+    "GBPJPY-OTC",
+    "AUDJPY-OTC"
+]
 
 
 def connect():
@@ -40,7 +54,7 @@ def connect():
 
         if iq.check_connect():
             print("✅ Conectado")
-            send_message("✅ BOT ACTIVO")
+            send_message("✅ BOT ACTIVO 1M MULTIPAIR")
             return iq
 
         time.sleep(5)
@@ -56,7 +70,7 @@ def esperar_apertura():
         time.sleep(0.001)
 
 
-def analizar(iq, pair):
+def analizar_par(iq, pair):
 
     candles = silent(
         iq.get_candles, pair, TIMEFRAME, 40, time.time()
@@ -68,62 +82,75 @@ def analizar(iq, pair):
     return analyze_market(candles, None, None)
 
 
+def ejecutar_trade(iq, pair, action):
+
+    status, trade_id = silent(
+        iq.buy, MONTO, pair, action, EXPIRACION
+    )
+
+    if not status:
+        send_message(f"❌ Entrada rechazada {pair}")
+        return
+
+    send_message(
+        f"📊 {action.upper()} {pair}\n⏱ 1m\n💰 {MONTO}"
+    )
+
+    while True:
+        result = silent(iq.check_win_v4, trade_id)
+
+        if result is None:
+            time.sleep(1)
+            continue
+
+        try:
+            if isinstance(result, tuple):
+                result = result[0]
+
+            result = float(result)
+        except:
+            result = 0
+
+        break
+
+    if result > 0:
+        send_message(f"✅ WIN {pair}")
+    else:
+        send_message(f"❌ LOSS {pair}")
+
+
 def run():
 
     iq = connect()
-
-    PAR = "EURUSD-OTC"
 
     while True:
 
         esperar_cierre()
 
-        señal = analizar(iq, PAR)
+        señales = []
 
-        if not señal:
-            print("⚠️ Esperando confirmación estructural...")
+        # 🔍 ANALIZAR LOS 9 PARES
+        for par in PARES:
+
+            señal = analizar_par(iq, par)
+
+            if señal:
+                señales.append((par, señal))
+
+        if not señales:
+            print("⚠️ Sin señales...")
             continue
 
-        action = señal["action"]
-        score = señal["score"]
+        # 🔥 PRIMERA SEÑAL DETECTADA
+        par, señal = señales[0]
 
-        print(f"🎯 {PAR} {action} ({score})")
+        action = señal["action"]
+
+        print(f"🎯 {par} {action}")
 
         esperar_apertura()
 
-        send_message(
-            f"📊 {action.upper()} {PAR}\n📈 Confirmación institucional\n⏱ 1m"
-        )
-
-        status, trade_id = silent(
-            iq.buy, MONTO, PAR, action, EXPIRACION
-        )
-
-        if not status:
-            send_message("❌ Entrada rechazada")
-            continue
-
-        while True:
-            result = silent(iq.check_win_v4, trade_id)
-
-            if result is None:
-                time.sleep(1)
-                continue
-
-            try:
-                if isinstance(result, tuple):
-                    result = result[0]
-
-                result = float(result)
-            except:
-                result = 0
-
-            break
-
-        if result > 0:
-            send_message("✅ WIN")
-        else:
-            send_message("❌ LOSS")
+        ejecutar_trade(iq, par, action)
 
 
 if __name__ == "__main__":
