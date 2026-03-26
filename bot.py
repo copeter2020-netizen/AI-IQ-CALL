@@ -36,7 +36,6 @@ EXPIRACION = 1
 PARES = [
     "EURUSD-OTC",
     "GBPUSD-OTC",
-    "AUDUSD-OTC",
     "USDCAD-OTC",
     "EURGBP-OTC",
     "EURJPY-OTC",
@@ -153,7 +152,7 @@ def run():
 
         print(f"🎯 {par} {action} → entrada inmediata")
 
-        # 🔥 ENTRA INMEDIATAMENTE EN LA NUEVA VELA
+        # 🔥 ENTRA AL INICIO DE LA SIGUIENTE VELA
         esperar_apertura()
 
         ejecutar_trade(iq, par, action)
