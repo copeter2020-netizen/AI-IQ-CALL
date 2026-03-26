@@ -1,39 +1,69 @@
 import pandas as pd
 
 
-def bollinger(df, period=20):
-    ma = df["close"].rolling(period).mean()
-    std = df["close"].rolling(period).std()
-    upper = ma + (2 * std)
-    lower = ma - (2 * std)
-    return upper, lower
+# ==========================
+# UTILIDADES
+# ==========================
+def body(c):
+    return abs(c["close"] - c["open"])
 
 
-def atr(df, period=14):
-    df["tr"] = df["max"] - df["min"]
-    return df["tr"].rolling(period).mean()
-
-
-def stochastic(df, k_period=14):
-    low_min = df["min"].rolling(k_period).min()
-    high_max = df["max"].rolling(k_period).max()
-    return 100 * (df["close"] - low_min) / (high_max - low_min)
+def candle_range(c):
+    return c["max"] - c["min"]
 
 
 def fuerza(c):
-    cuerpo = abs(c["close"] - c["open"])
-    rango = c["max"] - c["min"]
-    if rango == 0:
+    r = candle_range(c)
+    if r == 0:
         return 0
-    return cuerpo / rango
+    return body(c) / r
 
 
-def soporte_resistencia(df):
-    soporte = df["min"].rolling(20).min().iloc[-1]
-    resistencia = df["max"].rolling(20).max().iloc[-1]
-    return soporte, resistencia
+def is_bullish(c):
+    return c["close"] > c["open"]
 
 
+# ==========================
+# EMA
+# ==========================
+def ema(df, period=20):
+    return df["close"].ewm(span=period).mean()
+
+
+# ==========================
+# RESISTENCIA
+# ==========================
+def resistencia(df):
+    return df["max"].rolling(20).max().iloc[-1]
+
+
+# ==========================
+# RECHAZO (WICK GRANDE)
+# ==========================
+def rechazo_superior(c):
+    upper = c["max"] - max(c["close"], c["open"])
+    return upper > body(c) * 1.2
+
+
+# ==========================
+# INDECISIÓN
+# ==========================
+def es_indecision(c):
+    return fuerza(c) < 0.3
+
+
+# ==========================
+# CONTINUIDAD ALCISTA
+# ==========================
+def continuidad_alcista(df):
+    ultimas = df.tail(4)
+    verdes = sum(1 for i in range(len(ultimas)) if is_bullish(ultimas.iloc[i]))
+    return verdes >= 3
+
+
+# ==========================
+# FUNCIÓN PRINCIPAL
+# ==========================
 def analyze_market(candles, c5, c15):
 
     try:
@@ -42,44 +72,73 @@ def analyze_market(candles, c5, c15):
         if len(df) < 30:
             return None
 
-        df["bb_upper"], df["bb_lower"] = bollinger(df)
-        df["atr"] = atr(df)
-        df["stoch"] = stochastic(df)
-
-        soporte, resistencia = soporte_resistencia(df)
+        df["ema"] = ema(df)
 
         last = df.iloc[-1]
         prev = df.iloc[-2]
+        prev2 = df.iloc[-3]
 
-        rango_sr = (resistencia - soporte) * 0.1
+        res = resistencia(df)
 
-        if abs(last["close"] - soporte) < rango_sr:
+        # ==========================
+        # TENDENCIA ALCISTA
+        # ==========================
+        if last["close"] < last["ema"]:
             return None
 
-        if abs(last["close"] - resistencia) < rango_sr:
+        # ==========================
+        # CONTINUIDAD
+        # ==========================
+        if not continuidad_alcista(df):
             return None
 
-        if fuerza(last) < 0.5:
+        # ==========================
+        # NO INDECISIÓN
+        # ==========================
+        if es_indecision(last):
             return None
 
-        if last["atr"] < df["atr"].mean():
+        # ==========================
+        # NO RECHAZO
+        # ==========================
+        if rechazo_superior(last):
             return None
 
-        if last["stoch"] > 80:
-            action = "put"
-        elif last["stoch"] < 20:
-            action = "call"
-        else:
+        # ==========================
+        # NO AGOTAMIENTO
+        # ==========================
+        if last["close"] <= prev["close"]:
             return None
 
-        if action == "call" and last["close"] < last["bb_lower"]:
+        # ==========================
+        # NO RESISTENCIA
+        # ==========================
+        if abs(last["close"] - res) < (res * 0.002):
             return None
 
-        if action == "put" and last["close"] > last["bb_upper"]:
+        # ==========================
+        # CONFIRMACIÓN VELA ANTERIOR
+        # ==========================
+        if not is_bullish(prev):
             return None
 
+        if fuerza(prev) < 0.5:
+            return None
+
+        if rechazo_superior(prev):
+            return None
+
+        # ==========================
+        # NO RUPTURA / FALSA RUPTURA
+        # ==========================
+        if last["max"] > prev["max"] and last["close"] < prev["max"]:
+            return None
+
+        # ==========================
+        # TODO CUMPLE
+        # ==========================
         return {
-            "action": action,
+            "action": "call",
             "score": 10
         }
 
