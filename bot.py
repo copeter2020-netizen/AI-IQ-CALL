@@ -29,15 +29,13 @@ IQ_EMAIL = os.environ.get("IQ_EMAIL")
 IQ_PASSWORD = os.environ.get("IQ_PASSWORD")
 
 TIMEFRAME = 60
-MONTO = 6000
-EXPIRACION = 1  # 🔥 SOLO 1 MINUTO
+MONTO = 60
+EXPIRACION = 1
 
 
-# 🔥 9 PARES (BINARIAS OTC 1 MIN)
 PARES = [
     "EURUSD-OTC",
     "GBPUSD-OTC",
-    "USDJPY-OTC",
     "AUDUSD-OTC",
     "USDCAD-OTC",
     "EURGBP-OTC",
@@ -54,7 +52,7 @@ def connect():
 
         if iq.check_connect():
             print("✅ Conectado")
-            send_message("✅ BOT ACTIVO 1M MULTIPAIR")
+            send_message("✅ BOT ACTIVO")
             return iq
 
         time.sleep(5)
@@ -71,9 +69,8 @@ def esperar_apertura():
 
 
 def analizar_par(iq, pair):
-
     candles = silent(
-        iq.get_candles, pair, TIMEFRAME, 40, time.time()
+        iq.get_candles, pair, TIMEFRAME, 10, time.time()
     )
 
     if not candles:
@@ -82,19 +79,7 @@ def analizar_par(iq, pair):
     return analyze_market(candles, None, None)
 
 
-def ejecutar_trade(iq, pair, action):
-
-    status, trade_id = silent(
-        iq.buy, MONTO, pair, action, EXPIRACION
-    )
-
-    if not status:
-        send_message(f"❌ Entrada rechazada {pair}")
-        return
-
-    send_message(
-        f"📊 {action.upper()} {pair}\n⏱ 1m\n💰 {MONTO}"
-    )
+def obtener_resultado(iq, trade_id):
 
     while True:
         result = silent(iq.check_win_v4, trade_id)
@@ -109,12 +94,34 @@ def ejecutar_trade(iq, pair, action):
 
             result = float(result)
         except:
-            result = 0
+            return "loss"
 
-        break
+        if result > 0:
+            return "win"
+        elif result == 0:
+            return "draw"
+        else:
+            return "loss"
 
-    if result > 0:
+
+def ejecutar_trade(iq, pair, action):
+
+    status, trade_id = silent(
+        iq.buy, MONTO, pair, action, EXPIRACION
+    )
+
+    if not status:
+        send_message(f"❌ Entrada rechazada {pair}")
+        return
+
+    send_message(f"📊 {action.upper()} {pair}\n⏱ 1m")
+
+    resultado = obtener_resultado(iq, trade_id)
+
+    if resultado == "win":
         send_message(f"✅ WIN {pair}")
+    elif resultado == "draw":
+        send_message(f"➖ DRAW {pair}")
     else:
         send_message(f"❌ LOSS {pair}")
 
@@ -125,11 +132,11 @@ def run():
 
     while True:
 
+        # 🔥 ESPERAR CIERRE DE VELA
         esperar_cierre()
 
         señales = []
 
-        # 🔍 ANALIZAR LOS 9 PARES
         for par in PARES:
 
             señal = analizar_par(iq, par)
@@ -141,13 +148,12 @@ def run():
             print("⚠️ Sin señales...")
             continue
 
-        # 🔥 PRIMERA SEÑAL DETECTADA
         par, señal = señales[0]
-
         action = señal["action"]
 
-        print(f"🎯 {par} {action}")
+        print(f"🎯 {par} {action} → entrada inmediata")
 
+        # 🔥 ENTRA INMEDIATAMENTE EN LA NUEVA VELA
         esperar_apertura()
 
         ejecutar_trade(iq, par, action)
