@@ -6,9 +6,6 @@ from strategy import analyze_market
 from telegram_bot import send_message
 
 
-# ==========================
-# SILENCIAR
-# ==========================
 class DevNull:
     def write(self, msg): pass
     def flush(self): pass
@@ -28,17 +25,12 @@ def silent(func, *args, **kwargs):
         sys.stderr = old_stderr
 
 
-# ==========================
-# CONFIG
-# ==========================
 IQ_EMAIL = os.getenv("IQ_EMAIL")
 IQ_PASSWORD = os.getenv("IQ_PASSWORD")
 
 TIMEFRAME = 60
-MONTO = 1500
+MONTO = 2500
 EXPIRACION = 1
-
-PAR = "EURUSD-OTC"
 
 
 # ==========================
@@ -58,6 +50,31 @@ def connect():
 
 
 # ==========================
+# OBTENER PARES OTC
+# ==========================
+def get_otc_pairs(iq):
+
+    assets = silent(iq.get_all_open_time)
+
+    if not assets:
+        return []
+
+    pares = []
+
+    try:
+        for par in assets["binary"]:
+            if (
+                assets["binary"][par]["open"]
+                and "OTC" in par
+            ):
+                pares.append(par)
+    except:
+        pass
+
+    return pares
+
+
+# ==========================
 # TIEMPO
 # ==========================
 def esperar_cierre():
@@ -71,51 +88,18 @@ def esperar_apertura():
 
 
 # ==========================
-# ANALIZAR
+# ANALIZAR PAR
 # ==========================
-def analizar(iq):
+def analizar(iq, pair):
 
     candles = silent(
-        iq.get_candles, PAR, TIMEFRAME, 40, time.time()
+        iq.get_candles, pair, TIMEFRAME, 40, time.time()
     )
 
     if not candles:
         return None
 
     return analyze_market(candles, None, None)
-
-
-# ==========================
-# EJECUTAR
-# ==========================
-def ejecutar(iq, action):
-
-    send_message(f"🚀 {action.upper()} {PAR}")
-
-    status, trade_id = silent(
-        iq.buy, MONTO, PAR, action, EXPIRACION
-    )
-
-    if not status:
-        send_message("❌ Broker rechazó")
-        return None
-
-    while True:
-        result = silent(iq.check_win_v4, trade_id)
-
-        if result is None:
-            time.sleep(1)
-            continue
-
-        try:
-            if isinstance(result, tuple):
-                result = result[0]
-
-            result = float(result)
-        except:
-            result = 0
-
-        return result
 
 
 # ==========================
@@ -129,23 +113,60 @@ def run():
 
         esperar_cierre()
 
-        señal = analizar(iq)
+        pares = get_otc_pairs(iq)
 
-        if not señal:
+        print(f"🔎 Analizando {len(pares)} pares OTC...")
+
+        mejor = None
+        mejor_par = None
+
+        for par in pares:
+
+            señal = analizar(iq, par)
+
+            if not señal:
+                continue
+
+            mejor = señal
+            mejor_par = par
+            break  # 🔥 entra en la primera señal válida
+
+        if not mejor:
+            print("⚠️ Sin señal")
             continue
 
-        action = señal["action"]
+        action = mejor["action"]
 
-        send_message(f"📡 SEÑAL {action.upper()}")
+        send_message(f"📡 {action.upper()} {mejor_par}")
 
         esperar_apertura()
 
-        resultado = ejecutar(iq, action)
+        status, trade_id = silent(
+            iq.buy, MONTO, mejor_par, action, EXPIRACION
+        )
 
-        if resultado is None:
+        if not status:
+            send_message("❌ Broker rechazó")
             continue
 
-        if resultado > 0:
+        while True:
+            result = silent(iq.check_win_v4, trade_id)
+
+            if result is None:
+                time.sleep(1)
+                continue
+
+            try:
+                if isinstance(result, tuple):
+                    result = result[0]
+
+                result = float(result)
+            except:
+                result = 0
+
+            break
+
+        if result > 0:
             send_message("✅ WIN")
         else:
             send_message("❌ LOSS")
