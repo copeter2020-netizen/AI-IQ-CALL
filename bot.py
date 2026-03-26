@@ -25,12 +25,12 @@ def silent(func, *args, **kwargs):
         sys.stderr = old_stderr
 
 
-IQ_EMAIL = os.getenv("IQ_EMAIL")
-IQ_PASSWORD = os.getenv("IQ_PASSWORD")
+IQ_EMAIL = os.environ.get("IQ_EMAIL")
+IQ_PASSWORD = os.environ.get("IQ_PASSWORD")
 
 TIMEFRAME = 60
-MONTO = 3300
-EXPIRACION = 1
+MONTO = 3550
+EXPIRACION = 1  # 🔥 solo 1 minuto (dentro del rango 1-5)
 
 
 # ==========================
@@ -50,7 +50,7 @@ def connect():
 
 
 # ==========================
-# OBTENER OTC
+# FILTRAR SOLO BINARY (1-5 MIN)
 # ==========================
 def get_pairs(iq):
 
@@ -61,12 +61,12 @@ def get_pairs(iq):
 
     pares = []
 
-    for par in assets["binary"]:
-        try:
-            if assets["binary"][par]["open"] and "OTC" in par:
+    try:
+        for par in assets["binary"]:
+            if assets["binary"][par]["open"]:
                 pares.append(par)
-        except:
-            continue
+    except:
+        pass
 
     return pares
 
@@ -112,59 +112,55 @@ def run():
 
         pares = get_pairs(iq)
 
-        print(f"🔎 Analizando {len(pares)} pares...")
-
-        mejor = None
-        mejor_par = None
+        print(f"🔎 Analizando {len(pares)} pares válidos (binary)...")
 
         for par in pares:
 
             señal = analizar(iq, par)
 
-            if señal:
-                mejor = señal
-                mejor_par = par
-                break
-
-        if not mejor:
-            print("⚠️ Sin entrada válida")
-            continue
-
-        print(f"🎯 CALL {mejor_par}")
-
-        send_message(f"📈 CALL {mejor_par} | Confirmado")
-
-        esperar_apertura()
-
-        status, trade_id = silent(
-            iq.buy, MONTO, mejor_par, "call", EXPIRACION
-        )
-
-        if not status:
-            send_message("❌ Entrada rechazada")
-            continue
-
-        while True:
-            result = silent(iq.check_win_v4, trade_id)
-
-            if result is None:
-                time.sleep(1)
+            if not señal:
                 continue
 
-            try:
-                if isinstance(result, tuple):
-                    result = result[0]
+            # 🔥 INVERTIR ENTRADA
+            action = "put" if señal["action"] == "call" else "call"
 
-                result = float(result)
-            except:
-                result = 0
+            print(f"🎯 INVERSIÓN → {action.upper()} {par}")
 
-            break
+            send_message(f"📊 INVERSIÓN {action.upper()} {par}")
 
-        if result > 0:
-            send_message("✅ WIN")
-        else:
-            send_message("❌ LOSS")
+            esperar_apertura()
+
+            status, trade_id = silent(
+                iq.buy, MONTO, par, action, EXPIRACION
+            )
+
+            if not status:
+                send_message("❌ Entrada rechazada")
+                continue
+
+            while True:
+                result = silent(iq.check_win_v4, trade_id)
+
+                if result is None:
+                    time.sleep(1)
+                    continue
+
+                try:
+                    if isinstance(result, tuple):
+                        result = result[0]
+
+                    result = float(result)
+                except:
+                    result = 0
+
+                break
+
+            if result > 0:
+                send_message("✅ WIN")
+            else:
+                send_message("❌ LOSS")
+
+            break  # 🔥 solo 1 operación por vela
 
 
 if __name__ == "__main__":
