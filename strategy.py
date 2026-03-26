@@ -53,14 +53,14 @@ def es_ahorcamiento(c):
 def es_vela_valida(c):
     return (
         fuerza(c) > 0.5 and
-        not es_doji(c) and
-        not es_indecision(c) and
-        not es_ahorcamiento(c)
+        not es_doji(c)
+        and not es_indecision(c)
+        and not es_ahorcamiento(c)
     )
 
 
 # ==========================
-# SOPORTE / RESISTENCIA (FUERTE)
+# SOPORTE / RESISTENCIA
 # ==========================
 def resistencia(df):
     return df["max"].rolling(20).max().iloc[-1]
@@ -70,14 +70,13 @@ def soporte(df):
     return df["min"].rolling(20).min().iloc[-1]
 
 
-# 🔥 BLOQUEO FUERTE (zona amplia)
+# 🔥 BLOQUEO AJUSTADO (NO TAN AMPLIO)
 def en_zona_prohibida(c, res, sup):
 
-    margen_res = res * 0.003   # más amplio (estricto)
-    margen_sup = sup * 0.003
+    margen = c["close"] * 0.0015  # 🔥 antes era muy grande
 
-    cerca_res = abs(c["close"] - res) < margen_res
-    cerca_sup = abs(c["close"] - sup) < margen_sup
+    cerca_res = abs(c["close"] - res) < margen
+    cerca_sup = abs(c["close"] - sup) < margen
 
     return cerca_res or cerca_sup
 
@@ -115,7 +114,7 @@ def analyze_market(candles, c5, c15):
         last = df.iloc[-1]
 
         # ==========================
-        # FILTRO DE VELA
+        # FILTRO VELA
         # ==========================
         if not es_vela_valida(last):
             return None
@@ -124,7 +123,7 @@ def analyze_market(candles, c5, c15):
         sup = soporte(df)
 
         # ==========================
-        # 🔥 BLOQUEO TOTAL ZONAS S/R
+        # BLOQUEO S/R (CORREGIDO)
         # ==========================
         if en_zona_prohibida(last, res, sup):
             return None
