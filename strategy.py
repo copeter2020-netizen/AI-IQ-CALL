@@ -23,42 +23,51 @@ def is_bullish(c):
     return c["close"] > c["open"]
 
 
-# ==========================
-# EMA
-# ==========================
-def ema(df, period=20):
-    return df["close"].ewm(span=period).mean()
+def is_bearish(c):
+    return c["close"] < c["open"]
 
 
 # ==========================
-# RESISTENCIA
+# RANGO
 # ==========================
-def resistencia(df):
-    return df["max"].rolling(20).max().iloc[-1]
+def rango_alto(df):
+    return df["max"].rolling(15).max().iloc[-1]
+
+
+def rango_bajo(df):
+    return df["min"].rolling(15).min().iloc[-1]
+
+
+def es_rango(df):
+    alto = rango_alto(df)
+    bajo = rango_bajo(df)
+    rango = alto - bajo
+
+    return rango < (df["close"].iloc[-1] * 0.003)
 
 
 # ==========================
-# RECHAZO
+# RECHAZOS
 # ==========================
+def rechazo_inferior(c):
+    lower = min(c["close"], c["open"]) - c["min"]
+    return lower > body(c) * 1.2
+
+
 def rechazo_superior(c):
     upper = c["max"] - max(c["close"], c["open"])
     return upper > body(c) * 1.2
 
 
 # ==========================
-# INDECISIÓN
+# NIVELES
 # ==========================
-def es_indecision(c):
-    return fuerza(c) < 0.3
+def cerca_soporte(c, soporte):
+    return abs(c["min"] - soporte) < (soporte * 0.0015)
 
 
-# ==========================
-# CONTINUIDAD
-# ==========================
-def continuidad_alcista(df):
-    ultimas = df.tail(4)
-    verdes = sum(1 for i in range(len(ultimas)) if is_bullish(ultimas.iloc[i]))
-    return verdes >= 3
+def cerca_resistencia(c, resistencia):
+    return abs(c["max"] - resistencia) < (resistencia * 0.0015)
 
 
 # ==========================
@@ -72,47 +81,45 @@ def analyze_market(candles, c5, c15):
         if len(df) < 30:
             return None
 
-        df["ema"] = ema(df)
-
         last = df.iloc[-1]
         prev = df.iloc[-2]
+        prev2 = df.iloc[-3]
 
-        res = resistencia(df)
-
-        if last["close"] < last["ema"]:
+        if not es_rango(df):
             return None
 
-        if not continuidad_alcista(df):
-            return None
+        resistencia = rango_alto(df)
+        soporte = rango_bajo(df)
 
-        if es_indecision(last):
-            return None
+        # ==========================
+        # CALL
+        # ==========================
+        if (
+            cerca_soporte(prev, soporte)
+            and rechazo_inferior(prev)
+            and is_bullish(prev)
+            and fuerza(prev) > 0.4
+            and prev["close"] > prev2["close"]
+            and is_bullish(last)
+            and fuerza(last) > 0.4
+        ):
+            return {"action": "call", "score": 10}
 
-        if rechazo_superior(last):
-            return None
+        # ==========================
+        # PUT
+        # ==========================
+        if (
+            cerca_resistencia(prev, resistencia)
+            and rechazo_superior(prev)
+            and is_bearish(prev)
+            and fuerza(prev) > 0.4
+            and prev["close"] < prev2["close"]
+            and is_bearish(last)
+            and fuerza(last) > 0.4
+        ):
+            return {"action": "put", "score": 10}
 
-        if last["close"] <= prev["close"]:
-            return None
-
-        if abs(last["close"] - res) < (res * 0.002):
-            return None
-
-        if not is_bullish(prev):
-            return None
-
-        if fuerza(prev) < 0.5:
-            return None
-
-        if rechazo_superior(prev):
-            return None
-
-        if last["max"] > prev["max"] and last["close"] < prev["max"]:
-            return None
-
-        return {
-            "action": "call",
-            "score": 10
-        }
+        return None
 
     except:
         return None
