@@ -29,7 +29,7 @@ IQ_EMAIL = os.environ.get("IQ_EMAIL")
 IQ_PASSWORD = os.environ.get("IQ_PASSWORD")
 
 TIMEFRAME = 60
-MONTO = 65
+MONTO = 70
 EXPIRACION = 1
 
 
@@ -46,22 +46,16 @@ def connect():
         time.sleep(5)
 
 
-# ==========================
-# 🔥 OBTENER TODOS LOS OTC ABIERTOS
-# ==========================
 def get_otc_abiertos(iq):
-
     try:
         activos = iq.get_all_open_time()
         pares = []
 
         for par, data in activos["binary"].items():
-
             if "-OTC" in par and data["open"]:
                 pares.append(par)
 
         return pares
-
     except:
         return []
 
@@ -76,6 +70,23 @@ def esperar_apertura():
         time.sleep(0.001)
 
 
+# ==========================
+# 🔥 NUEVA LÓGICA: ROJA → VERDE
+# ==========================
+def patron_roja_verde(candles):
+
+    if len(candles) < 3:
+        return False
+
+    c1 = candles[-1]  # última cerrada
+    c2 = candles[-2]
+
+    roja = c2["close"] < c2["open"]
+    verde = c1["close"] > c1["open"]
+
+    return roja and verde
+
+
 def analizar_par(iq, pair):
 
     candles = silent(
@@ -85,7 +96,11 @@ def analizar_par(iq, pair):
     if not candles:
         return None
 
-    return analyze_market(candles, None, None)
+    # 🔥 SOLO PATRÓN ROJA → VERDE
+    if not patron_roja_verde(candles):
+        return None
+
+    return {"action": "call"}
 
 
 def obtener_resultado(iq, trade_id):
@@ -113,17 +128,17 @@ def obtener_resultado(iq, trade_id):
             return "loss"
 
 
-def ejecutar_trade(iq, pair, action):
+def ejecutar_trade(iq, pair):
 
     status, trade_id = silent(
-        iq.buy, MONTO, pair, action, EXPIRACION
+        iq.buy, MONTO, pair, "call", EXPIRACION
     )
 
     if not status:
         send_message(f"❌ Entrada rechazada {pair}")
         return
 
-    send_message(f"📊 CALL {pair}\n⏱ 1m\n🔥 2da vela verde")
+    send_message(f"📊 CALL {pair}\n🔥 Roja → Verde\n⏱ 1m")
 
     resultado = obtener_resultado(iq, trade_id)
 
@@ -149,26 +164,22 @@ def run():
             print("⚠️ No hay OTC abiertos")
             continue
 
-        señales = []
-
         for par in pares:
 
             señal = analizar_par(iq, par)
 
             if señal:
-                señales.append((par, señal))
 
-        if not señales:
-            print("⚠️ Sin señales...")
-            continue
+                print(f"🎯 {par} → Roja + Verde detectado")
 
-        par, señal = señales[0]
+                # 🔥 ENTRA EN LA SIGUIENTE VELA
+                esperar_apertura()
 
-        print(f"🎯 {par} CALL → 2da vela verde")
+                ejecutar_trade(iq, par)
 
-        esperar_apertura()
-
-        ejecutar_trade(iq, par, "call")
+                break
+        else:
+            print("⚠️ Sin patrón...")
 
 
 if __name__ == "__main__":
