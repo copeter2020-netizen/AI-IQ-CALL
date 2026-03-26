@@ -19,74 +19,46 @@ def fuerza(c):
     return body(c) / r
 
 
-def upper_wick(c):
-    return c["max"] - max(c["close"], c["open"])
-
-
-def lower_wick(c):
-    return min(c["close"], c["open"]) - c["min"]
-
-
 def is_bullish(c):
     return c["close"] > c["open"]
 
 
-def is_bearish(c):
-    return c["close"] < c["open"]
+# ==========================
+# EMA
+# ==========================
+def ema(df, period=20):
+    return df["close"].ewm(span=period).mean()
 
 
 # ==========================
-# FILTROS DE VELA (AJUSTADOS)
-# ==========================
-def es_doji(c):
-    return fuerza(c) < 0.2
-
-
-def es_ahorcamiento(c):
-    # 🔥 solo bloquea mechas MUY exageradas
-    return upper_wick(c) > body(c) * 2 or lower_wick(c) > body(c) * 2
-
-
-def es_vela_valida(c):
-    return (
-        fuerza(c) > 0.4 and   # 🔥 antes 0.5 (muy estricta)
-        not es_doji(c) and
-        not es_ahorcamiento(c)
-    )
-
-
-# ==========================
-# SOPORTE / RESISTENCIA (SUAVE)
+# RESISTENCIA
 # ==========================
 def resistencia(df):
     return df["max"].rolling(20).max().iloc[-1]
 
 
-def soporte(df):
-    return df["min"].rolling(20).min().iloc[-1]
-
-
-def en_zona_prohibida(c, res, sup):
-
-    margen = c["close"] * 0.001  # 🔥 más preciso (menos bloqueo)
-
-    cerca_res = abs(c["close"] - res) < margen
-    cerca_sup = abs(c["close"] - sup) < margen
-
-    return cerca_res or cerca_sup
+# ==========================
+# RECHAZO
+# ==========================
+def rechazo_superior(c):
+    upper = c["max"] - max(c["close"], c["open"])
+    return upper > body(c) * 1.2
 
 
 # ==========================
-# MICRO TENDENCIA (MENOS RÍGIDA)
+# INDECISIÓN
 # ==========================
-def micro_tendencia_alcista(df):
-    ult = df.tail(3)
-    return ult.iloc[-1]["close"] > ult.iloc[-2]["close"]
+def es_indecision(c):
+    return fuerza(c) < 0.3
 
 
-def micro_tendencia_bajista(df):
-    ult = df.tail(3)
-    return ult.iloc[-1]["close"] < ult.iloc[-2]["close"]
+# ==========================
+# CONTINUIDAD
+# ==========================
+def continuidad_alcista(df):
+    ultimas = df.tail(4)
+    verdes = sum(1 for i in range(len(ultimas)) if is_bullish(ultimas.iloc[i]))
+    return verdes >= 3
 
 
 # ==========================
@@ -97,30 +69,50 @@ def analyze_market(candles, c5, c15):
     try:
         df = pd.DataFrame(candles)
 
-        if len(df) < 20:
+        if len(df) < 30:
             return None
+
+        df["ema"] = ema(df)
 
         last = df.iloc[-1]
-
-        # FILTRO VELA
-        if not es_vela_valida(last):
-            return None
+        prev = df.iloc[-2]
 
         res = resistencia(df)
-        sup = soporte(df)
 
-        # BLOQUEO S/R (MENOS AGRESIVO)
-        if en_zona_prohibida(last, res, sup):
+        if last["close"] < last["ema"]:
             return None
 
-        # DIRECCIÓN + MICRO TENDENCIA
-        if is_bullish(last) and micro_tendencia_alcista(df):
-            return {"action": "call", "score": 10}
+        if not continuidad_alcista(df):
+            return None
 
-        if is_bearish(last) and micro_tendencia_bajista(df):
-            return {"action": "put", "score": 10}
+        if es_indecision(last):
+            return None
 
-        return None
+        if rechazo_superior(last):
+            return None
+
+        if last["close"] <= prev["close"]:
+            return None
+
+        if abs(last["close"] - res) < (res * 0.002):
+            return None
+
+        if not is_bullish(prev):
+            return None
+
+        if fuerza(prev) < 0.5:
+            return None
+
+        if rechazo_superior(prev):
+            return None
+
+        if last["max"] > prev["max"] and last["close"] < prev["max"]:
+            return None
+
+        return {
+            "action": "call",
+            "score": 10
+        }
 
     except:
         return None
