@@ -28,26 +28,30 @@ def silent(func, *args, **kwargs):
 IQ_EMAIL = os.getenv("IQ_EMAIL")
 IQ_PASSWORD = os.getenv("IQ_PASSWORD")
 
+PAR = "EURUSD-OTC"
 TIMEFRAME = 60
 MONTO = 7500
 EXPIRACION = 1
-
-PAR = "EURUSD-OTC"   # 🔥 SOLO ESTE PAR
 
 
 def connect():
     while True:
         iq = IQ_Option(IQ_EMAIL, IQ_PASSWORD)
+
         silent(iq.connect)
 
         if iq.check_connect():
+
+            # 🔥 BLOQUEAR DIGITALES (SOLUCIÓN REAL)
             try:
                 iq.api.digital_underlying_list = {}
+                iq.api.get_digital_underlying_list_data = lambda: {}
             except:
                 pass
 
-            print("✅ BOT SNIPER PRO EURUSD-OTC")
-            send_message("🎯 BOT SNIPER PRO EURUSD-OTC")
+            print("✅ BOT SIN ERROR UNDERLYING")
+            send_message("✅ BOT ACTIVO EURUSD SNIPER")
+
             return iq
 
         time.sleep(5)
@@ -72,6 +76,7 @@ def esperar_apertura():
 
 
 def resultado(iq, trade_id):
+
     while True:
         r = silent(iq.check_win_v4, trade_id)
 
@@ -87,25 +92,30 @@ def resultado(iq, trade_id):
             return
 
         if r > 0:
-            send_message("✅ WIN EURUSD-OTC")
+            send_message("✅ WIN EURUSD")
         else:
-            send_message("❌ LOSS EURUSD-OTC")
+            send_message("❌ LOSS EURUSD")
 
         return
 
 
 def ejecutar(iq, accion):
 
-    status, trade_id = silent(
-        iq.buy, MONTO, PAR, accion, EXPIRACION
-    )
+    for _ in range(3):
 
-    if not status:
-        send_message("⛔ Entrada rechazada EURUSD-OTC")
-        return
+        status, trade_id = silent(
+            iq.buy, MONTO, PAR, accion, EXPIRACION
+        )
 
-    send_message(f"🎯 {accion.upper()} EURUSD-OTC")
-    resultado(iq, trade_id)
+        if status:
+            print(f"🚀 {PAR} {accion}")
+            send_message(f"📊 {accion.upper()} {PAR}")
+            resultado(iq, trade_id)
+            return
+
+        time.sleep(0.5)
+
+    send_message("⛔ Error entrada EURUSD")
 
 
 def run():
@@ -115,7 +125,7 @@ def run():
     while True:
 
         if not par_abierto(iq):
-            print("⛔ EURUSD-OTC cerrado")
+            print("⛔ EURUSD cerrado")
             time.sleep(5)
             continue
 
@@ -131,7 +141,7 @@ def run():
         señal = analizar_macd_price_action(candles)
 
         if not señal:
-            print("🎯 SNIPER esperando EURUSD...")
+            print("🎯 SNIPER esperando...")
             continue
 
         print(f"🎯 EURUSD {señal['action']}")
