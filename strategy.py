@@ -1,150 +1,88 @@
-import pandas as pd
+# ==========================
+# DETECTAR MEJOR OPORTUNIDAD
+# ==========================
+def detectar_oportunidad(candles):
+
+    if len(candles) < 10:
+        return None, 0
+
+    score = 0
+
+    c1 = candles[-1]
+    c2 = candles[-2]
+    c3 = candles[-3]
+    c4 = candles[-4]
+    c5 = candles[-5]
+
+    # ==========================
+    # 🔥 FILTRO: EVITAR INDECISIÓN
+    # ==========================
+    if es_indecision(c1):
+        return None, 0
+
+    # ==========================
+    # 🔺 COMPRA (CALL)
+    # ==========================
+    if (
+        c5["close"] < c4["close"] < c3["close"] and  # tendencia
+        c2["close"] < c2["open"] and                # retroceso rojo
+        c1["close"] > c1["open"] and                # confirmación verde
+        c1["close"] > c3["close"]                   # rompimiento
+    ):
+        score += 3
+
+        if es_fuerte(c1):
+            score += 2
+
+        if continuidad_alcista(candles):
+            score += 2
+
+        return "call", score
+
+    # ==========================
+    # 🔻 VENTA (PUT)
+    # ==========================
+    if (
+        c5["close"] > c4["close"] > c3["close"] and
+        c2["close"] > c2["open"] and
+        c1["close"] < c1["open"] and
+        c1["close"] < c3["close"]
+    ):
+        score += 3
+
+        if es_fuerte(c1):
+            score += 2
+
+        if continuidad_bajista(candles):
+            score += 2
+
+        return "put", score
+
+    return None, 0
 
 
 # ==========================
-# INDICADORES
+# FUNCIONES AUXILIARES
 # ==========================
-def ema(df, period=50):
-    df["ema"] = df["close"].ewm(span=period).mean()
-
-
-def bollinger(df, period=20):
-    ma = df["close"].rolling(period).mean()
-    std = df["close"].rolling(period).std()
-    df["bb_upper"] = ma + (2 * std)
-    df["bb_lower"] = ma - (2 * std)
-
-
-def cci(df, period=20):
-    tp = (df["max"] + df["min"] + df["close"]) / 3
-    ma = tp.rolling(period).mean()
-    md = (tp - ma).abs().rolling(period).mean()
-    df["cci"] = (tp - ma) / (0.015 * md)
-
-
-# ==========================
-# KDJ
-# ==========================
-def kdj(df, period=9):
-
-    low_min = df["min"].rolling(period).min()
-    high_max = df["max"].rolling(period).max()
-
-    rsv = (df["close"] - low_min) / (high_max - low_min) * 100
-
-    df["K"] = rsv.ewm(com=2).mean()
-    df["D"] = df["K"].ewm(com=2).mean()
-    df["J"] = 3 * df["K"] - 2 * df["D"]
-
-
-# ==========================
-# 🔥 RVI (Relative Vigor Index)
-# ==========================
-def rvi(df, period=10):
-
-    close_open = df["close"] - df["open"]
-    high_low = df["max"] - df["min"]
-
-    num = close_open.rolling(period).mean()
-    den = high_low.rolling(period).mean()
-
-    df["rvi"] = num / den
-    df["rvi_signal"] = df["rvi"].rolling(4).mean()
-
-
-def fuerza(c):
+def es_fuerte(c):
+    cuerpo = abs(c["close"] - c["open"])
     rango = c["max"] - c["min"]
-    if rango == 0:
-        return 0
-    return abs(c["close"] - c["open"]) / rango
+    return cuerpo > rango * 0.6
 
 
-# ==========================
-# ESTRATEGIA PRO + KDJ + RVI
-# ==========================
-def analyze_market(candles, c5, c15):
+def es_indecision(c):
+    cuerpo = abs(c["close"] - c["open"])
+    rango = c["max"] - c["min"]
+    return cuerpo < rango * 0.3
 
-    try:
-        df = pd.DataFrame(candles)
 
-        if len(df) < 70:
-            return None
+def continuidad_alcista(candles):
+    return (
+        candles[-1]["close"] > candles[-2]["close"] > candles[-3]["close"]
+    )
 
-        ema(df)
-        bollinger(df)
-        cci(df)
-        kdj(df)
-        rvi(df)
 
-        last = df.iloc[-1]
-        prev = df.iloc[-2]
-
-        # ==========================
-        # 🔥 TENDENCIA ALCISTA
-        # ==========================
-        if last["close"] < last["ema"]:
-            return None
-
-        # ==========================
-        # 🔥 PULLBACK LIMPIO
-        # ==========================
-        if prev["close"] > prev["open"]:
-            return None
-
-        # ==========================
-        # 🔥 BOLLINGER
-        # ==========================
-        if prev["close"] > prev["bb_lower"]:
-            return None
-
-        # ==========================
-        # 🔥 CCI
-        # ==========================
-        if prev["cci"] > -100:
-            return None
-
-        # ==========================
-        # 🔥 KDJ
-        # ==========================
-        if not (
-            prev["K"] < prev["D"] and
-            last["K"] > last["D"] and
-            last["K"] < 30
-        ):
-            return None
-
-        # ==========================
-        # 🔥 RVI CONFIRMACIÓN
-        # ==========================
-        # cruce alcista + momentum positivo
-        if not (
-            prev["rvi"] < prev["rvi_signal"] and
-            last["rvi"] > last["rvi_signal"] and
-            last["rvi"] > 0
-        ):
-            return None
-
-        # ==========================
-        # 🔥 VELA FUERTE
-        # ==========================
-        if last["close"] <= last["open"]:
-            return None
-
-        if fuerza(last) < 0.6:
-            return None
-
-        # ==========================
-        # 🔥 EVITAR LATERALIDAD
-        # ==========================
-        rango = df["close"].rolling(10).max().iloc[-1] - df["close"].rolling(10).min().iloc[-1]
-
-        if rango < 0.0005:
-            return None
-
-        return {
-            "action": "call",
-            "score": 10
-        }
-
-    except:
-        return None
+def continuidad_bajista(candles):
+    return (
+        candles[-1]["close"] < candles[-2]["close"] < candles[-3]["close"]
+    )
