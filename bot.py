@@ -51,6 +51,7 @@ def connect():
 
         if iq.check_connect():
 
+            # 🔥 BLOQUEAR DIGITAL ERROR
             try:
                 iq.api.digital_underlying_list = {}
             except:
@@ -64,7 +65,7 @@ def connect():
 
 
 # ==========================
-# PARES OTC ABIERTOS
+# OBTENER PARES OTC
 # ==========================
 def get_pairs(iq):
     try:
@@ -112,7 +113,7 @@ def resultado(iq, trade_id):
 
 
 # ==========================
-# EJECUCIÓN
+# EJECUTAR TRADE
 # ==========================
 def ejecutar(iq, par, action):
 
@@ -125,6 +126,7 @@ def ejecutar(iq, par, action):
         if status:
             print(f"🚀 {par} {action}")
             send_message(f"📊 {action.upper()} {par}")
+
             resultado(iq, trade_id)
             return True
 
@@ -133,11 +135,12 @@ def ejecutar(iq, par, action):
     # ❌ BLOQUEAR PAR
     pares_bloqueados.add(par)
     send_message(f"⛔ Bloqueado {par}")
+
     return False
 
 
 # ==========================
-# BOT
+# BOT PRINCIPAL
 # ==========================
 def run():
 
@@ -150,7 +153,7 @@ def run():
         pares = get_pairs(iq)
 
         if not pares:
-            print("⚠️ Sin pares")
+            print("⚠️ Sin pares disponibles")
             continue
 
         print(f"🔎 Analizando {len(pares)} pares...")
@@ -180,7 +183,7 @@ def run():
                 break
 
         else:
-            print("⚠️ Sin señal")
+            print("⚠️ Sin señal válida")
 
 
 if __name__ == "__main__":
