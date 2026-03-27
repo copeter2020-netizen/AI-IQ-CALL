@@ -1,12 +1,24 @@
-def es_verde(c):
-    return c["close"] > c["open"]
+def body(c):
+    return abs(c["close"] - c["open"])
+
+
+def rango(c):
+    return c["max"] - c["min"]
 
 
 def fuerza(c):
-    rango = c["max"] - c["min"]
-    if rango == 0:
+    r = rango(c)
+    if r == 0:
         return 0
-    return abs(c["close"] - c["open"]) / rango
+    return body(c) / r
+
+
+def mecha_superior(c):
+    return c["max"] - max(c["close"], c["open"])
+
+
+def mecha_inferior(c):
+    return min(c["close"], c["open"]) - c["min"]
 
 
 def analyze_market(candles, c5, c15):
@@ -15,36 +27,35 @@ def analyze_market(candles, c5, c15):
         if len(candles) < 5:
             return None
 
-        c1 = candles[-1]  # última vela cerrada
+        c1 = candles[-1]  # última vela
         c2 = candles[-2]
         c3 = candles[-3]
 
         # ==========================
-        # 🔥 MICRO TENDENCIA ALCISTA
+        # 🔴 FAKE BREAK ARRIBA → PUT
         # ==========================
-        if c3["close"] >= c2["close"]:
-            return None
+        if (
+            c2["max"] > c3["max"] and                # rompe máximo
+            c2["close"] < c3["max"] and             # cierra debajo (falso rompimiento)
+            mecha_superior(c2) > body(c2) and       # rechazo fuerte
+            c1["close"] < c1["open"] and            # confirmación roja
+            fuerza(c1) > 0.5
+        ):
+            return {"action": "put", "score": 10}
 
         # ==========================
-        # 🔥 SEGUNDA VELA VERDE
+        # 🟢 FAKE BREAK ABAJO → CALL
         # ==========================
-        if not es_verde(c2):
-            return None
+        if (
+            c2["min"] < c3["min"] and               # rompe mínimo
+            c2["close"] > c3["min"] and             # cierra arriba
+            mecha_inferior(c2) > body(c2) and       # rechazo inferior
+            c1["close"] > c1["open"] and            # confirmación verde
+            fuerza(c1) > 0.5
+        ):
+            return {"action": "call", "score": 10}
 
-        if not es_verde(c1):
-            return None
-
-        # evitar vela débil
-        if fuerza(c1) < 0.5:
-            return None
-
-        # ==========================
-        # ✅ SOLO COMPRA
-        # ==========================
-        return {
-            "action": "call",
-            "score": 10
-        }
+        return None
 
     except:
         return None
