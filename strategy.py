@@ -1,12 +1,7 @@
-# ==========================
-# DETECTAR MEJOR OPORTUNIDAD
-# ==========================
-def detectar_oportunidad(candles):
+def analizar_price_action(candles):
 
     if len(candles) < 10:
-        return None, 0
-
-    score = 0
+        return None
 
     c1 = candles[-1]
     c2 = candles[-2]
@@ -14,33 +9,35 @@ def detectar_oportunidad(candles):
     c4 = candles[-4]
     c5 = candles[-5]
 
-    # ==========================
-    # 🔥 FILTRO: EVITAR INDECISIÓN
-    # ==========================
-    if es_indecision(c1):
-        return None, 0
+    score = 0
 
     # ==========================
-    # 🔺 COMPRA (CALL)
+    # FILTRO INDECISIÓN
+    # ==========================
+    if indecision(c1):
+        return None
+
+    # ==========================
+    # COMPRA (CALL)
     # ==========================
     if (
-        c5["close"] < c4["close"] < c3["close"] and  # tendencia
-        c2["close"] < c2["open"] and                # retroceso rojo
-        c1["close"] > c1["open"] and                # confirmación verde
-        c1["close"] > c3["close"]                   # rompimiento
+        c5["close"] < c4["close"] < c3["close"] and
+        c2["close"] < c2["open"] and
+        c1["close"] > c1["open"] and
+        c1["close"] > c3["close"]
     ):
-        score += 3
+        score += 4
 
-        if es_fuerte(c1):
+        if fuerte(c1):
             score += 2
 
-        if continuidad_alcista(candles):
+        if micro_alcista(candles):
             score += 2
 
-        return "call", score
+        return {"action": "call", "score": score}
 
     # ==========================
-    # 🔻 VENTA (PUT)
+    # VENTA (PUT)
     # ==========================
     if (
         c5["close"] > c4["close"] > c3["close"] and
@@ -48,41 +45,37 @@ def detectar_oportunidad(candles):
         c1["close"] < c1["open"] and
         c1["close"] < c3["close"]
     ):
-        score += 3
+        score += 4
 
-        if es_fuerte(c1):
+        if fuerte(c1):
             score += 2
 
-        if continuidad_bajista(candles):
+        if micro_bajista(candles):
             score += 2
 
-        return "put", score
+        return {"action": "put", "score": score}
 
-    return None, 0
+    return None
 
 
 # ==========================
-# FUNCIONES AUXILIARES
+# FUNCIONES AUX
 # ==========================
-def es_fuerte(c):
+def fuerte(c):
     cuerpo = abs(c["close"] - c["open"])
     rango = c["max"] - c["min"]
     return cuerpo > rango * 0.6
 
 
-def es_indecision(c):
+def indecision(c):
     cuerpo = abs(c["close"] - c["open"])
     rango = c["max"] - c["min"]
     return cuerpo < rango * 0.3
 
 
-def continuidad_alcista(candles):
-    return (
-        candles[-1]["close"] > candles[-2]["close"] > candles[-3]["close"]
-    )
+def micro_alcista(c):
+    return c[-1]["close"] > c[-2]["close"] > c[-3]["close"]
 
 
-def continuidad_bajista(candles):
-    return (
-        candles[-1]["close"] < candles[-2]["close"] < candles[-3]["close"]
-    )
+def micro_bajista(c):
+    return c[-1]["close"] < c[-2]["close"] < c[-3]["close"]
