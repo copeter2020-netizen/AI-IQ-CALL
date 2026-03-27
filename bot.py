@@ -2,7 +2,7 @@ import os
 import time
 import sys
 from iqoptionapi.stable_api import IQ_Option
-from strategy import analizar_price_action
+from strategy import analizar_macd_price_action
 from telegram_bot import send_message
 
 
@@ -29,23 +29,18 @@ IQ_EMAIL = os.getenv("IQ_EMAIL")
 IQ_PASSWORD = os.getenv("IQ_PASSWORD")
 
 TIMEFRAME = 60
-MONTO = 1750
+MONTO = 3300
 EXPIRACION = 1
 
 bloqueados = set()
 
 
-# ==========================
-# CONEXIÓN
-# ==========================
 def connect():
     while True:
         iq = IQ_Option(IQ_EMAIL, IQ_PASSWORD)
         silent(iq.connect)
 
         if iq.check_connect():
-
-            # 🔥 FIX ERROR UNDERLYING
             try:
                 iq.api.digital_underlying_list = {}
             except:
@@ -58,9 +53,6 @@ def connect():
         time.sleep(5)
 
 
-# ==========================
-# PARES
-# ==========================
 def get_pairs(iq):
     try:
         data = iq.get_all_open_time()
@@ -83,11 +75,7 @@ def esperar_apertura():
         time.sleep(0.001)
 
 
-# ==========================
-# RESULTADO
-# ==========================
 def resultado(iq, trade_id):
-
     while True:
         r = silent(iq.check_win_v4, trade_id)
 
@@ -98,7 +86,6 @@ def resultado(iq, trade_id):
         try:
             if isinstance(r, tuple):
                 r = r[0]
-
             r = float(r)
         except:
             return
@@ -111,9 +98,6 @@ def resultado(iq, trade_id):
         return
 
 
-# ==========================
-# EJECUCIÓN
-# ==========================
 def ejecutar(iq, par, accion):
 
     for _ in range(3):
@@ -128,16 +112,13 @@ def ejecutar(iq, par, accion):
             resultado(iq, trade_id)
             return True
 
-        time.sleep(0.3)
+        time.sleep(0.5)
 
     bloqueados.add(par)
     send_message(f"⛔ {par} bloqueado")
     return False
 
 
-# ==========================
-# BOT
-# ==========================
 def run():
 
     iq = connect()
@@ -152,34 +133,38 @@ def run():
             print("⚠️ Sin pares")
             continue
 
-        print(f"🔎 Analizando {len(pares)} pares...")
-
-        mejor_par = None
         mejor = None
+        mejor_par = None
 
         for par in pares:
 
             candles = silent(
-                iq.get_candles, par, TIMEFRAME, 30, time.time()
+                iq.get_candles, par, TIMEFRAME, 50, time.time()
             )
 
             if not candles:
                 continue
 
-            señal = analizar_price_action(candles)
+            señal = analizar_macd_price_action(candles)
 
             if not señal:
                 continue
 
+            # 🔥 SI NO HAY SEÑALES, IGUAL OPERAMOS LA MEJOR
             if not mejor or señal["score"] > mejor["score"]:
                 mejor = señal
                 mejor_par = par
 
+        # 🔥 SI TODO FALLA → FORZAR ENTRADA
         if not mejor:
-            print("⚠️ Sin señal")
+            par = pares[0]
+            print(f"⚠️ FORZANDO ENTRADA {par}")
+            send_message(f"⚠️ FORZANDO {par}")
+            esperar_apertura()
+            ejecutar(iq, par, "call")
             continue
 
-        print(f"🎯 {mejor_par} {mejor['action']} ({mejor['score']})")
+        print(f"🎯 {mejor_par} {mejor['action']}")
         send_message(f"🎯 {mejor_par} {mejor['action']}")
 
         esperar_apertura()
