@@ -2,12 +2,12 @@ import os
 import time
 import sys
 from iqoptionapi.stable_api import IQ_Option
-from strategy import detectar_oportunidad
+from strategy import analizar_price_action
 from telegram_bot import send_message
 
 
 # ==========================
-# SILENCIAR ERRORES
+# SILENCIO
 # ==========================
 class DevNull:
     def write(self, msg): pass
@@ -35,14 +35,14 @@ IQ_EMAIL = os.getenv("IQ_EMAIL")
 IQ_PASSWORD = os.getenv("IQ_PASSWORD")
 
 TIMEFRAME = 60
-MONTO = 1700
+MONTO = 75
 EXPIRACION = 1
 
-pares_bloqueados = set()
+bloqueados = set()
 
 
 # ==========================
-# CONEXIÓN
+# CONEXIÓN REAL
 # ==========================
 def connect():
     while True:
@@ -51,21 +51,21 @@ def connect():
 
         if iq.check_connect():
 
-            # 🔥 ELIMINA ERROR UNDERLYING
+            # 🔥 eliminar error digital
             try:
                 iq.api.digital_underlying_list = {}
             except:
                 pass
 
-            print("✅ BOT ACTIVADO")
-            send_message("✅ BOT ACTIVADO")
+            print("✅ BOT CONECTADO AL GRÁFICO")
+            send_message("✅ BOT CONECTADO AL GRÁFICO")
             return iq
 
         time.sleep(5)
 
 
 # ==========================
-# OBTENER PARES OTC ABIERTOS
+# PARES OTC ABIERTOS
 # ==========================
 def get_pairs(iq):
     try:
@@ -73,18 +73,23 @@ def get_pairs(iq):
 
         return [
             p for p, d in data["binary"].items()
-            if "-OTC" in p and d["open"] and p not in pares_bloqueados
+            if "-OTC" in p and d["open"] and p not in bloqueados
         ]
     except:
         return []
 
 
 # ==========================
-# ESPERAR CIERRE
+# ESPERAR VELA
 # ==========================
 def esperar_cierre():
     while int(time.time()) % 60 != 59:
         time.sleep(0.02)
+
+
+def esperar_apertura():
+    while int(time.time()) % 60 != 0:
+        time.sleep(0.001)
 
 
 # ==========================
@@ -113,7 +118,7 @@ def resultado(iq, trade_id):
 
 
 # ==========================
-# EJECUTAR TRADE
+# EJECUTAR
 # ==========================
 def ejecutar(iq, par, accion):
 
@@ -126,21 +131,19 @@ def ejecutar(iq, par, accion):
         if status:
             print(f"🚀 {par} {accion}")
             send_message(f"📊 {accion.upper()} {par}")
-
             resultado(iq, trade_id)
             return True
 
         time.sleep(0.3)
 
-    # ❌ BLOQUEAR PAR PROBLEMÁTICO
-    pares_bloqueados.add(par)
-    send_message(f"⛔ Bloqueado {par}")
+    bloqueados.add(par)
+    send_message(f"⛔ {par} bloqueado")
 
     return False
 
 
 # ==========================
-# BOT PRINCIPAL
+# BOT
 # ==========================
 def run():
 
@@ -153,43 +156,44 @@ def run():
         pares = get_pairs(iq)
 
         if not pares:
-            print("⚠️ Sin pares disponibles")
+            print("⚠️ Sin pares")
             continue
 
         print(f"🔎 Analizando {len(pares)} pares...")
 
-        mejor_par = None
-        mejor_accion = None
+        mejor = None
         mejor_score = 0
 
         for par in pares:
 
             candles = silent(
-                iq.get_candles, par, TIMEFRAME, 20, time.time()
+                iq.get_candles, par, TIMEFRAME, 30, time.time()
             )
 
             if not candles:
                 continue
 
-            accion, score = detectar_oportunidad(candles)
+            señal = analizar_price_action(candles)
 
-            if accion and score > mejor_score:
-                mejor_score = score
-                mejor_par = par
-                mejor_accion = accion
+            if not señal:
+                continue
 
-        if not mejor_par:
-            print("⚠️ Sin oportunidad clara")
+            if señal["score"] > mejor_score:
+                mejor = (par, señal)
+                mejor_score = señal["score"]
+
+        if not mejor:
+            print("⚠️ Sin oportunidad real")
             continue
 
-        print(f"🎯 MEJOR: {mejor_par} {mejor_accion} ({mejor_score})")
-        send_message(f"🎯 {mejor_par} {mejor_accion} (score {mejor_score})")
+        par, señal = mejor
 
-        # 🔥 ENTRADA EXACTA EN NUEVA VELA
-        while int(time.time()) % 60 != 0:
-            pass
+        print(f"🎯 {par} {señal['action']} ({señal['score']})")
+        send_message(f"🎯 {par} {señal['action']}")
 
-        ejecutar(iq, mejor_par, mejor_accion)
+        esperar_apertura()
+
+        ejecutar(iq, par, señal["action"])
 
 
 if __name__ == "__main__":
