@@ -34,8 +34,11 @@ IQ_EMAIL = os.environ.get("IQ_EMAIL")
 IQ_PASSWORD = os.environ.get("IQ_PASSWORD")
 
 TIMEFRAME = 60
-MONTO = 75
+MONTO = 112
 EXPIRACION = 1
+
+# 🔥 PARES BLOQUEADOS AUTOMÁTICAMENTE
+pares_bloqueados = set()
 
 
 # ==========================
@@ -48,6 +51,13 @@ def connect():
 
         if iq.check_connect():
             print("✅ BOT ACTIVADO")
+
+            # 🔥 BLOQUEAR DIGITAL (SOLUCIÓN ERROR UNDERLYING)
+            try:
+                iq.api.digital_underlying_list = {}
+            except:
+                pass
+
             send_message("✅ BOT ACTIVADO")
             return iq
 
@@ -55,7 +65,7 @@ def connect():
 
 
 # ==========================
-# PARES OTC ABIERTOS
+# OBTENER OTC ABIERTOS
 # ==========================
 def get_otc_abiertos(iq):
     try:
@@ -64,6 +74,7 @@ def get_otc_abiertos(iq):
         return [
             par for par, data in activos["binary"].items()
             if "-OTC" in par and data["open"]
+            and par not in pares_bloqueados
         ]
 
     except:
@@ -107,11 +118,10 @@ def obtener_resultado(iq, trade_id):
 
 
 # ==========================
-# EJECUCIÓN FORZADA
+# EJECUCIÓN INTELIGENTE
 # ==========================
 def ejecutar(iq, par, action):
 
-    # 🔥 REINTENTO AUTOMÁTICO
     for intento in range(3):
 
         status, trade_id = silent(
@@ -123,16 +133,21 @@ def ejecutar(iq, par, action):
             send_message(f"📊 {action.upper()} {par}")
 
             obtener_resultado(iq, trade_id)
-            return
+            return True
 
         time.sleep(0.3)
 
-    print(f"❌ No ejecutó {par}")
-    send_message(f"❌ No ejecutó {par}")
+    # ❌ SI FALLA → BLOQUEAR PAR
+    print(f"⛔ Bloqueando {par}")
+    send_message(f"⛔ Par bloqueado {par}")
+
+    pares_bloqueados.add(par)
+
+    return False
 
 
 # ==========================
-# ESTRATEGIA SIMPLE (PUEDES CAMBIARLA)
+# ESTRATEGIA SIMPLE
 # ==========================
 def detectar_senal(candles):
 
@@ -142,11 +157,11 @@ def detectar_senal(candles):
     c1 = candles[-1]
     c2 = candles[-2]
 
-    # 🔥 ROJA → VERDE = CALL
+    # CALL
     if c2["close"] < c2["open"] and c1["close"] > c1["open"]:
         return "call"
 
-    # 🔥 VERDE → ROJA = PUT
+    # PUT
     if c2["close"] > c2["open"] and c1["close"] < c1["open"]:
         return "put"
 
@@ -167,7 +182,7 @@ def run():
         pares = get_otc_abiertos(iq)
 
         if not pares:
-            print("⚠️ No hay pares abiertos")
+            print("⚠️ Sin pares válidos")
             continue
 
         print(f"🔎 Analizando {len(pares)} pares...")
@@ -187,17 +202,19 @@ def run():
                 continue
 
             print(f"🎯 SEÑAL {par} {accion}")
-            send_message(f"📡 SEÑAL {par} {accion}")
+            send_message(f"📡 {par} {accion}")
 
-            # 🔥 ENTRADA EXACTA (SIN DELAY)
+            # 🔥 ENTRADA EXACTA
             while int(time.time()) % 60 != 0:
                 pass
 
-            ejecutar(iq, par, accion)
+            ejecutado = ejecutar(iq, par, accion)
 
-            break
+            if ejecutado:
+                break
+
         else:
-            print("⚠️ Sin señal")
+            print("⚠️ Sin señal válida")
 
 
 # ==========================
