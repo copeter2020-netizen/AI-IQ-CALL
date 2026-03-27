@@ -96,7 +96,7 @@ IQ_EMAIL = os.getenv("IQ_EMAIL")
 IQ_PASSWORD = os.getenv("IQ_PASSWORD")
 
 TIMEFRAME = 60
-MONTO = 112
+MONTO = 120
 EXPIRACION = 1
 
 
@@ -204,7 +204,6 @@ def run():
 
     while True:
 
-        # 🔥 ESCUCHAR TELEGRAM SIEMPRE
         check_telegram_commands()
 
         if not BOT_ACTIVO:
@@ -229,7 +228,7 @@ def run():
             if not señal:
                 continue
 
-            action = señal["action"]
+            action = señal["action"]  # 🔥 ahora usa CALL o PUT
 
             send_message(f"📡 SEÑAL {action.upper()} {par}")
 
