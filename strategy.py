@@ -2,66 +2,46 @@ def calcular_macd(candles):
 
     closes = [c["close"] for c in candles]
 
-    ema12 = ema(closes, 12)
-    ema26 = ema(closes, 26)
+    ema12 = []
+    ema26 = []
 
-    macd = [a - b for a, b in zip(ema12, ema26)]
-    signal = ema(macd, 9)
+    for i, price in enumerate(closes):
+
+        if i == 0:
+            ema12.append(price)
+            ema26.append(price)
+        else:
+            ema12.append((price * 0.15) + ema12[-1] * 0.85)
+            ema26.append((price * 0.075) + ema26[-1] * 0.925)
+
+    macd = [ema12[i] - ema26[i] for i in range(len(closes))]
+
+    signal = []
+    for i, m in enumerate(macd):
+        if i == 0:
+            signal.append(m)
+        else:
+            signal.append((m * 0.2) + signal[-1] * 0.8)
 
     return macd, signal
 
 
-def ema(data, period):
-
-    ema_values = []
-    k = 2 / (period + 1)
-
-    ema_values.append(data[0])
-
-    for i in range(1, len(data)):
-        ema_values.append(data[i] * k + ema_values[-1] * (1 - k))
-
-    return ema_values
-
-
-# ==========================
-# RUPTURAS
-# ==========================
 def ruptura_resistencia(candles):
-    highs = [c["max"] for c in candles[-6:-1]]
+    highs = [c["max"] for c in candles[:-1]]
     return candles[-1]["close"] > max(highs)
 
 
 def ruptura_soporte(candles):
-    lows = [c["min"] for c in candles[-6:-1]]
+    lows = [c["min"] for c in candles[:-1]]
     return candles[-1]["close"] < min(lows)
 
 
-# ==========================
-# CONTINUIDAD
-# ==========================
-def continuidad_alcista(c):
-    return c[-1]["close"] > c[-2]["close"] > c[-3]["close"]
+def fuerza_vela(c):
+    cuerpo = abs(c["close"] - c["open"])
+    mecha = (c["max"] - c["min"]) - cuerpo
+    return cuerpo > mecha
 
 
-def continuidad_bajista(c):
-    return c[-1]["close"] < c[-2]["close"] < c[-3]["close"]
-
-
-# ==========================
-# CRUCE MACD
-# ==========================
-def cruce_alcista(macd, signal):
-    return macd[-2] < signal[-2] and macd[-1] > signal[-1]
-
-
-def cruce_bajista(macd, signal):
-    return macd[-2] > signal[-2] and macd[-1] < signal[-1]
-
-
-# ==========================
-# ESTRATEGIA PRINCIPAL
-# ==========================
 def analizar_macd_price_action(candles):
 
     if len(candles) < 30:
@@ -69,36 +49,47 @@ def analizar_macd_price_action(candles):
 
     macd, signal = calcular_macd(candles)
 
+    c1 = candles[-1]
+    c2 = candles[-2]
+
     score = 0
 
-    # ==========================
-    # COMPRA
-    # ==========================
-    if (
-        ruptura_resistencia(candles) and
-        continuidad_alcista(candles) and
-        cruce_alcista(macd, signal)
-    ):
-        score += 5
+    # ======================
+    # 🔥 COMPRA (CALL)
+    # ======================
+    if ruptura_resistencia(candles):
+        score += 2
 
-        if macd[-1] > signal[-1]:
-            score += 2
+    if macd[-2] < signal[-2] and macd[-1] > signal[-1]:
+        score += 3
 
+    if c1["close"] > c1["open"]:
+        score += 1
+
+    if fuerza_vela(c1):
+        score += 1
+
+    if score >= 4:
         return {"action": "call", "score": score}
 
-    # ==========================
-    # VENTA
-    # ==========================
-    if (
-        ruptura_soporte(candles) and
-        continuidad_bajista(candles) and
-        cruce_bajista(macd, signal)
-    ):
-        score += 5
+    # ======================
+    # 🔻 VENTA (PUT)
+    # ======================
+    score = 0
 
-        if macd[-1] < signal[-1]:
-            score += 2
+    if ruptura_soporte(candles):
+        score += 2
 
+    if macd[-2] > signal[-2] and macd[-1] < signal[-1]:
+        score += 3
+
+    if c1["close"] < c1["open"]:
+        score += 1
+
+    if fuerza_vela(c1):
+        score += 1
+
+    if score >= 4:
         return {"action": "put", "score": score}
 
     return None
