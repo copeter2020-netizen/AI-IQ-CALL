@@ -1,49 +1,12 @@
 import os
 import time
 import sys
-import requests
-
-# 🔥 BLOQUEAR LOGS DE LA LIBRERÍA
-sys.stderr = open(os.devnull, 'w')
-
 from iqoptionapi.stable_api import IQ_Option
-from strategy import analyze_market
+from telegram_bot import send_message
 
 
 # ==========================
-# 🔥 FIX GLOBAL (ANTES DE TODO)
-# ==========================
-def disable_digital(iq):
-    try:
-        iq.api.digital_underlying_list = {"underlying": {}}
-        iq.api.get_digital_underlying_list_data = lambda x: {"underlying": {}}
-        iq.api.subscribe_digital_underlying = lambda *args, **kwargs: None
-        iq.api.unsubscribe_digital_underlying = lambda *args, **kwargs: None
-        iq.api.get_digital_current_profit = lambda *args, **kwargs: None
-    except:
-        pass
-
-
-# ==========================
-# TELEGRAM
-# ==========================
-TOKEN = os.getenv("TELEGRAM_TOKEN")
-CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
-
-def send_message(text):
-    try:
-        if TOKEN and CHAT_ID:
-            requests.post(
-                f"https://api.telegram.org/bot{TOKEN}/sendMessage",
-                data={"chat_id": CHAT_ID, "text": text},
-                timeout=5
-            )
-    except:
-        pass
-
-
-# ==========================
-# SILENCIAR TODO
+# SILENCIAR ERRORES
 # ==========================
 class DevNull:
     def write(self, msg): pass
@@ -52,23 +15,26 @@ class DevNull:
 
 def silent(func, *args, **kwargs):
     old_stdout = sys.stdout
+    old_stderr = sys.stderr
     sys.stdout = DevNull()
+    sys.stderr = DevNull()
     try:
         return func(*args, **kwargs)
     except:
         return None
     finally:
         sys.stdout = old_stdout
+        sys.stderr = old_stderr
 
 
 # ==========================
 # CONFIG
 # ==========================
-IQ_EMAIL = os.getenv("IQ_EMAIL")
-IQ_PASSWORD = os.getenv("IQ_PASSWORD")
+IQ_EMAIL = os.environ.get("IQ_EMAIL")
+IQ_PASSWORD = os.environ.get("IQ_PASSWORD")
 
 TIMEFRAME = 60
-MONTO = 120
+MONTO = 75
 EXPIRACION = 1
 
 
@@ -78,22 +44,18 @@ EXPIRACION = 1
 def connect():
     while True:
         iq = IQ_Option(IQ_EMAIL, IQ_PASSWORD)
-
         silent(iq.connect)
 
         if iq.check_connect():
-            disable_digital(iq)  # 🔥 BLOQUEO TOTAL
-
-            print("BOT ACTIVADO")
+            print("✅ BOT ACTIVADO")
             send_message("✅ BOT ACTIVADO")
-
             return iq
 
         time.sleep(5)
 
 
 # ==========================
-# SOLO OTC BINARY
+# PARES OTC ABIERTOS
 # ==========================
 def get_otc_abiertos(iq):
     try:
@@ -109,16 +71,11 @@ def get_otc_abiertos(iq):
 
 
 # ==========================
-# TIEMPO EXACTO
+# ESPERAR CIERRE
 # ==========================
 def esperar_cierre():
     while int(time.time()) % 60 != 59:
         time.sleep(0.02)
-
-
-def esperar_apertura():
-    while int(time.time()) % 60 != 0:
-        time.sleep(0.001)
 
 
 # ==========================
@@ -150,25 +107,54 @@ def obtener_resultado(iq, trade_id):
 
 
 # ==========================
-# EJECUCIÓN
+# EJECUCIÓN FORZADA
 # ==========================
 def ejecutar(iq, par, action):
 
-    status, trade_id = silent(
-        iq.buy, MONTO, par, action, EXPIRACION
-    )
+    # 🔥 REINTENTO AUTOMÁTICO
+    for intento in range(3):
 
-    if not status:
-        send_message(f"❌ Rechazada {par}")
-        return
+        status, trade_id = silent(
+            iq.buy, MONTO, par, action, EXPIRACION
+        )
 
-    send_message(f"📡 {action.upper()} {par}")
+        if status:
+            print(f"🚀 {par} {action}")
+            send_message(f"📊 {action.upper()} {par}")
 
-    obtener_resultado(iq, trade_id)
+            obtener_resultado(iq, trade_id)
+            return
+
+        time.sleep(0.3)
+
+    print(f"❌ No ejecutó {par}")
+    send_message(f"❌ No ejecutó {par}")
 
 
 # ==========================
-# BOT
+# ESTRATEGIA SIMPLE (PUEDES CAMBIARLA)
+# ==========================
+def detectar_senal(candles):
+
+    if len(candles) < 3:
+        return None
+
+    c1 = candles[-1]
+    c2 = candles[-2]
+
+    # 🔥 ROJA → VERDE = CALL
+    if c2["close"] < c2["open"] and c1["close"] > c1["open"]:
+        return "call"
+
+    # 🔥 VERDE → ROJA = PUT
+    if c2["close"] > c2["open"] and c1["close"] < c1["open"]:
+        return "put"
+
+    return None
+
+
+# ==========================
+# BOT PRINCIPAL
 # ==========================
 def run():
 
@@ -181,34 +167,41 @@ def run():
         pares = get_otc_abiertos(iq)
 
         if not pares:
+            print("⚠️ No hay pares abiertos")
             continue
 
-        print("Analizando...")
+        print(f"🔎 Analizando {len(pares)} pares...")
 
         for par in pares:
 
             candles = silent(
-                iq.get_candles, par, TIMEFRAME, 50, time.time()
+                iq.get_candles, par, TIMEFRAME, 10, time.time()
             )
 
             if not candles:
                 continue
 
-            señal = analyze_market(candles, None, None)
+            accion = detectar_senal(candles)
 
-            if not señal:
+            if not accion:
                 continue
 
-            action = señal["action"]
+            print(f"🎯 SEÑAL {par} {accion}")
+            send_message(f"📡 SEÑAL {par} {accion}")
 
-            print(f"SEÑAL {par}")
+            # 🔥 ENTRADA EXACTA (SIN DELAY)
+            while int(time.time()) % 60 != 0:
+                pass
 
-            esperar_apertura()
-
-            ejecutar(iq, par, action)
+            ejecutar(iq, par, accion)
 
             break
+        else:
+            print("⚠️ Sin señal")
 
 
+# ==========================
+# START
+# ==========================
 if __name__ == "__main__":
     run()
