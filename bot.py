@@ -2,12 +2,12 @@ import os
 import time
 import sys
 from iqoptionapi.stable_api import IQ_Option
-from strategy import detectar_senal
+from strategy import detectar_oportunidad
 from telegram_bot import send_message
 
 
 # ==========================
-# SILENCIAR
+# SILENCIAR ERRORES
 # ==========================
 class DevNull:
     def write(self, msg): pass
@@ -35,7 +35,7 @@ IQ_EMAIL = os.getenv("IQ_EMAIL")
 IQ_PASSWORD = os.getenv("IQ_PASSWORD")
 
 TIMEFRAME = 60
-MONTO = 125
+MONTO = 1700
 EXPIRACION = 1
 
 pares_bloqueados = set()
@@ -51,7 +51,7 @@ def connect():
 
         if iq.check_connect():
 
-            # 🔥 BLOQUEAR DIGITAL ERROR
+            # 🔥 ELIMINA ERROR UNDERLYING
             try:
                 iq.api.digital_underlying_list = {}
             except:
@@ -65,7 +65,7 @@ def connect():
 
 
 # ==========================
-# OBTENER PARES OTC
+# OBTENER PARES OTC ABIERTOS
 # ==========================
 def get_pairs(iq):
     try:
@@ -115,24 +115,24 @@ def resultado(iq, trade_id):
 # ==========================
 # EJECUTAR TRADE
 # ==========================
-def ejecutar(iq, par, action):
+def ejecutar(iq, par, accion):
 
     for _ in range(3):
 
         status, trade_id = silent(
-            iq.buy, MONTO, par, action, EXPIRACION
+            iq.buy, MONTO, par, accion, EXPIRACION
         )
 
         if status:
-            print(f"🚀 {par} {action}")
-            send_message(f"📊 {action.upper()} {par}")
+            print(f"🚀 {par} {accion}")
+            send_message(f"📊 {accion.upper()} {par}")
 
             resultado(iq, trade_id)
             return True
 
         time.sleep(0.3)
 
-    # ❌ BLOQUEAR PAR
+    # ❌ BLOQUEAR PAR PROBLEMÁTICO
     pares_bloqueados.add(par)
     send_message(f"⛔ Bloqueado {par}")
 
@@ -158,32 +158,38 @@ def run():
 
         print(f"🔎 Analizando {len(pares)} pares...")
 
+        mejor_par = None
+        mejor_accion = None
+        mejor_score = 0
+
         for par in pares:
 
             candles = silent(
-                iq.get_candles, par, TIMEFRAME, 10, time.time()
+                iq.get_candles, par, TIMEFRAME, 20, time.time()
             )
 
             if not candles:
                 continue
 
-            accion = detectar_senal(candles)
+            accion, score = detectar_oportunidad(candles)
 
-            if not accion:
-                continue
+            if accion and score > mejor_score:
+                mejor_score = score
+                mejor_par = par
+                mejor_accion = accion
 
-            print(f"🎯 {par} {accion}")
-            send_message(f"📡 {par} {accion}")
+        if not mejor_par:
+            print("⚠️ Sin oportunidad clara")
+            continue
 
-            # 🔥 ENTRADA EXACTA
-            while int(time.time()) % 60 != 0:
-                pass
+        print(f"🎯 MEJOR: {mejor_par} {mejor_accion} ({mejor_score})")
+        send_message(f"🎯 {mejor_par} {mejor_accion} (score {mejor_score})")
 
-            if ejecutar(iq, par, accion):
-                break
+        # 🔥 ENTRADA EXACTA EN NUEVA VELA
+        while int(time.time()) % 60 != 0:
+            pass
 
-        else:
-            print("⚠️ Sin señal válida")
+        ejecutar(iq, mejor_par, mejor_accion)
 
 
 if __name__ == "__main__":
