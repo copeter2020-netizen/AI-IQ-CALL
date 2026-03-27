@@ -1,11 +1,75 @@
 import os
 import time
 import sys
+import requests
 from iqoptionapi.stable_api import IQ_Option
 from strategy import analyze_market
-from telegram_bot import send_message
 
 
+# ==========================
+# TELEGRAM
+# ==========================
+TOKEN = os.getenv("TELEGRAM_TOKEN")
+CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+
+def send_message(text):
+    try:
+        if TOKEN and CHAT_ID:
+            requests.post(
+                f"https://api.telegram.org/bot{TOKEN}/sendMessage",
+                data={"chat_id": CHAT_ID, "text": text},
+                timeout=5
+            )
+    except:
+        pass
+
+
+def get_updates(offset=None):
+    try:
+        url = f"https://api.telegram.org/bot{TOKEN}/getUpdates"
+        params = {"timeout": 5}
+        if offset:
+            params["offset"] = offset
+
+        r = requests.get(url, params=params, timeout=5).json()
+        return r.get("result", [])
+    except:
+        return []
+
+
+# ==========================
+# CONTROL BOT
+# ==========================
+BOT_ACTIVO = True
+LAST_UPDATE_ID = None
+
+
+def check_telegram_commands():
+    global BOT_ACTIVO, LAST_UPDATE_ID
+
+    updates = get_updates(LAST_UPDATE_ID)
+
+    for update in updates:
+
+        LAST_UPDATE_ID = update["update_id"] + 1
+
+        if "message" not in update:
+            continue
+
+        text = update["message"].get("text", "")
+
+        if text == "/stopbot":
+            BOT_ACTIVO = False
+            send_message("⛔ BOT DETENIDO")
+
+        elif text == "/startbot":
+            BOT_ACTIVO = True
+            send_message("▶️ BOT ACTIVADO")
+
+
+# ==========================
+# SILENCIAR
+# ==========================
 class DevNull:
     def write(self, msg): pass
     def flush(self): pass
@@ -25,11 +89,14 @@ def silent(func, *args, **kwargs):
         sys.stderr = old_stderr
 
 
-IQ_EMAIL = os.environ.get("IQ_EMAIL")
-IQ_PASSWORD = os.environ.get("IQ_PASSWORD")
+# ==========================
+# CONFIG
+# ==========================
+IQ_EMAIL = os.getenv("IQ_EMAIL")
+IQ_PASSWORD = os.getenv("IQ_PASSWORD")
 
 TIMEFRAME = 60
-MONTO = 100
+MONTO = 112
 EXPIRACION = 1
 
 
@@ -42,8 +109,7 @@ def connect():
         silent(iq.connect)
 
         if iq.check_connect():
-            print("✅ Conectado")
-            send_message("✅ BOT ACTIVO (CALL + BB + CCI)")
+            send_message("✅ BOT CONECTADO")
             return iq
 
         time.sleep(5)
@@ -105,19 +171,19 @@ def obtener_resultado(iq, trade_id):
 
 
 # ==========================
-# EJECUCIÓN
+# EJECUTAR
 # ==========================
-def ejecutar_trade(iq, pair):
+def ejecutar_trade(iq, pair, action):
 
     status, trade_id = silent(
-        iq.buy, MONTO, pair, "call", EXPIRACION
+        iq.buy, MONTO, pair, action, EXPIRACION
     )
 
     if not status:
         send_message(f"❌ Entrada rechazada {pair}")
         return
 
-    send_message(f"📊 CALL {pair}\n📈 BB + CCI Confirmado")
+    send_message(f"📊 {action.upper()} {pair}")
 
     resultado = obtener_resultado(iq, trade_id)
 
@@ -138,18 +204,21 @@ def run():
 
     while True:
 
+        # 🔥 ESCUCHAR TELEGRAM SIEMPRE
+        check_telegram_commands()
+
+        if not BOT_ACTIVO:
+            time.sleep(1)
+            continue
+
         esperar_cierre()
 
         pares = get_otc_abiertos(iq)
 
-        if not pares:
-            print("⚠️ No hay OTC abiertos")
-            continue
-
         for par in pares:
 
             candles = silent(
-                iq.get_candles, par, TIMEFRAME, 30, time.time()
+                iq.get_candles, par, TIMEFRAME, 70, time.time()
             )
 
             if not candles:
@@ -160,15 +229,15 @@ def run():
             if not señal:
                 continue
 
-            print(f"🎯 CALL {par} confirmado")
+            action = señal["action"]
+
+            send_message(f"📡 SEÑAL {action.upper()} {par}")
 
             esperar_apertura()
 
-            ejecutar_trade(iq, par)
+            ejecutar_trade(iq, par, action)
 
             break
-        else:
-            print("⚠️ Sin señales...")
 
 
 if __name__ == "__main__":
