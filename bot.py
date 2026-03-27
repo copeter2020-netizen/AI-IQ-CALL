@@ -7,6 +7,21 @@ from strategy import analyze_market
 
 
 # ==========================
+# 🔥 PARCHE GLOBAL (ANTI DIGITAL ERROR)
+# ==========================
+from iqoptionapi import stable_api
+
+def fix_digital_bug(iq):
+    try:
+        iq.api.digital_underlying_list = {}
+        iq.api.get_digital_underlying_list_data = lambda x: {"underlying": {}}
+        iq.api.subscribe_digital_underlying = lambda *args, **kwargs: None
+        iq.api.unsubscribe_digital_underlying = lambda *args, **kwargs: None
+    except:
+        pass
+
+
+# ==========================
 # TELEGRAM
 # ==========================
 TOKEN = os.getenv("TELEGRAM_TOKEN")
@@ -24,51 +39,8 @@ def send_message(text):
         pass
 
 
-def get_updates(offset=None):
-    try:
-        url = f"https://api.telegram.org/bot{TOKEN}/getUpdates"
-        params = {"timeout": 5}
-        if offset:
-            params["offset"] = offset
-
-        r = requests.get(url, params=params, timeout=5).json()
-        return r.get("result", [])
-    except:
-        return []
-
-
 # ==========================
-# CONTROL BOT
-# ==========================
-BOT_ACTIVO = True
-LAST_UPDATE_ID = None
-
-
-def check_telegram_commands():
-    global BOT_ACTIVO, LAST_UPDATE_ID
-
-    updates = get_updates(LAST_UPDATE_ID)
-
-    for update in updates:
-
-        LAST_UPDATE_ID = update["update_id"] + 1
-
-        if "message" not in update:
-            continue
-
-        text = update["message"].get("text", "")
-
-        if text == "/stopbot":
-            BOT_ACTIVO = False
-            send_message("⛔ BOT DETENIDO")
-
-        elif text == "/startbot":
-            BOT_ACTIVO = True
-            send_message("▶️ BOT ACTIVADO")
-
-
-# ==========================
-# SILENCIAR
+# SILENCIAR ERRORES
 # ==========================
 class DevNull:
     def write(self, msg): pass
@@ -109,28 +81,32 @@ def connect():
         silent(iq.connect)
 
         if iq.check_connect():
-            send_message("✅ BOT CONECTADO")
+            fix_digital_bug(iq)  # 🔥 FIX AQUI
+
+            send_message("✅ BOT CONECTADO SIN ERROR DIGITAL")
             return iq
 
         time.sleep(5)
 
 
 # ==========================
-# OTC ABIERTOS
+# OTC ABIERTOS (SOLO BINARY)
 # ==========================
 def get_otc_abiertos(iq):
     try:
         activos = iq.get_all_open_time()
+
         return [
             par for par, data in activos["binary"].items()
             if "-OTC" in par and data["open"]
         ]
+
     except:
         return []
 
 
 # ==========================
-# TIEMPO
+# TIEMPO EXACTO
 # ==========================
 def esperar_cierre():
     while int(time.time()) % 60 != 59:
@@ -171,16 +147,18 @@ def obtener_resultado(iq, trade_id):
 
 
 # ==========================
-# EJECUTAR
+# EJECUCIÓN FORZADA
 # ==========================
 def ejecutar_trade(iq, pair, action):
+
+    print(f"🚀 Ejecutando {pair} {action}")
 
     status, trade_id = silent(
         iq.buy, MONTO, pair, action, EXPIRACION
     )
 
     if not status:
-        send_message(f"❌ Entrada rechazada {pair}")
+        send_message(f"❌ Broker rechazó {pair}")
         return
 
     send_message(f"📊 {action.upper()} {pair}")
@@ -189,8 +167,6 @@ def ejecutar_trade(iq, pair, action):
 
     if resultado == "win":
         send_message(f"✅ WIN {pair}")
-    elif resultado == "draw":
-        send_message(f"➖ DRAW {pair}")
     else:
         send_message(f"❌ LOSS {pair}")
 
@@ -204,15 +180,15 @@ def run():
 
     while True:
 
-        check_telegram_commands()
-
-        if not BOT_ACTIVO:
-            time.sleep(1)
-            continue
-
         esperar_cierre()
 
         pares = get_otc_abiertos(iq)
+
+        if not pares:
+            print("⚠️ No hay pares OTC abiertos")
+            continue
+
+        print(f"🔎 Analizando {len(pares)} pares...")
 
         for par in pares:
 
@@ -228,7 +204,7 @@ def run():
             if not señal:
                 continue
 
-            action = señal["action"]  # 🔥 ahora usa CALL o PUT
+            action = señal["action"]
 
             send_message(f"📡 SEÑAL {action.upper()} {par}")
 
