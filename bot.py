@@ -2,21 +2,24 @@ import os
 import time
 import sys
 import requests
+
+# 🔥 BLOQUEAR LOGS DE LA LIBRERÍA
+sys.stderr = open(os.devnull, 'w')
+
 from iqoptionapi.stable_api import IQ_Option
 from strategy import analyze_market
 
 
 # ==========================
-# 🔥 PARCHE GLOBAL (ANTI DIGITAL ERROR)
+# 🔥 FIX GLOBAL (ANTES DE TODO)
 # ==========================
-from iqoptionapi import stable_api
-
-def fix_digital_bug(iq):
+def disable_digital(iq):
     try:
-        iq.api.digital_underlying_list = {}
+        iq.api.digital_underlying_list = {"underlying": {}}
         iq.api.get_digital_underlying_list_data = lambda x: {"underlying": {}}
         iq.api.subscribe_digital_underlying = lambda *args, **kwargs: None
         iq.api.unsubscribe_digital_underlying = lambda *args, **kwargs: None
+        iq.api.get_digital_current_profit = lambda *args, **kwargs: None
     except:
         pass
 
@@ -40,7 +43,7 @@ def send_message(text):
 
 
 # ==========================
-# SILENCIAR ERRORES
+# SILENCIAR TODO
 # ==========================
 class DevNull:
     def write(self, msg): pass
@@ -49,16 +52,13 @@ class DevNull:
 
 def silent(func, *args, **kwargs):
     old_stdout = sys.stdout
-    old_stderr = sys.stderr
     sys.stdout = DevNull()
-    sys.stderr = DevNull()
     try:
         return func(*args, **kwargs)
     except:
         return None
     finally:
         sys.stdout = old_stdout
-        sys.stderr = old_stderr
 
 
 # ==========================
@@ -78,19 +78,22 @@ EXPIRACION = 1
 def connect():
     while True:
         iq = IQ_Option(IQ_EMAIL, IQ_PASSWORD)
+
         silent(iq.connect)
 
         if iq.check_connect():
-            fix_digital_bug(iq)  # 🔥 FIX AQUI
+            disable_digital(iq)  # 🔥 BLOQUEO TOTAL
 
-            send_message("✅ BOT CONECTADO SIN ERROR DIGITAL")
+            print("BOT ACTIVADO")
+            send_message("✅ BOT ACTIVADO")
+
             return iq
 
         time.sleep(5)
 
 
 # ==========================
-# OTC ABIERTOS (SOLO BINARY)
+# SOLO OTC BINARY
 # ==========================
 def get_otc_abiertos(iq):
     try:
@@ -136,39 +139,32 @@ def obtener_resultado(iq, trade_id):
 
             result = float(result)
         except:
-            return "loss"
+            return
 
         if result > 0:
-            return "win"
-        elif result == 0:
-            return "draw"
+            send_message("✅ WIN")
         else:
-            return "loss"
+            send_message("❌ LOSS")
+
+        return
 
 
 # ==========================
-# EJECUCIÓN FORZADA
+# EJECUCIÓN
 # ==========================
-def ejecutar_trade(iq, pair, action):
-
-    print(f"🚀 Ejecutando {pair} {action}")
+def ejecutar(iq, par, action):
 
     status, trade_id = silent(
-        iq.buy, MONTO, pair, action, EXPIRACION
+        iq.buy, MONTO, par, action, EXPIRACION
     )
 
     if not status:
-        send_message(f"❌ Broker rechazó {pair}")
+        send_message(f"❌ Rechazada {par}")
         return
 
-    send_message(f"📊 {action.upper()} {pair}")
+    send_message(f"📡 {action.upper()} {par}")
 
-    resultado = obtener_resultado(iq, trade_id)
-
-    if resultado == "win":
-        send_message(f"✅ WIN {pair}")
-    else:
-        send_message(f"❌ LOSS {pair}")
+    obtener_resultado(iq, trade_id)
 
 
 # ==========================
@@ -185,15 +181,14 @@ def run():
         pares = get_otc_abiertos(iq)
 
         if not pares:
-            print("⚠️ No hay pares OTC abiertos")
             continue
 
-        print(f"🔎 Analizando {len(pares)} pares...")
+        print("Analizando...")
 
         for par in pares:
 
             candles = silent(
-                iq.get_candles, par, TIMEFRAME, 70, time.time()
+                iq.get_candles, par, TIMEFRAME, 50, time.time()
             )
 
             if not candles:
@@ -206,11 +201,11 @@ def run():
 
             action = señal["action"]
 
-            send_message(f"📡 SEÑAL {action.upper()} {par}")
+            print(f"SEÑAL {par}")
 
             esperar_apertura()
 
-            ejecutar_trade(iq, par, action)
+            ejecutar(iq, par, action)
 
             break
 
