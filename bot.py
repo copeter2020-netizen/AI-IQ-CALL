@@ -2,11 +2,12 @@ import os
 import time
 import sys
 from iqoptionapi.stable_api import IQ_Option
+from strategy import detectar_senal
 from telegram_bot import send_message
 
 
 # ==========================
-# SILENCIAR ERRORES
+# SILENCIAR
 # ==========================
 class DevNull:
     def write(self, msg): pass
@@ -30,14 +31,13 @@ def silent(func, *args, **kwargs):
 # ==========================
 # CONFIG
 # ==========================
-IQ_EMAIL = os.environ.get("IQ_EMAIL")
-IQ_PASSWORD = os.environ.get("IQ_PASSWORD")
+IQ_EMAIL = os.getenv("IQ_EMAIL")
+IQ_PASSWORD = os.getenv("IQ_PASSWORD")
 
 TIMEFRAME = 60
-MONTO = 112
+MONTO = 125
 EXPIRACION = 1
 
-# 🔥 PARES BLOQUEADOS AUTOMÁTICAMENTE
 pares_bloqueados = set()
 
 
@@ -50,14 +50,13 @@ def connect():
         silent(iq.connect)
 
         if iq.check_connect():
-            print("✅ BOT ACTIVADO")
 
-            # 🔥 BLOQUEAR DIGITAL (SOLUCIÓN ERROR UNDERLYING)
             try:
                 iq.api.digital_underlying_list = {}
             except:
                 pass
 
+            print("✅ BOT ACTIVADO")
             send_message("✅ BOT ACTIVADO")
             return iq
 
@@ -65,18 +64,16 @@ def connect():
 
 
 # ==========================
-# OBTENER OTC ABIERTOS
+# PARES OTC ABIERTOS
 # ==========================
-def get_otc_abiertos(iq):
+def get_pairs(iq):
     try:
-        activos = iq.get_all_open_time()
+        data = iq.get_all_open_time()
 
         return [
-            par for par, data in activos["binary"].items()
-            if "-OTC" in par and data["open"]
-            and par not in pares_bloqueados
+            p for p, d in data["binary"].items()
+            if "-OTC" in p and d["open"] and p not in pares_bloqueados
         ]
-
     except:
         return []
 
@@ -92,37 +89,34 @@ def esperar_cierre():
 # ==========================
 # RESULTADO
 # ==========================
-def obtener_resultado(iq, trade_id):
-
+def resultado(iq, trade_id):
     while True:
-        result = silent(iq.check_win_v4, trade_id)
+        r = silent(iq.check_win_v4, trade_id)
 
-        if result is None:
+        if r is None:
             time.sleep(1)
             continue
 
         try:
-            if isinstance(result, tuple):
-                result = result[0]
-
-            result = float(result)
+            if isinstance(r, tuple):
+                r = r[0]
+            r = float(r)
         except:
             return
 
-        if result > 0:
+        if r > 0:
             send_message("✅ WIN")
         else:
             send_message("❌ LOSS")
-
         return
 
 
 # ==========================
-# EJECUCIÓN INTELIGENTE
+# EJECUCIÓN
 # ==========================
 def ejecutar(iq, par, action):
 
-    for intento in range(3):
+    for _ in range(3):
 
         status, trade_id = silent(
             iq.buy, MONTO, par, action, EXPIRACION
@@ -131,45 +125,19 @@ def ejecutar(iq, par, action):
         if status:
             print(f"🚀 {par} {action}")
             send_message(f"📊 {action.upper()} {par}")
-
-            obtener_resultado(iq, trade_id)
+            resultado(iq, trade_id)
             return True
 
         time.sleep(0.3)
 
-    # ❌ SI FALLA → BLOQUEAR PAR
-    print(f"⛔ Bloqueando {par}")
-    send_message(f"⛔ Par bloqueado {par}")
-
+    # ❌ BLOQUEAR PAR
     pares_bloqueados.add(par)
-
+    send_message(f"⛔ Bloqueado {par}")
     return False
 
 
 # ==========================
-# ESTRATEGIA SIMPLE
-# ==========================
-def detectar_senal(candles):
-
-    if len(candles) < 3:
-        return None
-
-    c1 = candles[-1]
-    c2 = candles[-2]
-
-    # CALL
-    if c2["close"] < c2["open"] and c1["close"] > c1["open"]:
-        return "call"
-
-    # PUT
-    if c2["close"] > c2["open"] and c1["close"] < c1["open"]:
-        return "put"
-
-    return None
-
-
-# ==========================
-# BOT PRINCIPAL
+# BOT
 # ==========================
 def run():
 
@@ -179,10 +147,10 @@ def run():
 
         esperar_cierre()
 
-        pares = get_otc_abiertos(iq)
+        pares = get_pairs(iq)
 
         if not pares:
-            print("⚠️ Sin pares válidos")
+            print("⚠️ Sin pares")
             continue
 
         print(f"🔎 Analizando {len(pares)} pares...")
@@ -201,24 +169,19 @@ def run():
             if not accion:
                 continue
 
-            print(f"🎯 SEÑAL {par} {accion}")
+            print(f"🎯 {par} {accion}")
             send_message(f"📡 {par} {accion}")
 
             # 🔥 ENTRADA EXACTA
             while int(time.time()) % 60 != 0:
                 pass
 
-            ejecutado = ejecutar(iq, par, accion)
-
-            if ejecutado:
+            if ejecutar(iq, par, accion):
                 break
 
         else:
-            print("⚠️ Sin señal válida")
+            print("⚠️ Sin señal")
 
 
-# ==========================
-# START
-# ==========================
 if __name__ == "__main__":
     run()
