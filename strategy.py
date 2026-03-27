@@ -26,20 +26,36 @@ def calcular_macd(candles):
     return macd, signal
 
 
+def fuerza_vela(c):
+    cuerpo = abs(c["close"] - c["open"])
+    rango = c["max"] - c["min"]
+    return cuerpo > (rango * 0.6)
+
+
+def sin_mechas(c):
+    cuerpo = abs(c["close"] - c["open"])
+    rango = c["max"] - c["min"]
+    return cuerpo >= (rango * 0.7)
+
+
+def continuidad(candles):
+    c1 = candles[-1]
+    c2 = candles[-2]
+
+    return (
+        (c1["close"] > c1["open"] and c2["close"] > c2["open"]) or
+        (c1["close"] < c1["open"] and c2["close"] < c2["open"])
+    )
+
+
 def ruptura_resistencia(candles):
-    highs = [c["max"] for c in candles[:-1]]
+    highs = [c["max"] for c in candles[-15:-1]]
     return candles[-1]["close"] > max(highs)
 
 
 def ruptura_soporte(candles):
-    lows = [c["min"] for c in candles[:-1]]
+    lows = [c["min"] for c in candles[-15:-1]]
     return candles[-1]["close"] < min(lows)
-
-
-def fuerza_vela(c):
-    cuerpo = abs(c["close"] - c["open"])
-    mecha = (c["max"] - c["min"]) - cuerpo
-    return cuerpo > mecha
 
 
 def analizar_macd_price_action(candles):
@@ -50,46 +66,53 @@ def analizar_macd_price_action(candles):
     macd, signal = calcular_macd(candles)
 
     c1 = candles[-1]
-    c2 = candles[-2]
 
     score = 0
 
-    # ======================
-    # 🔥 COMPRA (CALL)
-    # ======================
+    # CALL
     if ruptura_resistencia(candles):
         score += 2
 
     if macd[-2] < signal[-2] and macd[-1] > signal[-1]:
-        score += 3
+        score += 2
 
     if c1["close"] > c1["open"]:
         score += 1
 
     if fuerza_vela(c1):
+        score += 2
+
+    if continuidad(candles):
         score += 1
 
-    if score >= 4:
+    if sin_mechas(c1):
+        score += 1
+
+    if score >= 5:
         return {"action": "call", "score": score}
 
-    # ======================
-    # 🔻 VENTA (PUT)
-    # ======================
+    # PUT
     score = 0
 
     if ruptura_soporte(candles):
         score += 2
 
     if macd[-2] > signal[-2] and macd[-1] < signal[-1]:
-        score += 3
+        score += 2
 
     if c1["close"] < c1["open"]:
         score += 1
 
     if fuerza_vela(c1):
+        score += 2
+
+    if continuidad(candles):
         score += 1
 
-    if score >= 4:
+    if sin_mechas(c1):
+        score += 1
+
+    if score >= 5:
         return {"action": "put", "score": score}
 
     return None
