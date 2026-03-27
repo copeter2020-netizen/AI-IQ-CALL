@@ -6,9 +6,6 @@ from strategy import analizar_price_action
 from telegram_bot import send_message
 
 
-# ==========================
-# SILENCIO
-# ==========================
 class DevNull:
     def write(self, msg): pass
     def flush(self): pass
@@ -28,21 +25,18 @@ def silent(func, *args, **kwargs):
         sys.stderr = old_stderr
 
 
-# ==========================
-# CONFIG
-# ==========================
 IQ_EMAIL = os.getenv("IQ_EMAIL")
 IQ_PASSWORD = os.getenv("IQ_PASSWORD")
 
 TIMEFRAME = 60
-MONTO = 75
+MONTO = 1750
 EXPIRACION = 1
 
 bloqueados = set()
 
 
 # ==========================
-# CONEXIÓN REAL
+# CONEXIÓN
 # ==========================
 def connect():
     while True:
@@ -51,21 +45,21 @@ def connect():
 
         if iq.check_connect():
 
-            # 🔥 eliminar error digital
+            # 🔥 FIX ERROR UNDERLYING
             try:
                 iq.api.digital_underlying_list = {}
             except:
                 pass
 
-            print("✅ BOT CONECTADO AL GRÁFICO")
-            send_message("✅ BOT CONECTADO AL GRÁFICO")
+            print("✅ BOT ACTIVADO")
+            send_message("✅ BOT ACTIVADO")
             return iq
 
         time.sleep(5)
 
 
 # ==========================
-# PARES OTC ABIERTOS
+# PARES
 # ==========================
 def get_pairs(iq):
     try:
@@ -79,9 +73,6 @@ def get_pairs(iq):
         return []
 
 
-# ==========================
-# ESPERAR VELA
-# ==========================
 def esperar_cierre():
     while int(time.time()) % 60 != 59:
         time.sleep(0.02)
@@ -96,6 +87,7 @@ def esperar_apertura():
 # RESULTADO
 # ==========================
 def resultado(iq, trade_id):
+
     while True:
         r = silent(iq.check_win_v4, trade_id)
 
@@ -106,6 +98,7 @@ def resultado(iq, trade_id):
         try:
             if isinstance(r, tuple):
                 r = r[0]
+
             r = float(r)
         except:
             return
@@ -114,11 +107,12 @@ def resultado(iq, trade_id):
             send_message("✅ WIN")
         else:
             send_message("❌ LOSS")
+
         return
 
 
 # ==========================
-# EJECUTAR
+# EJECUCIÓN
 # ==========================
 def ejecutar(iq, par, accion):
 
@@ -138,7 +132,6 @@ def ejecutar(iq, par, accion):
 
     bloqueados.add(par)
     send_message(f"⛔ {par} bloqueado")
-
     return False
 
 
@@ -161,8 +154,8 @@ def run():
 
         print(f"🔎 Analizando {len(pares)} pares...")
 
+        mejor_par = None
         mejor = None
-        mejor_score = 0
 
         for par in pares:
 
@@ -178,22 +171,20 @@ def run():
             if not señal:
                 continue
 
-            if señal["score"] > mejor_score:
-                mejor = (par, señal)
-                mejor_score = señal["score"]
+            if not mejor or señal["score"] > mejor["score"]:
+                mejor = señal
+                mejor_par = par
 
         if not mejor:
-            print("⚠️ Sin oportunidad real")
+            print("⚠️ Sin señal")
             continue
 
-        par, señal = mejor
-
-        print(f"🎯 {par} {señal['action']} ({señal['score']})")
-        send_message(f"🎯 {par} {señal['action']}")
+        print(f"🎯 {mejor_par} {mejor['action']} ({mejor['score']})")
+        send_message(f"🎯 {mejor_par} {mejor['action']}")
 
         esperar_apertura()
 
-        ejecutar(iq, par, señal["action"])
+        ejecutar(iq, mejor_par, mejor["action"])
 
 
 if __name__ == "__main__":
