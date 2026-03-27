@@ -29,10 +29,13 @@ IQ_EMAIL = os.environ.get("IQ_EMAIL")
 IQ_PASSWORD = os.environ.get("IQ_PASSWORD")
 
 TIMEFRAME = 60
-MONTO = 20
+MONTO = 100
 EXPIRACION = 1
 
 
+# ==========================
+# CONEXIÓN
+# ==========================
 def connect():
     while True:
         iq = IQ_Option(IQ_EMAIL, IQ_PASSWORD)
@@ -40,12 +43,15 @@ def connect():
 
         if iq.check_connect():
             print("✅ Conectado")
-            send_message("✅ BOT SMART MONEY ACTIVO")
+            send_message("✅ BOT ACTIVO (CALL + BB + CCI)")
             return iq
 
         time.sleep(5)
 
 
+# ==========================
+# OTC ABIERTOS
+# ==========================
 def get_otc_abiertos(iq):
     try:
         activos = iq.get_all_open_time()
@@ -57,6 +63,9 @@ def get_otc_abiertos(iq):
         return []
 
 
+# ==========================
+# TIEMPO
+# ==========================
 def esperar_cierre():
     while int(time.time()) % 60 != 59:
         time.sleep(0.02)
@@ -67,6 +76,9 @@ def esperar_apertura():
         time.sleep(0.001)
 
 
+# ==========================
+# RESULTADO
+# ==========================
 def obtener_resultado(iq, trade_id):
 
     while True:
@@ -92,17 +104,20 @@ def obtener_resultado(iq, trade_id):
             return "loss"
 
 
-def ejecutar_trade(iq, pair, action):
+# ==========================
+# EJECUCIÓN
+# ==========================
+def ejecutar_trade(iq, pair):
 
     status, trade_id = silent(
-        iq.buy, MONTO, pair, action, EXPIRACION
+        iq.buy, MONTO, pair, "call", EXPIRACION
     )
 
     if not status:
         send_message(f"❌ Entrada rechazada {pair}")
         return
 
-    send_message(f"📊 {action.upper()} {pair}\n🧠 Contra Smart Money")
+    send_message(f"📊 CALL {pair}\n📈 BB + CCI Confirmado")
 
     resultado = obtener_resultado(iq, trade_id)
 
@@ -114,6 +129,9 @@ def ejecutar_trade(iq, pair, action):
         send_message(f"❌ LOSS {pair}")
 
 
+# ==========================
+# BOT
+# ==========================
 def run():
 
     iq = connect()
@@ -131,7 +149,7 @@ def run():
         for par in pares:
 
             candles = silent(
-                iq.get_candles, par, TIMEFRAME, 20, time.time()
+                iq.get_candles, par, TIMEFRAME, 30, time.time()
             )
 
             if not candles:
@@ -142,17 +160,15 @@ def run():
             if not señal:
                 continue
 
-            action = señal["action"]
-
-            print(f"🎯 {par} {action} → smart money detectado")
+            print(f"🎯 CALL {par} confirmado")
 
             esperar_apertura()
 
-            ejecutar_trade(iq, par, action)
+            ejecutar_trade(iq, par)
 
             break
         else:
-            print("⚠️ Sin manipulaciones detectadas...")
+            print("⚠️ Sin señales...")
 
 
 if __name__ == "__main__":
