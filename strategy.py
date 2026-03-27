@@ -1,61 +1,75 @@
-def body(c):
-    return abs(c["close"] - c["open"])
+import pandas as pd
 
 
-def rango(c):
-    return c["max"] - c["min"]
+# ==========================
+# INDICADORES
+# ==========================
+def bollinger(df, period=20):
+    ma = df["close"].rolling(period).mean()
+    std = df["close"].rolling(period).std()
+    df["bb_upper"] = ma + (2 * std)
+    df["bb_lower"] = ma - (2 * std)
+
+
+def cci(df, period=20):
+    tp = (df["max"] + df["min"] + df["close"]) / 3
+    ma = tp.rolling(period).mean()
+    md = (tp - ma).abs().rolling(period).mean()
+    df["cci"] = (tp - ma) / (0.015 * md)
 
 
 def fuerza(c):
-    r = rango(c)
-    if r == 0:
+    rango = c["max"] - c["min"]
+    if rango == 0:
         return 0
-    return body(c) / r
+    return abs(c["close"] - c["open"]) / rango
 
 
-def mecha_superior(c):
-    return c["max"] - max(c["close"], c["open"])
-
-
-def mecha_inferior(c):
-    return min(c["close"], c["open"]) - c["min"]
-
-
+# ==========================
+# ESTRATEGIA
+# ==========================
 def analyze_market(candles, c5, c15):
 
     try:
-        if len(candles) < 5:
+        df = pd.DataFrame(candles)
+
+        if len(df) < 25:
             return None
 
-        c1 = candles[-1]  # última vela
-        c2 = candles[-2]
-        c3 = candles[-3]
+        bollinger(df)
+        cci(df)
+
+        last = df.iloc[-1]
+        prev = df.iloc[-2]
 
         # ==========================
-        # 🔴 FAKE BREAK ARRIBA → PUT
+        # 🔥 CONDICIONES
         # ==========================
-        if (
-            c2["max"] > c3["max"] and                # rompe máximo
-            c2["close"] < c3["max"] and             # cierra debajo (falso rompimiento)
-            mecha_superior(c2) > body(c2) and       # rechazo fuerte
-            c1["close"] < c1["open"] and            # confirmación roja
-            fuerza(c1) > 0.5
-        ):
-            return {"action": "put", "score": 10}
 
-        # ==========================
-        # 🟢 FAKE BREAK ABAJO → CALL
-        # ==========================
-        if (
-            c2["min"] < c3["min"] and               # rompe mínimo
-            c2["close"] > c3["min"] and             # cierra arriba
-            mecha_inferior(c2) > body(c2) and       # rechazo inferior
-            c1["close"] > c1["open"] and            # confirmación verde
-            fuerza(c1) > 0.5
-        ):
-            return {"action": "call", "score": 10}
+        # vela verde
+        if last["close"] <= last["open"]:
+            return None
 
-        return None
+        # fuerza
+        if fuerza(last) < 0.5:
+            return None
+
+        # bollinger (rebote inferior)
+        if last["close"] < last["bb_lower"]:
+            return None
+
+        # CCI (salida de sobreventa)
+        if last["cci"] < -100:
+            return None
+
+        # confirmación vela anterior
+        if prev["close"] <= prev["open"]:
+            return None
+
+        return {
+            "action": "call",
+            "score": 10
+        }
 
     except:
         return None
