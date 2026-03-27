@@ -29,10 +29,10 @@ IQ_EMAIL = os.getenv("IQ_EMAIL")
 IQ_PASSWORD = os.getenv("IQ_PASSWORD")
 
 TIMEFRAME = 60
-MONTO = 3300
+MONTO = 7500
 EXPIRACION = 1
 
-bloqueados = set()
+PAR = "EURUSD-OTC"   # 🔥 SOLO ESTE PAR
 
 
 def connect():
@@ -46,23 +46,19 @@ def connect():
             except:
                 pass
 
-            print("✅ BOT ACTIVADO")
-            send_message("✅ BOT ACTIVADO")
+            print("✅ BOT SNIPER PRO EURUSD-OTC")
+            send_message("🎯 BOT SNIPER PRO EURUSD-OTC")
             return iq
 
         time.sleep(5)
 
 
-def get_pairs(iq):
+def par_abierto(iq):
     try:
         data = iq.get_all_open_time()
-
-        return [
-            p for p, d in data["binary"].items()
-            if "-OTC" in p and d["open"] and p not in bloqueados
-        ]
+        return data["binary"][PAR]["open"]
     except:
-        return []
+        return False
 
 
 def esperar_cierre():
@@ -91,32 +87,25 @@ def resultado(iq, trade_id):
             return
 
         if r > 0:
-            send_message("✅ WIN")
+            send_message("✅ WIN EURUSD-OTC")
         else:
-            send_message("❌ LOSS")
+            send_message("❌ LOSS EURUSD-OTC")
 
         return
 
 
-def ejecutar(iq, par, accion):
+def ejecutar(iq, accion):
 
-    for _ in range(3):
+    status, trade_id = silent(
+        iq.buy, MONTO, PAR, accion, EXPIRACION
+    )
 
-        status, trade_id = silent(
-            iq.buy, MONTO, par, accion, EXPIRACION
-        )
+    if not status:
+        send_message("⛔ Entrada rechazada EURUSD-OTC")
+        return
 
-        if status:
-            print(f"🚀 {par} {accion}")
-            send_message(f"📊 {accion.upper()} {par}")
-            resultado(iq, trade_id)
-            return True
-
-        time.sleep(0.5)
-
-    bloqueados.add(par)
-    send_message(f"⛔ {par} bloqueado")
-    return False
+    send_message(f"🎯 {accion.upper()} EURUSD-OTC")
+    resultado(iq, trade_id)
 
 
 def run():
@@ -125,51 +114,32 @@ def run():
 
     while True:
 
+        if not par_abierto(iq):
+            print("⛔ EURUSD-OTC cerrado")
+            time.sleep(5)
+            continue
+
         esperar_cierre()
 
-        pares = get_pairs(iq)
+        candles = silent(
+            iq.get_candles, PAR, TIMEFRAME, 60, time.time()
+        )
 
-        if not pares:
-            print("⚠️ Sin pares")
+        if not candles:
             continue
 
-        mejor = None
-        mejor_par = None
+        señal = analizar_macd_price_action(candles)
 
-        for par in pares:
-
-            candles = silent(
-                iq.get_candles, par, TIMEFRAME, 50, time.time()
-            )
-
-            if not candles:
-                continue
-
-            señal = analizar_macd_price_action(candles)
-
-            if not señal:
-                continue
-
-            # 🔥 SI NO HAY SEÑALES, IGUAL OPERAMOS LA MEJOR
-            if not mejor or señal["score"] > mejor["score"]:
-                mejor = señal
-                mejor_par = par
-
-        # 🔥 SI TODO FALLA → FORZAR ENTRADA
-        if not mejor:
-            par = pares[0]
-            print(f"⚠️ FORZANDO ENTRADA {par}")
-            send_message(f"⚠️ FORZANDO {par}")
-            esperar_apertura()
-            ejecutar(iq, par, "call")
+        if not señal:
+            print("🎯 SNIPER esperando EURUSD...")
             continue
 
-        print(f"🎯 {mejor_par} {mejor['action']}")
-        send_message(f"🎯 {mejor_par} {mejor['action']}")
+        print(f"🎯 EURUSD {señal['action']}")
+        send_message(f"🎯 EURUSD {señal['action']}")
 
         esperar_apertura()
 
-        ejecutar(iq, mejor_par, mejor["action"])
+        ejecutar(iq, señal["action"])
 
 
 if __name__ == "__main__":
