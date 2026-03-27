@@ -2,6 +2,7 @@ import os
 import time
 import sys
 from iqoptionapi.stable_api import IQ_Option
+from strategy import analyze_market
 from telegram_bot import send_message
 
 
@@ -28,7 +29,7 @@ IQ_EMAIL = os.environ.get("IQ_EMAIL")
 IQ_PASSWORD = os.environ.get("IQ_PASSWORD")
 
 TIMEFRAME = 60
-MONTO = 85
+MONTO = 78
 EXPIRACION = 1
 
 
@@ -39,7 +40,7 @@ def connect():
 
         if iq.check_connect():
             print("✅ Conectado")
-            send_message("✅ BOT ACTIVO")
+            send_message("✅ BOT SMART MONEY ACTIVO")
             return iq
 
         time.sleep(5)
@@ -64,64 +65,6 @@ def esperar_cierre():
 def esperar_apertura():
     while int(time.time()) % 60 != 0:
         time.sleep(0.001)
-
-
-# ==========================
-# 🔥 SOPORTE Y RESISTENCIA
-# ==========================
-def detectar_niveles(candles):
-
-    soportes = []
-    resistencias = []
-
-    for i in range(2, len(candles)-2):
-
-        c = candles[i]
-
-        # soporte (mínimo local)
-        if (
-            c["min"] < candles[i-1]["min"] and
-            c["min"] < candles[i+1]["min"]
-        ):
-            soportes.append(c["min"])
-
-        # resistencia (máximo local)
-        if (
-            c["max"] > candles[i-1]["max"] and
-            c["max"] > candles[i+1]["max"]
-        ):
-            resistencias.append(c["max"])
-
-    return soportes[-3:], resistencias[-3:]
-
-
-# ==========================
-# 🔥 PATRÓN ROJA → VERDE
-# ==========================
-def patron_roja_verde(candles):
-
-    if len(candles) < 3:
-        return False
-
-    c1 = candles[-1]
-    c2 = candles[-2]
-
-    return (
-        c2["close"] < c2["open"] and
-        c1["close"] > c1["open"]
-    )
-
-
-# ==========================
-# 🔥 FILTRO: NO ENTRAR EN RESISTENCIA
-# ==========================
-def cerca_resistencia(precio, resistencias):
-
-    for r in resistencias:
-        if abs(precio - r) < 0.0005:
-            return True
-
-    return False
 
 
 def obtener_resultado(iq, trade_id):
@@ -149,17 +92,17 @@ def obtener_resultado(iq, trade_id):
             return "loss"
 
 
-def ejecutar_trade(iq, pair):
+def ejecutar_trade(iq, pair, action):
 
     status, trade_id = silent(
-        iq.buy, MONTO, pair, "call", EXPIRACION
+        iq.buy, MONTO, pair, action, EXPIRACION
     )
 
     if not status:
         send_message(f"❌ Entrada rechazada {pair}")
         return
 
-    send_message(f"📊 CALL {pair}\n🔥 Rebote en soporte")
+    send_message(f"📊 {action.upper()} {pair}\n🧠 Contra Smart Money")
 
     resultado = obtener_resultado(iq, trade_id)
 
@@ -188,39 +131,28 @@ def run():
         for par in pares:
 
             candles = silent(
-                iq.get_candles, par, TIMEFRAME, 50, time.time()
+                iq.get_candles, par, TIMEFRAME, 20, time.time()
             )
 
             if not candles:
                 continue
 
-            soportes, resistencias = detectar_niveles(candles)
+            señal = analyze_market(candles, None, None)
 
-            precio_actual = candles[-1]["close"]
-
-            # 🔥 ENVIAR NIVELES A TELEGRAM
-            send_message(
-                f"📍 {par}\n"
-                f"Soportes: {soportes}\n"
-                f"Resistencias: {resistencias}"
-            )
-
-            # 🔥 FILTRO DE ENTRADA
-            if cerca_resistencia(precio_actual, resistencias):
-                print(f"🚫 {par} en resistencia")
+            if not señal:
                 continue
 
-            if patron_roja_verde(candles):
+            action = señal["action"]
 
-                print(f"🎯 {par} rebote detectado")
+            print(f"🎯 {par} {action} → smart money detectado")
 
-                esperar_apertura()
+            esperar_apertura()
 
-                ejecutar_trade(iq, par)
+            ejecutar_trade(iq, par, action)
 
-                break
+            break
         else:
-            print("⚠️ Sin señal...")
+            print("⚠️ Sin manipulaciones detectadas...")
 
 
 if __name__ == "__main__":
