@@ -1,6 +1,6 @@
-def analizar_institucional(candles):
+def detectar_reversion(candles):
 
-    if len(candles) < 20:
+    if len(candles) < 10:
         return None
 
     c = candles[-1]
@@ -12,37 +12,30 @@ def analizar_institucional(candles):
     if rango == 0:
         return None
 
-    fuerza = cuerpo / rango
-
     score = 0
 
     # ==========================
-    # 🔥 DETECTAR MANIPULACIÓN
+    # 🔥 DETECTAR AGOTAMIENTO
     # ==========================
-    fake_break_up = (
-        c["max"] > prev["max"] and
-        c["close"] < prev["max"]
-    )
+    fuerza = cuerpo / rango
 
-    fake_break_down = (
-        c["min"] < prev["min"] and
-        c["close"] > prev["min"]
-    )
-
-    rechazo_superior = (c["max"] - max(c["open"], c["close"])) > cuerpo
-    rechazo_inferior = (min(c["open"], c["close"]) - c["min"]) > cuerpo
+    # 🔥 MECHAS
+    mecha_sup = c["max"] - max(c["open"], c["close"])
+    mecha_inf = min(c["open"], c["close"]) - c["min"]
 
     # ==========================
-    # 🔥 COMPRA (TRAMPA BAJISTA)
+    # 🔻 REVERSIÓN ALCISTA (CALL)
     # ==========================
-    if fake_break_down and rechazo_inferior:
+    barrido_bajo = c["min"] < prev["min"]
+
+    if barrido_bajo and mecha_inf > cuerpo * 1.5:
 
         score += 3
 
-        if fuerza > 0.6:
+        if c["close"] > c["open"]:
             score += 2
 
-        if c["close"] > c["open"]:
+        if fuerza > 0.5:
             score += 1
 
         return {
@@ -51,16 +44,18 @@ def analizar_institucional(candles):
         }
 
     # ==========================
-    # 🔥 VENTA (TRAMPA ALCISTA)
+    # 🔺 REVERSIÓN BAJISTA (PUT)
     # ==========================
-    if fake_break_up and rechazo_superior:
+    barrido_alto = c["max"] > prev["max"]
+
+    if barrido_alto and mecha_sup > cuerpo * 1.5:
 
         score += 3
 
-        if fuerza > 0.6:
+        if c["close"] < c["open"]:
             score += 2
 
-        if c["close"] < c["open"]:
+        if fuerza > 0.5:
             score += 1
 
         return {
