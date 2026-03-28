@@ -1,61 +1,48 @@
-def calcular_ema(candles, periodo=10):
-    precios = [c["close"] for c in candles]
+def analizar_institucional(candles):
 
-    if len(precios) < periodo:
+    if len(candles) < 20:
         return None
 
-    k = 2 / (periodo + 1)
-    ema = precios[0]
+    c = candles[-1]
+    prev = candles[-2]
 
-    for p in precios:
-        ema = p * k + ema * (1 - k)
-
-    return ema
-
-
-def analizar_vela_apertura(candles):
-
-    if len(candles) < 15:
-        return None
-
-    ultima = candles[-1]
-
-    apertura = ultima["open"]
-    cierre = ultima["close"]
-    maximo = ultima["max"]
-    minimo = ultima["min"]
-
-    cuerpo = abs(cierre - apertura)
-    rango = maximo - minimo
+    cuerpo = abs(c["close"] - c["open"])
+    rango = c["max"] - c["min"]
 
     if rango == 0:
         return None
 
     fuerza = cuerpo / rango
 
-    # 🔥 FILTRO: vela fuerte
-    if fuerza < 0.6:
-        return None
-
-    # 🔥 EMA tendencia
-    ema = calcular_ema(candles[:-1], 10)
-
-    if not ema:
-        return None
-
     score = 0
 
     # ==========================
-    # 🔥 COMPRA
+    # 🔥 DETECTAR MANIPULACIÓN
     # ==========================
-    if cierre > apertura and cierre > ema:
+    fake_break_up = (
+        c["max"] > prev["max"] and
+        c["close"] < prev["max"]
+    )
 
-        score += 2
+    fake_break_down = (
+        c["min"] < prev["min"] and
+        c["close"] > prev["min"]
+    )
 
-        if fuerza > 0.7:
+    rechazo_superior = (c["max"] - max(c["open"], c["close"])) > cuerpo
+    rechazo_inferior = (min(c["open"], c["close"]) - c["min"]) > cuerpo
+
+    # ==========================
+    # 🔥 COMPRA (TRAMPA BAJISTA)
+    # ==========================
+    if fake_break_down and rechazo_inferior:
+
+        score += 3
+
+        if fuerza > 0.6:
             score += 2
 
-        if maximo > candles[-2]["max"]:
+        if c["close"] > c["open"]:
             score += 1
 
         return {
@@ -64,16 +51,16 @@ def analizar_vela_apertura(candles):
         }
 
     # ==========================
-    # 🔥 VENTA
+    # 🔥 VENTA (TRAMPA ALCISTA)
     # ==========================
-    if cierre < apertura and cierre < ema:
+    if fake_break_up and rechazo_superior:
 
-        score += 2
+        score += 3
 
-        if fuerza > 0.7:
+        if fuerza > 0.6:
             score += 2
 
-        if minimo < candles[-2]["min"]:
+        if c["close"] < c["open"]:
             score += 1
 
         return {
