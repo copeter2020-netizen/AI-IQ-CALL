@@ -1,31 +1,17 @@
 import os
 import time
-import sys
 from iqoptionapi.stable_api import IQ_Option
-from strategy import analizar_macd_price_action
+from strategy import analizar_vela_apertura
 from telegram_bot import send_message
-
-
-class DevNull:
-    def write(self, msg): pass
-    def flush(self): pass
-
-
-def silent(func, *args, **kwargs):
-    try:
-        return func(*args, **kwargs)
-    except:
-        return None
 
 
 IQ_EMAIL = os.getenv("IQ_EMAIL")
 IQ_PASSWORD = os.getenv("IQ_PASSWORD")
 
 TIMEFRAME = 60
-MONTO = 7550
+MONTO = 3330
 EXPIRACION = 1
 
-# 🔥 PARES OTC
 PARES = [
     "EURUSD-OTC",
     "GBPUSD-OTC",
@@ -37,10 +23,15 @@ PARES = [
 bloqueados = set()
 
 
-# ==========================
-# 🔥 FIX UNDERLYING DEFINITIVO
-# ==========================
-def fix_underlying_bug(iq):
+def silent(func, *args, **kwargs):
+    try:
+        return func(*args, **kwargs)
+    except:
+        return None
+
+
+# 🔥 FIX ERROR UNDERLYING
+def fix_underlying(iq):
     try:
         iq.api.digital_underlying_list = {}
         iq.api.get_digital_underlying_list_data = lambda: {}
@@ -55,12 +46,9 @@ def connect():
         silent(iq.connect)
 
         if iq.check_connect():
-
-            fix_underlying_bug(iq)
-
-            print("✅ BOT MULTI-PAR SNIPER")
-            send_message("🚀 BOT MULTI-PAR ACTIVADO")
-
+            fix_underlying(iq)
+            print("✅ BOT ACTIVO (APERTURA)")
+            send_message("🚀 BOT ACTIVO - APERTURA")
             return iq
 
         time.sleep(5)
@@ -70,14 +58,11 @@ def pares_abiertos(iq):
     abiertos = []
     try:
         data = iq.get_all_open_time()
-
         for par in PARES:
             if data["binary"][par]["open"] and par not in bloqueados:
                 abiertos.append(par)
-
     except:
         pass
-
     return abiertos
 
 
@@ -91,7 +76,7 @@ def esperar_apertura():
         time.sleep(0.001)
 
 
-def resultado(iq, trade_id):
+def obtener_resultado(iq, trade_id):
 
     while True:
         r = silent(iq.check_win_v4, trade_id)
@@ -111,22 +96,19 @@ def resultado(iq, trade_id):
             send_message("✅ WIN")
         else:
             send_message("❌ LOSS")
-
         return
 
 
 def ejecutar(iq, par, accion):
 
     for _ in range(3):
-
         status, trade_id = silent(
             iq.buy, MONTO, par, accion, EXPIRACION
         )
 
         if status:
-            print(f"🚀 {par} {accion}")
             send_message(f"📊 {accion.upper()} {par}")
-            resultado(iq, trade_id)
+            obtener_resultado(iq, trade_id)
             return True
 
         time.sleep(0.5)
@@ -146,35 +128,29 @@ def run():
 
         pares = pares_abiertos(iq)
 
-        if not pares:
-            print("⚠️ Sin pares abiertos")
-            continue
-
         mejor = None
         mejor_par = None
 
         for par in pares:
 
             candles = silent(
-                iq.get_candles, par, TIMEFRAME, 60, time.time()
+                iq.get_candles, par, TIMEFRAME, 30, time.time()
             )
 
             if not candles:
                 continue
 
-            señal = analizar_macd_price_action(candles)
+            señal = analizar_vela_apertura(candles)
 
             if not señal:
                 continue
 
-            # 🔥 SNIPER → solo lo mejor
-            if señal["score"] >= 5:
-                if not mejor or señal["score"] > mejor["score"]:
-                    mejor = señal
-                    mejor_par = par
+            if not mejor or señal["score"] > mejor["score"]:
+                mejor = señal
+                mejor_par = par
 
         if not mejor:
-            print("🎯 SNIPER esperando...")
+            print("⏳ Esperando señal apertura...")
             continue
 
         print(f"🎯 {mejor_par} {mejor['action']}")
@@ -182,7 +158,23 @@ def run():
 
         esperar_apertura()
 
-        ejecutar(iq, mejor_par, mejor["action"])
+        # 🔥 ESPERAR RETROCESO BAJO APERTURA
+        for _ in range(20):
+
+            candles = silent(
+                iq.get_candles, mejor_par, TIMEFRAME, 1, time.time()
+            )
+
+            if not candles:
+                continue
+
+            vela = candles[-1]
+
+            if vela["close"] < vela["open"]:
+                ejecutar(iq, mejor_par, mejor["action"])
+                break
+
+            time.sleep(1)
 
 
 if __name__ == "__main__":
