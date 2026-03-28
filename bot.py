@@ -1,7 +1,7 @@
 import os
 import time
 from iqoptionapi.stable_api import IQ_Option
-from strategy import analizar_vela_apertura
+from strategy import analizar_institucional
 from telegram_bot import send_message
 
 
@@ -47,23 +47,22 @@ def connect():
 
         if iq.check_connect():
             fix_underlying(iq)
-            print("✅ BOT ACTIVO (APERTURA)")
-            send_message("🚀 BOT ACTIVO - APERTURA")
+            print("🔥 SNIPER INSTITUCIONAL ACTIVO")
+            send_message("🔥 SNIPER INSTITUCIONAL ACTIVADO")
             return iq
 
         time.sleep(5)
 
 
 def pares_abiertos(iq):
-    abiertos = []
     try:
         data = iq.get_all_open_time()
-        for par in PARES:
-            if data["binary"][par]["open"] and par not in bloqueados:
-                abiertos.append(par)
+        return [
+            p for p in PARES
+            if data["binary"][p]["open"] and p not in bloqueados
+        ]
     except:
-        pass
-    return abiertos
+        return []
 
 
 def esperar_cierre():
@@ -76,8 +75,7 @@ def esperar_apertura():
         time.sleep(0.001)
 
 
-def obtener_resultado(iq, trade_id):
-
+def resultado(iq, trade_id):
     while True:
         r = silent(iq.check_win_v4, trade_id)
 
@@ -108,7 +106,7 @@ def ejecutar(iq, par, accion):
 
         if status:
             send_message(f"📊 {accion.upper()} {par}")
-            obtener_resultado(iq, trade_id)
+            resultado(iq, trade_id)
             return True
 
         time.sleep(0.5)
@@ -134,13 +132,13 @@ def run():
         for par in pares:
 
             candles = silent(
-                iq.get_candles, par, TIMEFRAME, 30, time.time()
+                iq.get_candles, par, TIMEFRAME, 50, time.time()
             )
 
             if not candles:
                 continue
 
-            señal = analizar_vela_apertura(candles)
+            señal = analizar_institucional(candles)
 
             if not señal:
                 continue
@@ -150,29 +148,35 @@ def run():
                 mejor_par = par
 
         if not mejor:
-            print("⏳ Esperando señal apertura...")
+            print("⏳ Esperando manipulación...")
             continue
 
         print(f"🎯 {mejor_par} {mejor['action']}")
-        send_message(f"🎯 {mejor_par} {mejor['action']}")
+        send_message(f"🎯 SNIPER {mejor_par} {mejor['action']}")
 
         esperar_apertura()
 
-        # 🔥 ESPERAR RETROCESO BAJO APERTURA
-        for _ in range(20):
+        # 🔥 ENTRADA EN RETROCESO (SMART MONEY)
+        for _ in range(25):
 
-            candles = silent(
+            vela = silent(
                 iq.get_candles, mejor_par, TIMEFRAME, 1, time.time()
             )
 
-            if not candles:
+            if not vela:
                 continue
 
-            vela = candles[-1]
+            vela = vela[-1]
 
-            if vela["close"] < vela["open"]:
-                ejecutar(iq, mejor_par, mejor["action"])
-                break
+            if mejor["action"] == "call":
+                if vela["close"] < vela["open"]:
+                    ejecutar(iq, mejor_par, "call")
+                    break
+
+            if mejor["action"] == "put":
+                if vela["close"] > vela["open"]:
+                    ejecutar(iq, mejor_par, "put")
+                    break
 
             time.sleep(1)
 
