@@ -1,26 +1,16 @@
 import os
 import time
 from iqoptionapi.stable_api import IQ_Option
-from strategy import analizar_institucional
+from strategy import detectar_reversion
 from telegram_bot import send_message
-
 
 IQ_EMAIL = os.getenv("IQ_EMAIL")
 IQ_PASSWORD = os.getenv("IQ_PASSWORD")
 
+PAR = "EURUSD-OTC"
 TIMEFRAME = 60
-MONTO = 3330
+MONTO = 10000
 EXPIRACION = 1
-
-PARES = [
-    "EURUSD-OTC",
-    "GBPUSD-OTC",
-    "EURGBP-OTC",
-    "EURJPY-OTC",
-    "USDCHF-OTC"
-]
-
-bloqueados = set()
 
 
 def silent(func, *args, **kwargs):
@@ -47,22 +37,19 @@ def connect():
 
         if iq.check_connect():
             fix_underlying(iq)
-            print("🔥 SNIPER INSTITUCIONAL ACTIVO")
-            send_message("🔥 SNIPER INSTITUCIONAL ACTIVADO")
+            print("🔄 BOT REVERSIÓN EURUSD ACTIVO")
+            send_message("🔄 BOT REVERSIÓN EURUSD ACTIVO")
             return iq
 
         time.sleep(5)
 
 
-def pares_abiertos(iq):
+def par_abierto(iq):
     try:
         data = iq.get_all_open_time()
-        return [
-            p for p in PARES
-            if data["binary"][p]["open"] and p not in bloqueados
-        ]
+        return data["binary"][PAR]["open"]
     except:
-        return []
+        return False
 
 
 def esperar_cierre():
@@ -90,30 +77,25 @@ def resultado(iq, trade_id):
         except:
             return
 
-        if r > 0:
-            send_message("✅ WIN")
-        else:
-            send_message("❌ LOSS")
+        send_message("✅ WIN" if r > 0 else "❌ LOSS")
         return
 
 
-def ejecutar(iq, par, accion):
+def ejecutar(iq, accion):
 
     for _ in range(3):
         status, trade_id = silent(
-            iq.buy, MONTO, par, accion, EXPIRACION
+            iq.buy, MONTO, PAR, accion, EXPIRACION
         )
 
         if status:
-            send_message(f"📊 {accion.upper()} {par}")
+            send_message(f"📊 {accion.upper()} EURUSD")
             resultado(iq, trade_id)
-            return True
+            return
 
         time.sleep(0.5)
 
-    bloqueados.add(par)
-    send_message(f"⛔ {par} bloqueado")
-    return False
+    send_message("⛔ Error entrada")
 
 
 def run():
@@ -122,45 +104,35 @@ def run():
 
     while True:
 
-        esperar_cierre()
-
-        pares = pares_abiertos(iq)
-
-        mejor = None
-        mejor_par = None
-
-        for par in pares:
-
-            candles = silent(
-                iq.get_candles, par, TIMEFRAME, 50, time.time()
-            )
-
-            if not candles:
-                continue
-
-            señal = analizar_institucional(candles)
-
-            if not señal:
-                continue
-
-            if not mejor or señal["score"] > mejor["score"]:
-                mejor = señal
-                mejor_par = par
-
-        if not mejor:
-            print("⏳ Esperando manipulación...")
+        if not par_abierto(iq):
+            time.sleep(5)
             continue
 
-        print(f"🎯 {mejor_par} {mejor['action']}")
-        send_message(f"🎯 SNIPER {mejor_par} {mejor['action']}")
+        esperar_cierre()
+
+        candles = silent(
+            iq.get_candles, PAR, TIMEFRAME, 30, time.time()
+        )
+
+        if not candles:
+            continue
+
+        señal = detectar_reversion(candles)
+
+        if not señal:
+            print("⏳ Esperando reversión...")
+            continue
+
+        print(f"🎯 EURUSD {señal['action']}")
+        send_message(f"🎯 REVERSIÓN EURUSD {señal['action']}")
 
         esperar_apertura()
 
-        # 🔥 ENTRADA EN RETROCESO (SMART MONEY)
-        for _ in range(25):
+        # 🔥 ENTRADA EN RETROCESO
+        for _ in range(20):
 
             vela = silent(
-                iq.get_candles, mejor_par, TIMEFRAME, 1, time.time()
+                iq.get_candles, PAR, TIMEFRAME, 1, time.time()
             )
 
             if not vela:
@@ -168,14 +140,14 @@ def run():
 
             vela = vela[-1]
 
-            if mejor["action"] == "call":
+            if señal["action"] == "call":
                 if vela["close"] < vela["open"]:
-                    ejecutar(iq, mejor_par, "call")
+                    ejecutar(iq, "call")
                     break
 
-            if mejor["action"] == "put":
+            if señal["action"] == "put":
                 if vela["close"] > vela["open"]:
-                    ejecutar(iq, mejor_par, "put")
+                    ejecutar(iq, "put")
                     break
 
             time.sleep(1)
