@@ -8,9 +8,27 @@ from telegram_bot import send_message
 IQ_EMAIL = os.getenv("IQ_EMAIL")
 IQ_PASSWORD = os.getenv("IQ_PASSWORD")
 
-PAR = "EURUSD-OTC"
 MONTO = 10000
 EXPIRACION = 1
+
+# 🔥 PARES OTC
+PARES = [
+    "EURGBP-OTC",
+    "GBPUSD-OTC",
+    "EURJPY-OTC",
+    "USDCHF-OTC",
+    "USDIDY-OTC",
+    "USDZAR-OTC",
+    "USDTRY-OTC",
+    "USDTHB-OTC",
+    "USDSGD-OTC",
+    "USDSEK-OTC",
+    "USDPLN-OTC",
+    "USDNOK-OTC",
+    "USDMXN-OTC",
+    "USDINR-OTC",
+    "USDHKD-OTC"
+]
 
 
 def silent(func, *args, **kwargs):
@@ -20,7 +38,7 @@ def silent(func, *args, **kwargs):
         return None
 
 
-# 🔥 FIX ERROR UNDERLYING (CRASH RAILWAY)
+# 🔥 FIX ERROR UNDERLYING
 def fix_api(iq):
     try:
         iq.api.digital_underlying_list = {}
@@ -37,8 +55,8 @@ def connect():
 
         if iq.check_connect():
             fix_api(iq)
-            print("🔥 BOT ACTIVO")
-            send_message("🔥 BOT ACTIVO")
+            print("🔥 BOT MULTIPAIRS ACTIVO")
+            send_message("🔥 BOT MULTIPAIRS ACTIVO")
             return iq
 
         time.sleep(5)
@@ -79,19 +97,21 @@ def obtener_resultado(iq, trade_id):
         return
 
 
-def ejecutar_trade(iq, accion):
+def ejecutar_trade(iq, par, accion):
 
     status, trade_id = silent(
-        iq.buy, MONTO, PAR, accion, EXPIRACION
+        iq.buy, MONTO, par, accion, EXPIRACION
     )
 
     if not status:
-        send_message("❌ ERROR ENTRADA")
-        return
+        send_message(f"❌ ERROR {par}")
+        return False
 
-    send_message(f"📊 {accion.upper()} {PAR}")
+    send_message(f"📊 {accion.upper()} {par}")
 
     obtener_resultado(iq, trade_id)
+
+    return True
 
 
 def run():
@@ -102,21 +122,32 @@ def run():
 
         esperar_cierre()
 
-        # 🔥 LLAMADA CORRECTA A LA ESTRATEGIA
-        señal = detectar_trampa(iq, PAR)
+        print("🔍 Analizando pares...")
 
-        if not señal:
-            print("⏳ Sin señal...")
-            continue
+        señal_encontrada = False
 
-        accion = señal["action"]
+        for par in PARES:
 
-        print(f"🎯 SEÑAL {accion} {PAR}")
-        send_message(f"🎯 {accion.upper()} {PAR}")
+            señal = detectar_trampa(iq, par)
 
-        esperar_apertura()
+            if not señal:
+                continue
 
-        ejecutar_trade(iq, accion)
+            accion = señal["action"]
+
+            print(f"🎯 {par} {accion}")
+            send_message(f"🎯 {accion.upper()} {par}")
+
+            esperar_apertura()
+
+            ejecutado = ejecutar_trade(iq, par, accion)
+
+            if ejecutado:
+                señal_encontrada = True
+                break
+
+        if not señal_encontrada:
+            print("⏳ Sin señales...")
 
 
 if __name__ == "__main__":
