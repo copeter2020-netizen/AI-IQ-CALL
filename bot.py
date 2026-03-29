@@ -8,8 +8,10 @@ IQ_EMAIL = os.getenv("IQ_EMAIL")
 IQ_PASSWORD = os.getenv("IQ_PASSWORD")
 
 PAR = "EURUSD-OTC"
-MONTO = 6161
+MONTO = 3333.33
 EXPIRACION = 1
+
+CONTROL_FILE = "estado.txt"
 
 
 def silent(func, *args, **kwargs):
@@ -28,6 +30,15 @@ def fix_api(iq):
         pass
 
 
+def estado_bot():
+    try:
+        with open(CONTROL_FILE, "r") as f:
+            estado = f.read().strip().upper()
+            return estado == "ON"
+    except:
+        return True  # por defecto encendido
+
+
 def connect():
     while True:
         iq = IQ_Option(IQ_EMAIL, IQ_PASSWORD)
@@ -35,8 +46,8 @@ def connect():
 
         if iq.check_connect():
             fix_api(iq)
-            print("🔥 BOT MANIPULACIÓN ACTIVO")
-            send_message("🔥 BOT MANIPULACIÓN ACTIVO")
+            print("🔥 BOT ACTIVO")
+            send_message("🔥 BOT ACTIVO")
             return iq
 
         time.sleep(5)
@@ -95,18 +106,24 @@ def run():
 
     while True:
 
+        # 🔴 BOT APAGADO
+        if not estado_bot():
+            print("⛔ BOT DETENIDO")
+            time.sleep(2)
+            continue
+
         esperar_cierre()
 
         señal = detectar_trampa(iq, PAR)
 
         if not señal:
-            print("⏳ Sin manipulación...")
+            print("⏳ Sin señal...")
             continue
 
         accion = señal["action"]
 
-        print(f"🎯 TRAMPA DETECTADA {accion}")
-        send_message(f"🎯 TRAMPA {PAR} {accion}")
+        print(f"🎯 {PAR} {accion}")
+        send_message(f"🎯 {PAR} {accion}")
 
         esperar_apertura()
 
