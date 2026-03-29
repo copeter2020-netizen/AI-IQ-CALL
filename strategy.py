@@ -9,31 +9,28 @@ def detectar_trampa(iq, par):
         return None
 
     c1 = velas[-1]
-    c2 = velas[-2]
-    c3 = velas[-3]
 
-    # 🔥 máximos y mínimos recientes
     max_prev = max(v["max"] for v in velas[:-1])
     min_prev = min(v["min"] for v in velas[:-1])
 
     # ==========================
-    # 🔻 TRAMPA ALCISTA (FAKE BREAK ARRIBA → PUT)
+    # 🔻 TRAMPA ALCISTA (ANTES PUT → AHORA CALL)
     # ==========================
     if (
-        c1["max"] > max_prev and  # rompe máximo
-        c1["close"] < c1["open"] and  # cierra rojo
-        (c1["max"] - c1["close"]) > abs(c1["close"] - c1["open"])  # mecha superior fuerte
+        c1["max"] > max_prev and
+        c1["close"] < c1["open"] and
+        (c1["max"] - c1["close"]) > abs(c1["close"] - c1["open"])
     ):
-        return {"action": "put"}
+        return {"action": "call"}  # 🔥 INVERTIDO
 
     # ==========================
-    # 🔺 TRAMPA BAJISTA (FAKE BREAK ABAJO → CALL)
+    # 🔺 TRAMPA BAJISTA (ANTES CALL → AHORA PUT)
     # ==========================
     if (
-        c1["min"] < min_prev and  # rompe mínimo
-        c1["close"] > c1["open"] and  # cierra verde
-        (c1["close"] - c1["min"]) > abs(c1["close"] - c1["open"])  # mecha inferior fuerte
+        c1["min"] < min_prev and
+        c1["close"] > c1["open"] and
+        (c1["close"] - c1["min"]) > abs(c1["close"] - c1["open"])
     ):
-        return {"action": "call"}
+        return {"action": "put"}  # 🔥 INVERTIDO
 
     return None
