@@ -1,16 +1,16 @@
 import os
 import time
 from iqoptionapi.stable_api import IQ_Option
-from strategy import detectar_reversion_extrema
+from strategy import analizar_estructura
 from telegram_bot import send_message
 
 IQ_EMAIL = os.getenv("IQ_EMAIL")
 IQ_PASSWORD = os.getenv("IQ_PASSWORD")
 
 PAR = "EURUSD-OTC"
-TIMEFRAME = 60
-MONTO = 10000
-EXPIRACION = 1
+TIMEFRAME = 60  # 1 minuto
+MONTO = 100
+EXPIRACION = 5  # 🔥 5 minutos
 
 
 def silent(func, *args, **kwargs):
@@ -21,7 +21,7 @@ def silent(func, *args, **kwargs):
 
 
 # 🔥 FIX ERROR UNDERLYING
-def fix_underlying(iq):
+def fix_api(iq):
     try:
         iq.api.digital_underlying_list = {}
         iq.api.get_digital_underlying_list_data = lambda: {}
@@ -36,9 +36,9 @@ def connect():
         silent(iq.connect)
 
         if iq.check_connect():
-            fix_underlying(iq)
-            print("🔥 BOT REVERSIÓN EXTREMA ACTIVO")
-            send_message("🔥 BOT REVERSIÓN EXTREMA ACTIVO")
+            fix_api(iq)
+            print("🔥 BOT ESTRUCTURA ACTIVO")
+            send_message("🔥 BOT ESTRUCTURA ACTIVO")
             return iq
 
         time.sleep(5)
@@ -75,19 +75,16 @@ def resultado(iq, trade_id):
 
 def ejecutar(iq, accion):
 
-    for _ in range(3):
-        status, trade_id = silent(
-            iq.buy, MONTO, PAR, accion, EXPIRACION
-        )
+    status, trade_id = silent(
+        iq.buy, MONTO, PAR, accion, EXPIRACION
+    )
 
-        if status:
-            send_message(f"📊 {accion.upper()} EURUSD")
-            resultado(iq, trade_id)
-            return
+    if not status:
+        send_message("⛔ Error entrada")
+        return
 
-        time.sleep(0.5)
-
-    send_message("⛔ Error entrada")
+    send_message(f"📊 {accion.upper()} EURUSD (5M)")
+    resultado(iq, trade_id)
 
 
 def run():
@@ -98,47 +95,19 @@ def run():
 
         esperar_cierre()
 
-        candles = silent(
-            iq.get_candles, PAR, TIMEFRAME, 50, time.time()
-        )
-
-        if not candles:
-            continue
-
-        señal = detectar_reversion_extrema(candles)
+        # 🔥 ANALISIS COMPLETO
+        señal = analizar_estructura(iq, PAR)
 
         if not señal:
-            print("⏳ Esperando señal...")
+            print("⏳ Sin zona clara...")
             continue
 
-        print(f"🎯 EURUSD {señal['action']}")
-        send_message(f"🎯 EURUSD {señal['action']}")
+        print(f"🎯 ZONA DETECTADA {señal['action']}")
+        send_message(f"🎯 {PAR} {señal['action']} zona fuerte")
 
         esperar_apertura()
 
-        # 🔥 ENTRADA EN RETROCESO
-        for _ in range(25):
-
-            vela = silent(
-                iq.get_candles, PAR, TIMEFRAME, 1, time.time()
-            )
-
-            if not vela:
-                continue
-
-            vela = vela[-1]
-
-            if señal["action"] == "call":
-                if vela["close"] < vela["open"]:
-                    ejecutar(iq, "call")
-                    break
-
-            if señal["action"] == "put":
-                if vela["close"] > vela["open"]:
-                    ejecutar(iq, "put")
-                    break
-
-            time.sleep(1)
+        ejecutar(iq, señal["action"])
 
 
 if __name__ == "__main__":
