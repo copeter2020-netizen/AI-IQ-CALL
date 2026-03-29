@@ -8,16 +8,8 @@ from telegram_bot import send_message
 IQ_EMAIL = os.getenv("IQ_EMAIL")
 IQ_PASSWORD = os.getenv("IQ_PASSWORD")
 
-MONTO = 10000
+MONTO = 13000
 EXPIRACION = 1
-
-PARES = [
-    "EURUSD-OTC",
-    "EURGBP-OTC",
-    "GBPUSD-OTC",
-    "EURJPY-OTC",
-    "USDCHF-OTC"
-]
 
 
 def silent(func, *args, **kwargs):
@@ -27,7 +19,7 @@ def silent(func, *args, **kwargs):
         return None
 
 
-# 🔥 FIX ERROR UNDERLYING (CLAVE)
+# 🔥 FIX ERROR UNDERLYING
 def fix_api(iq):
     try:
         iq.api.digital_underlying_list = {}
@@ -35,6 +27,25 @@ def fix_api(iq):
         iq.api._IQ_Option__get_digital_open = lambda *args, **kwargs: None
     except:
         pass
+
+
+# =========================
+# 🔥 OBTENER TODOS LOS OTC
+# =========================
+def obtener_pares(iq):
+
+    try:
+        activos = iq.get_all_open_time()
+    except:
+        return []
+
+    pares = []
+
+    for par, data in activos["binary"].items():
+        if "-OTC" in par and data["open"]:
+            pares.append(par)
+
+    return pares
 
 
 def connect():
@@ -45,8 +56,8 @@ def connect():
 
         if iq.check_connect():
             fix_api(iq)
-            print("🔥 BOT OPERANDO")
-            send_message("🔥 BOT OPERANDO")
+            print("🔥 BOT ANALIZANDO TODOS LOS PARES")
+            send_message("🔥 BOT ANALIZANDO TODOS LOS PARES")
             return iq
 
         time.sleep(5)
@@ -98,6 +109,9 @@ def ejecutar(iq, par, accion):
     resultado(iq, trade_id)
 
 
+# =========================
+# 🔥 MAIN
+# =========================
 def run():
 
     iq = connect()
@@ -106,9 +120,15 @@ def run():
 
         esperar_cierre()
 
-        print("🔍 Analizando...")
+        pares = obtener_pares(iq)
 
-        for par in PARES:
+        if not pares:
+            print("❌ No hay pares")
+            continue
+
+        print(f"🔍 Analizando {len(pares)} pares...")
+
+        for par in pares:
 
             señal = detectar_trampa(iq, par)
 
