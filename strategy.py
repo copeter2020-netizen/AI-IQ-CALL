@@ -3,121 +3,60 @@ import numpy as np
 
 
 # =========================
-# 🔥 INDICADORES
+# 🔥 NIVELES 3 HORAS
 # =========================
-
-def SMA(data, period=20):
-    if len(data) < period:
-        return None
-    return np.mean(data[-period:])
-
-
-def stochastic(candles, period=14):
-
-    if len(candles) < period:
-        return None
-
-    highs = [c["max"] for c in candles[-period:]]
-    lows = [c["min"] for c in candles[-period:]]
-    close = candles[-1]["close"]
-
-    highest = max(highs)
-    lowest = min(lows)
-
-    if highest - lowest == 0:
-        return None
-
-    k = ((close - lowest) / (highest - lowest)) * 100
-    return k
-
-
-def sar_direccion(candles):
-
-    if len(candles) < 2:
-        return None
-
-    if candles[-1]["close"] > candles[-2]["close"]:
-        return "alcista"
-    else:
-        return "bajista"
-
-
-# =========================
-# 🔥 SOPORTE Y RESISTENCIA (3H)
-# =========================
-
-def niveles(iq, par):
+def obtener_estructura(iq, par):
 
     try:
-        velas = iq.get_candles(par, 10800, 50, time.time())
+        velas = iq.get_candles(par, 10800, 60, time.time())  # 3H
     except:
-        return [], []
-
-    soportes = []
-    resistencias = []
-
-    for i in range(2, len(velas) - 2):
-
-        if velas[i]["min"] < velas[i-1]["min"] and velas[i]["min"] < velas[i+1]["min"]:
-            soportes.append(velas[i]["min"])
-
-        if velas[i]["max"] > velas[i-1]["max"] and velas[i]["max"] > velas[i+1]["max"]:
-            resistencias.append(velas[i]["max"])
-
-    return soportes[-5:], resistencias[-5:]
-
-
-def cerca(precio, niveles):
-    for n in niveles:
-        if abs(precio - n) < 0.0006:
-            return True
-    return False
-
-
-# =========================
-# 🔥 TRAMPA (PRICE ACTION)
-# =========================
-
-def detectar_trampa_basica(candles):
-
-    if len(candles) < 3:
         return None
+
+    if not velas:
+        return None
+
+    highs = [c["max"] for c in velas]
+    lows = [c["min"] for c in velas]
+
+    resistencia = max(highs[-20:])
+    soporte = min(lows[-20:])
+
+    tendencia = "rango"
+
+    if velas[-1]["close"] > np.mean(highs[-20:]):
+        tendencia = "alcista"
+    elif velas[-1]["close"] < np.mean(lows[-20:]):
+        tendencia = "bajista"
+
+    return soporte, resistencia, tendencia
+
+
+# =========================
+# 🔥 CONFIRMACIÓN M1
+# =========================
+def confirmacion_entrada(candles, accion):
 
     c1 = candles[-1]
     c2 = candles[-2]
 
-    # falso rompimiento arriba → venta
-    if c2["max"] > c1["max"] and c1["close"] < c1["open"]:
-        return "put"
+    # vela fuerte confirmación
+    cuerpo = abs(c1["close"] - c1["open"])
+    rango = c1["max"] - c1["min"]
 
-    # falso rompimiento abajo → compra
-    if c2["min"] < c1["min"] and c1["close"] > c1["open"]:
-        return "call"
-
-    return None
-
-
-# =========================
-# 🔥 CONFIRMACIONES
-# =========================
-
-def confirmar(candles, señal):
-
-    closes = [c["close"] for c in candles]
-    precio = closes[-1]
-
-    sma = SMA(closes, 20)
-    k = stochastic(candles)
-    sar = sar_direccion(candles)
-
-    if sma is None or k is None or sar is None:
+    if rango == 0:
         return False
 
-    if señal == "call":
-        return precio > sma and k > 20 and sar == "alcista"
+    fuerza = cuerpo / rango
 
-    if señal == "put":
-        return precio < sma and k < 80 and sar == "bajista"
+    if fuerza < 0.6:
+        return False
+
+    # confirmación dirección
+    if accion == "call":
+        return c1["close"] > c1["open"] and c2["close"] < c2["open"]
+
+    if accion == "put":
+        return c1["close"] < c1["open"] and c2["close"] > c2["open"]
 
     return False
 
@@ -125,9 +64,17 @@ def confirmar(candles, señal):
 # =========================
 # 🔥 FUNCIÓN PRINCIPAL
 # =========================
-
 def detectar_trampa(iq, par):
 
+    # 🔥 ESTRUCTURA 3H
+    estructura = obtener_estructura(iq, par)
+
+    if not estructura:
+        return None
+
+    soporte, resistencia, tendencia = estructura
+
+    # 🔥 M1
     try:
         candles = iq.get_candles(par, 60, 30, time.time())
     except:
@@ -136,22 +83,22 @@ def detectar_trampa(iq, par):
     if not candles:
         return None
 
-    soportes, resistencias = niveles(iq, par)
-
     precio = candles[-1]["close"]
 
-    señal = detectar_trampa_basica(candles)
+    # =========================
+    # 🟢 COMPRA (rebote soporte)
+    # =========================
+    if abs(precio - soporte) < 0.0007:
 
-    if not señal:
-        return None
+        if confirmacion_entrada(candles, "call"):
+            return {"action": "call"}
 
-    if señal == "call" and not cerca(precio, soportes):
-        return None
+    # =========================
+    # 🔴 VENTA (rebote resistencia)
+    # =========================
+    if abs(precio - resistencia) < 0.0007:
 
-    if señal == "put" and not cerca(precio, resistencias):
-        return None
+        if confirmacion_entrada(candles, "put"):
+            return {"action": "put"}
 
-    if not confirmar(candles, señal):
-        return None
-
-    return {"action": señal}
+    return None
