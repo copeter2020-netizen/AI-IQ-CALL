@@ -1,7 +1,7 @@
 import os
 import time
 from iqoptionapi.stable_api import IQ_Option
-from strategy import detectar_reversion
+from strategy import detectar_reversion_extrema
 from telegram_bot import send_message
 
 IQ_EMAIL = os.getenv("IQ_EMAIL")
@@ -37,19 +37,11 @@ def connect():
 
         if iq.check_connect():
             fix_underlying(iq)
-            print("🔄 BOT REVERSIÓN EURUSD ACTIVO")
-            send_message("🔄 BOT REVERSIÓN EURUSD ACTIVO")
+            print("🔥 BOT REVERSIÓN EXTREMA ACTIVO")
+            send_message("🔥 BOT REVERSIÓN EXTREMA ACTIVO")
             return iq
 
         time.sleep(5)
-
-
-def par_abierto(iq):
-    try:
-        data = iq.get_all_open_time()
-        return data["binary"][PAR]["open"]
-    except:
-        return False
 
 
 def esperar_cierre():
@@ -104,32 +96,28 @@ def run():
 
     while True:
 
-        if not par_abierto(iq):
-            time.sleep(5)
-            continue
-
         esperar_cierre()
 
         candles = silent(
-            iq.get_candles, PAR, TIMEFRAME, 30, time.time()
+            iq.get_candles, PAR, TIMEFRAME, 50, time.time()
         )
 
         if not candles:
             continue
 
-        señal = detectar_reversion(candles)
+        señal = detectar_reversion_extrema(candles)
 
         if not señal:
-            print("⏳ Esperando reversión...")
+            print("⏳ Esperando señal...")
             continue
 
         print(f"🎯 EURUSD {señal['action']}")
-        send_message(f"🎯 REVERSIÓN EURUSD {señal['action']}")
+        send_message(f"🎯 EURUSD {señal['action']}")
 
         esperar_apertura()
 
         # 🔥 ENTRADA EN RETROCESO
-        for _ in range(20):
+        for _ in range(25):
 
             vela = silent(
                 iq.get_candles, PAR, TIMEFRAME, 1, time.time()
