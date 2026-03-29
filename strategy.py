@@ -1,64 +1,51 @@
 import time
-import numpy as np
 
 
 # =========================
-# 🔥 NIVELES 3 HORAS
+# 🔥 ESTRUCTURA SIMPLE 3H
 # =========================
-def obtener_estructura(iq, par):
+def estructura_3h(iq, par):
 
     try:
-        velas = iq.get_candles(par, 10800, 60, time.time())  # 3H
+        velas = iq.get_candles(par, 10800, 30, time.time())
     except:
         return None
 
     if not velas:
         return None
 
-    highs = [c["max"] for c in velas]
-    lows = [c["min"] for c in velas]
+    maximo = max(c["max"] for c in velas)
+    minimo = min(c["min"] for c in velas)
 
-    resistencia = max(highs[-20:])
-    soporte = min(lows[-20:])
-
-    tendencia = "rango"
-
-    if velas[-1]["close"] > np.mean(highs[-20:]):
-        tendencia = "alcista"
-    elif velas[-1]["close"] < np.mean(lows[-20:]):
-        tendencia = "bajista"
-
-    return soporte, resistencia, tendencia
+    return minimo, maximo
 
 
 # =========================
-# 🔥 CONFIRMACIÓN M1
+# 🔥 ENTRADA M1 (MENOS ESTRICTA)
 # =========================
-def confirmacion_entrada(candles, accion):
+def entrada_m1(candles):
+
+    if len(candles) < 3:
+        return None
 
     c1 = candles[-1]
     c2 = candles[-2]
 
-    # vela fuerte confirmación
-    cuerpo = abs(c1["close"] - c1["open"])
-    rango = c1["max"] - c1["min"]
+    # 🟢 COMPRA
+    if (
+        c2["close"] < c2["open"] and
+        c1["close"] > c1["open"]
+    ):
+        return "call"
 
-    if rango == 0:
-        return False
+    # 🔴 VENTA
+    if (
+        c2["close"] > c2["open"] and
+        c1["close"] < c1["open"]
+    ):
+        return "put"
 
-    fuerza = cuerpo / rango
-
-    if fuerza < 0.6:
-        return False
-
-    # confirmación dirección
-    if accion == "call":
-        return c1["close"] > c1["open"] and c2["close"] < c2["open"]
-
-    if accion == "put":
-        return c1["close"] < c1["open"] and c2["close"] > c2["open"]
-
-    return False
+    return None
 
 
 # =========================
@@ -66,17 +53,15 @@ def confirmacion_entrada(candles, accion):
 # =========================
 def detectar_trampa(iq, par):
 
-    # 🔥 ESTRUCTURA 3H
-    estructura = obtener_estructura(iq, par)
+    estructura = estructura_3h(iq, par)
 
     if not estructura:
         return None
 
-    soporte, resistencia, tendencia = estructura
+    soporte, resistencia = estructura
 
-    # 🔥 M1
     try:
-        candles = iq.get_candles(par, 60, 30, time.time())
+        candles = iq.get_candles(par, 60, 20, time.time())
     except:
         return None
 
@@ -85,20 +70,17 @@ def detectar_trampa(iq, par):
 
     precio = candles[-1]["close"]
 
-    # =========================
-    # 🟢 COMPRA (rebote soporte)
-    # =========================
-    if abs(precio - soporte) < 0.0007:
+    señal = entrada_m1(candles)
 
-        if confirmacion_entrada(candles, "call"):
-            return {"action": "call"}
+    if not señal:
+        return None
 
-    # =========================
-    # 🔴 VENTA (rebote resistencia)
-    # =========================
-    if abs(precio - resistencia) < 0.0007:
+    # 🔥 FILTRO ZONA (RELAX)
+    if señal == "call" and precio < (soporte + 0.0015):
+        return {"action": "call"}
 
-        if confirmacion_entrada(candles, "put"):
-            return {"action": "put"}
+    if señal == "put" and precio > (resistencia - 0.0015):
+        return {"action": "put"}
 
-    return None
+    # 🔥 SI NO ESTÁ EN ZONA → IGUAL ENTRA (para que opere)
+    return {"action": señal}
