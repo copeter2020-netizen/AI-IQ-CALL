@@ -8,26 +8,15 @@ from telegram_bot import send_message
 IQ_EMAIL = os.getenv("IQ_EMAIL")
 IQ_PASSWORD = os.getenv("IQ_PASSWORD")
 
-MONTO = 10000
+MONTO = 3333.33
 EXPIRACION = 1
 
-# 🔥 PARES OTC
 PARES = [
+    "EURUSD-OTC",
     "EURGBP-OTC",
     "GBPUSD-OTC",
     "EURJPY-OTC",
-    "USDCHF-OTC",
-    "USDIDY-OTC",
-    "USDZAR-OTC",
-    "USDTRY-OTC",
-    "USDTHB-OTC",
-    "USDSGD-OTC",
-    "USDSEK-OTC",
-    "USDPLN-OTC",
-    "USDNOK-OTC",
-    "USDMXN-OTC",
-    "USDINR-OTC",
-    "USDHKD-OTC"
+    "USDCHF-OTC"
 ]
 
 
@@ -38,7 +27,6 @@ def silent(func, *args, **kwargs):
         return None
 
 
-# 🔥 FIX ERROR UNDERLYING
 def fix_api(iq):
     try:
         iq.api.digital_underlying_list = {}
@@ -55,8 +43,8 @@ def connect():
 
         if iq.check_connect():
             fix_api(iq)
-            print("🔥 BOT MULTIPAIRS ACTIVO")
-            send_message("🔥 BOT MULTIPAIRS ACTIVO")
+            print("🔥 BOT INDICADORES ACTIVO")
+            send_message("🔥 BOT INDICADORES ACTIVO")
             return iq
 
         time.sleep(5)
@@ -72,32 +60,28 @@ def esperar_apertura():
         time.sleep(0.001)
 
 
-def obtener_resultado(iq, trade_id):
+def resultado(iq, trade_id):
 
     while True:
-        result = silent(iq.check_win_v4, trade_id)
+        r = silent(iq.check_win_v4, trade_id)
 
-        if result is None:
+        if r is None:
             time.sleep(1)
             continue
 
-        if isinstance(result, tuple):
-            result = result[0]
+        if isinstance(r, tuple):
+            r = r[0]
 
         try:
-            result = float(result)
+            r = float(r)
         except:
             return
 
-        if result > 0:
-            send_message("✅ WIN")
-        else:
-            send_message("❌ LOSS")
-
+        send_message("✅ WIN" if r > 0 else "❌ LOSS")
         return
 
 
-def ejecutar_trade(iq, par, accion):
+def ejecutar(iq, par, accion):
 
     status, trade_id = silent(
         iq.buy, MONTO, par, accion, EXPIRACION
@@ -105,13 +89,11 @@ def ejecutar_trade(iq, par, accion):
 
     if not status:
         send_message(f"❌ ERROR {par}")
-        return False
+        return
 
     send_message(f"📊 {accion.upper()} {par}")
 
-    obtener_resultado(iq, trade_id)
-
-    return True
+    resultado(iq, trade_id)
 
 
 def run():
@@ -122,9 +104,7 @@ def run():
 
         esperar_cierre()
 
-        print("🔍 Analizando pares...")
-
-        señal_encontrada = False
+        print("🔍 Analizando...")
 
         for par in PARES:
 
@@ -140,14 +120,9 @@ def run():
 
             esperar_apertura()
 
-            ejecutado = ejecutar_trade(iq, par, accion)
+            ejecutar(iq, par, accion)
 
-            if ejecutado:
-                señal_encontrada = True
-                break
-
-        if not señal_encontrada:
-            print("⏳ Sin señales...")
+            break
 
 
 if __name__ == "__main__":
