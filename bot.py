@@ -2,16 +2,14 @@ import os
 import time
 from iqoptionapi.stable_api import IQ_Option
 from strategy import detectar_trampa
-from telegram_bot import send_message, start_telegram
+from telegram_bot import send_message
 
 IQ_EMAIL = os.getenv("IQ_EMAIL")
 IQ_PASSWORD = os.getenv("IQ_PASSWORD")
 
 PAR = "EURUSD-OTC"
-
-# 🔥 VARIABLES DINÁMICAS
 MONTO = 3333.33
-TIPO_CUENTA = "PRACTICE"  # PRACTICE / REAL
+EXPIRACION = 1
 
 iq = None
 
@@ -23,6 +21,7 @@ def silent(func, *args, **kwargs):
         return None
 
 
+# 🔥 FIX ERROR UNDERLYING (IMPORTANTE)
 def fix_api(iq):
     try:
         iq.api.digital_underlying_list = {}
@@ -32,38 +31,21 @@ def fix_api(iq):
         pass
 
 
-def conectar():
+def connect():
     global iq
 
-    iq = IQ_Option(IQ_EMAIL, IQ_PASSWORD)
-    iq.connect()
+    while True:
+        iq = IQ_Option(IQ_EMAIL, IQ_PASSWORD)
+        silent(iq.connect)
 
-    if iq.check_connect():
-        fix_api(iq)
-        cambiar_cuenta(TIPO_CUENTA)
-        print("✅ Conectado")
-        send_message("✅ BOT ACTIVO")
-        return True
+        if iq.check_connect():
+            fix_api(iq)
+            print("✅ BOT CONECTADO")
+            send_message("✅ BOT ACTIVADO")
+            return iq
 
-    return False
-
-
-def cambiar_cuenta(tipo):
-    global TIPO_CUENTA
-    TIPO_CUENTA = tipo
-
-    if tipo == "REAL":
-        iq.change_balance("REAL")
-        send_message("🔴 CUENTA REAL")
-    else:
-        iq.change_balance("PRACTICE")
-        send_message("🟢 CUENTA DEMO")
-
-
-def cambiar_monto(nuevo):
-    global MONTO
-    MONTO = float(nuevo)
-    send_message(f"💰 Nuevo monto: {MONTO}")
+        print("❌ Reintentando conexión...")
+        time.sleep(5)
 
 
 def esperar_cierre():
@@ -76,47 +58,55 @@ def esperar_apertura():
         time.sleep(0.001)
 
 
-def resultado(trade_id):
+def obtener_resultado(trade_id):
 
     while True:
-        r = silent(iq.check_win_v4, trade_id)
+        result = silent(iq.check_win_v4, trade_id)
 
-        if r is None:
+        if result is None:
             time.sleep(1)
             continue
 
         try:
-            if isinstance(r, tuple):
-                r = r[0]
-            r = float(r)
+            if isinstance(result, tuple):
+                result = result[0]
+
+            result = float(result)
         except:
             return
 
-        send_message("✅ WIN" if r > 0 else "❌ LOSS")
+        if result > 0:
+            send_message("✅ WIN")
+        elif result == 0:
+            send_message("➖ DRAW")
+        else:
+            send_message("❌ LOSS")
+
         return
 
 
-def ejecutar(accion):
+def ejecutar_trade(accion):
 
-    status, trade_id = silent(
-        iq.buy, MONTO, PAR, accion, 1
-    )
+    # 🔁 REINTENTO SI FALLA
+    for _ in range(3):
 
-    if not status:
-        send_message("⛔ Error entrada")
-        return
+        status, trade_id = silent(
+            iq.buy, MONTO, PAR, accion, EXPIRACION
+        )
 
-    send_message(f"🎯 {accion.upper()} {PAR} (${MONTO})")
+        if status:
+            send_message(f"🎯 {accion.upper()} {PAR} (${MONTO})")
+            obtener_resultado(trade_id)
+            return
 
-    resultado(trade_id)
+        time.sleep(1)
+
+    send_message("⛔ No se pudo ejecutar operación")
 
 
 def run():
 
-    conectar()
-
-    # 🔥 INICIAR TELEGRAM BOT
-    start_telegram(cambiar_cuenta, cambiar_monto)
+    connect()
 
     while True:
 
@@ -130,11 +120,12 @@ def run():
 
         accion = señal["action"]
 
+        print(f"🎯 Señal: {PAR} {accion}")
         send_message(f"🎯 {PAR} {accion}")
 
         esperar_apertura()
 
-        ejecutar(accion)
+        ejecutar_trade(accion)
 
 
 if __name__ == "__main__":
