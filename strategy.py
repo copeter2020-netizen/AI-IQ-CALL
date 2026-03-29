@@ -12,10 +12,10 @@ def SMA(data, period=20):
     return np.mean(data[-period:])
 
 
-def calcular_stochastic(candles, period=14):
+def stochastic(candles, period=14):
 
     if len(candles) < period:
-        return None, None
+        return None
 
     highs = [c["max"] for c in candles[-period:]]
     lows = [c["min"] for c in candles[-period:]]
@@ -25,33 +25,28 @@ def calcular_stochastic(candles, period=14):
     lowest = min(lows)
 
     if highest - lowest == 0:
-        return None, None
+        return None
 
     k = ((close - lowest) / (highest - lowest)) * 100
+    return k
 
-    return k, k  # simplificado (K = D)
 
+def sar_direccion(candles):
 
-def calcular_sar(candles):
-
-    # 🔥 Simulación simple de dirección SAR
     if len(candles) < 2:
         return None
 
-    c1 = candles[-1]
-    c2 = candles[-2]
-
-    if c1["close"] > c2["close"]:
+    if candles[-1]["close"] > candles[-2]["close"]:
         return "alcista"
     else:
         return "bajista"
 
 
 # =========================
-# 🔥 NIVELES (3H)
+# 🔥 SOPORTE Y RESISTENCIA (3H)
 # =========================
 
-def obtener_niveles(iq, par):
+def niveles(iq, par):
 
     try:
         velas = iq.get_candles(par, 10800, 50, time.time())
@@ -72,6 +67,13 @@ def obtener_niveles(iq, par):
     return soportes[-5:], resistencias[-5:]
 
 
+def cerca(precio, niveles):
+    for n in niveles:
+        if abs(precio - n) < 0.0006:
+            return True
+    return False
+
+
 # =========================
 # 🔥 TRAMPA (PRICE ACTION)
 # =========================
@@ -84,80 +86,38 @@ def detectar_trampa_basica(candles):
     c1 = candles[-1]
     c2 = candles[-2]
 
-    # 🔴 falso rompimiento arriba → venta
+    # falso rompimiento arriba → venta
     if c2["max"] > c1["max"] and c1["close"] < c1["open"]:
         return "put"
 
-    # 🟢 falso rompimiento abajo → compra
+    # falso rompimiento abajo → compra
     if c2["min"] < c1["min"] and c1["close"] > c1["open"]:
         return "call"
 
     return None
 
 
-def cerca_nivel(precio, niveles):
-    for n in niveles:
-        if abs(precio - n) < 0.0006:
-            return True
-    return False
-
-
 # =========================
-# 🔥 CONFIRMACIONES (IMAGEN)
+# 🔥 CONFIRMACIONES
 # =========================
 
-def confirmaciones_indicadores(candles, señal):
+def confirmar(candles, señal):
 
     closes = [c["close"] for c in candles]
-
-    # SMA
-    sma = SMA(closes, 20)
-    if not sma:
-        return False
-
     precio = closes[-1]
 
-    # Stochastic
-    k, d = calcular_stochastic(candles)
-    if k is None:
+    sma = SMA(closes, 20)
+    k = stochastic(candles)
+    sar = sar_direccion(candles)
+
+    if sma is None or k is None or sar is None:
         return False
 
-    # SAR
-    sar = calcular_sar(candles)
-    if not sar:
-        return False
-
-    # =========================
-    # 🟢 CONDICIONES COMPRA
-    # =========================
     if señal == "call":
+        return precio > sma and k > 20 and sar == "alcista"
 
-        if precio < sma:
-            return False
-
-        if k < 20:
-            return False
-
-        if sar != "alcista":
-            return False
-
-        return True
-
-    # =========================
-    # 🔴 CONDICIONES VENTA
-    # =========================
     if señal == "put":
-
-        if precio > sma:
-            return False
-
-        if k > 80:
-            return False
-
-        if sar != "bajista":
-            return False
-
-        return True
+        return precio < sma and k < 80 and sar == "bajista"
 
     return False
 
@@ -176,7 +136,7 @@ def detectar_trampa(iq, par):
     if not candles:
         return None
 
-    soportes, resistencias = obtener_niveles(iq, par)
+    soportes, resistencias = niveles(iq, par)
 
     precio = candles[-1]["close"]
 
@@ -185,17 +145,13 @@ def detectar_trampa(iq, par):
     if not señal:
         return None
 
-    # 🔥 FILTRO NIVEL
-    if señal == "call" and not cerca_nivel(precio, soportes):
+    if señal == "call" and not cerca(precio, soportes):
         return None
 
-    if señal == "put" and not cerca_nivel(precio, resistencias):
+    if señal == "put" and not cerca(precio, resistencias):
         return None
 
-    # 🔥 CONFIRMACIONES INDICADORES
-    if not confirmaciones_indicadores(candles, señal):
+    if not confirmar(candles, señal):
         return None
 
-    return {
-        "action": señal
-    }
+    return {"action": señal}
