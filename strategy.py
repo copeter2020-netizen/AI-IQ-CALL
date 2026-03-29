@@ -1,79 +1,90 @@
-def calcular_rsi(candles, periodo=14):
-
-    closes = [c["close"] for c in candles]
-
-    ganancias = []
-    perdidas = []
-
-    for i in range(1, len(closes)):
-        cambio = closes[i] - closes[i - 1]
-
-        if cambio > 0:
-            ganancias.append(cambio)
-            perdidas.append(0)
-        else:
-            ganancias.append(0)
-            perdidas.append(abs(cambio))
-
-    avg_gain = sum(ganancias[-periodo:]) / periodo
-    avg_loss = sum(perdidas[-periodo:]) / periodo
-
-    if avg_loss == 0:
-        return 100
-
-    rs = avg_gain / avg_loss
-    return 100 - (100 / (1 + rs))
+import time
 
 
-def detectar_reversion_extrema(candles):
+def detectar_zonas(candles):
 
-    if len(candles) < 20:
-        return None
+    soportes = []
+    resistencias = []
 
-    c1 = candles[-1]
-    c2 = candles[-2]
+    for i in range(2, len(candles)-2):
 
-    cuerpo = abs(c1["close"] - c1["open"])
-    rango = c1["max"] - c1["min"]
+        if (
+            candles[i]["min"] < candles[i-1]["min"] and
+            candles[i]["min"] < candles[i+1]["min"]
+        ):
+            soportes.append(candles[i]["min"])
+
+        if (
+            candles[i]["max"] > candles[i-1]["max"] and
+            candles[i]["max"] > candles[i+1]["max"]
+        ):
+            resistencias.append(candles[i]["max"])
+
+    return soportes[-5:], resistencias[-5:]
+
+
+def cerca_nivel(precio, niveles, tolerancia=0.0005):
+    for n in niveles:
+        if abs(precio - n) <= tolerancia:
+            return True
+    return False
+
+
+def vela_rechazo(c):
+
+    cuerpo = abs(c["close"] - c["open"])
+    rango = c["max"] - c["min"]
 
     if rango == 0:
         return None
 
-    # 🔥 RSI
-    rsi = calcular_rsi(candles)
+    mecha_sup = c["max"] - max(c["open"], c["close"])
+    mecha_inf = min(c["open"], c["close"]) - c["min"]
 
-    # 🔥 MECHAS
-    mecha_sup = c1["max"] - max(c1["open"], c1["close"])
-    mecha_inf = min(c1["open"], c1["close"]) - c1["min"]
+    # rechazo alcista
+    if mecha_inf > cuerpo * 1.5:
+        return "call"
 
-    # ==========================
-    # 🔻 REVERSIÓN ALCISTA
-    # ==========================
+    # rechazo bajista
+    if mecha_sup > cuerpo * 1.5:
+        return "put"
+
+    return None
+
+
+def analizar_estructura(iq, par):
+
+    # 🔥 MARCO 3 HORAS (velas de 1m = 180 velas)
+    velas_macro = iq.get_candles(par, 60, 180, time.time())
+
+    if not velas_macro:
+        return None
+
+    soportes, resistencias = detectar_zonas(velas_macro)
+
+    # 🔥 VELAS ACTUALES
+    velas = iq.get_candles(par, 60, 5, time.time())
+
+    if not velas:
+        return None
+
+    c1 = velas[-1]
+    precio = c1["close"]
+
+    rechazo = vela_rechazo(c1)
+
+    # 🔻 SOPORTE → CALL
     if (
-        c1["min"] < c2["min"] and
-        mecha_inf > cuerpo * 1.5 and
-        c1["close"] > c1["open"] and
-        rsi < 30 and
-        c2["close"] < c2["open"]
+        cerca_nivel(precio, soportes) and
+        rechazo == "call"
     ):
-        return {
-            "action": "call",
-            "score": 5
-        }
+        return {"action": "call"}
 
-    # ==========================
-    # 🔺 REVERSIÓN BAJISTA
-    # ==========================
+    # 🔺 RESISTENCIA → PUT
     if (
-        c1["max"] > c2["max"] and
-        mecha_sup > cuerpo * 1.5 and
-        c1["close"] < c1["open"] and
-        rsi > 70 and
-        c2["close"] > c2["open"]
+        cerca_nivel(precio, resistencias) and
+        rechazo == "put"
     ):
-        return {
-            "action": "put",
-            "score": 5
-        }
+        return {"action": "put"}
 
     return None
