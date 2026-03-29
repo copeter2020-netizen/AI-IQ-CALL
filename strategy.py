@@ -1,5 +1,55 @@
 import time
+import numpy as np
 
+
+# =========================
+# 🔥 INDICADORES
+# =========================
+
+def SMA(data, period=20):
+    if len(data) < period:
+        return None
+    return np.mean(data[-period:])
+
+
+def calcular_stochastic(candles, period=14):
+
+    if len(candles) < period:
+        return None, None
+
+    highs = [c["max"] for c in candles[-period:]]
+    lows = [c["min"] for c in candles[-period:]]
+    close = candles[-1]["close"]
+
+    highest = max(highs)
+    lowest = min(lows)
+
+    if highest - lowest == 0:
+        return None, None
+
+    k = ((close - lowest) / (highest - lowest)) * 100
+
+    return k, k  # simplificado (K = D)
+
+
+def calcular_sar(candles):
+
+    # 🔥 Simulación simple de dirección SAR
+    if len(candles) < 2:
+        return None
+
+    c1 = candles[-1]
+    c2 = candles[-2]
+
+    if c1["close"] > c2["close"]:
+        return "alcista"
+    else:
+        return "bajista"
+
+
+# =========================
+# 🔥 NIVELES (3H)
+# =========================
 
 def obtener_niveles(iq, par):
 
@@ -22,6 +72,10 @@ def obtener_niveles(iq, par):
     return soportes[-5:], resistencias[-5:]
 
 
+# =========================
+# 🔥 TRAMPA (PRICE ACTION)
+# =========================
+
 def detectar_trampa_basica(candles):
 
     if len(candles) < 3:
@@ -30,11 +84,11 @@ def detectar_trampa_basica(candles):
     c1 = candles[-1]
     c2 = candles[-2]
 
-    # fake breakout arriba → venta
+    # 🔴 falso rompimiento arriba → venta
     if c2["max"] > c1["max"] and c1["close"] < c1["open"]:
         return "put"
 
-    # fake breakout abajo → compra
+    # 🟢 falso rompimiento abajo → compra
     if c2["min"] < c1["min"] and c1["close"] > c1["open"]:
         return "call"
 
@@ -48,33 +102,74 @@ def cerca_nivel(precio, niveles):
     return False
 
 
-def confirmacion(candles, señal):
+# =========================
+# 🔥 CONFIRMACIONES (IMAGEN)
+# =========================
 
-    c1 = candles[-1]
+def confirmaciones_indicadores(candles, señal):
 
-    cuerpo = abs(c1["close"] - c1["open"])
-    rango = c1["max"] - c1["min"]
+    closes = [c["close"] for c in candles]
 
-    if rango == 0:
+    # SMA
+    sma = SMA(closes, 20)
+    if not sma:
         return False
 
-    if cuerpo < rango * 0.6:
+    precio = closes[-1]
+
+    # Stochastic
+    k, d = calcular_stochastic(candles)
+    if k is None:
         return False
 
-    if señal == "call" and c1["close"] > c1["open"]:
+    # SAR
+    sar = calcular_sar(candles)
+    if not sar:
+        return False
+
+    # =========================
+    # 🟢 CONDICIONES COMPRA
+    # =========================
+    if señal == "call":
+
+        if precio < sma:
+            return False
+
+        if k < 20:
+            return False
+
+        if sar != "alcista":
+            return False
+
         return True
 
-    if señal == "put" and c1["close"] < c1["open"]:
+    # =========================
+    # 🔴 CONDICIONES VENTA
+    # =========================
+    if señal == "put":
+
+        if precio > sma:
+            return False
+
+        if k > 80:
+            return False
+
+        if sar != "bajista":
+            return False
+
         return True
 
     return False
 
 
-# 🔥 FUNCIÓN PRINCIPAL (IMPORTADA EN BOT)
+# =========================
+# 🔥 FUNCIÓN PRINCIPAL
+# =========================
+
 def detectar_trampa(iq, par):
 
     try:
-        candles = iq.get_candles(par, 60, 20, time.time())
+        candles = iq.get_candles(par, 60, 30, time.time())
     except:
         return None
 
@@ -90,13 +185,15 @@ def detectar_trampa(iq, par):
     if not señal:
         return None
 
+    # 🔥 FILTRO NIVEL
     if señal == "call" and not cerca_nivel(precio, soportes):
         return None
 
     if señal == "put" and not cerca_nivel(precio, resistencias):
         return None
 
-    if not confirmacion(candles, señal):
+    # 🔥 CONFIRMACIONES INDICADORES
+    if not confirmaciones_indicadores(candles, señal):
         return None
 
     return {
