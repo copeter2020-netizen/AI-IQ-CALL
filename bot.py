@@ -8,10 +8,8 @@ IQ_EMAIL = os.getenv("IQ_EMAIL")
 IQ_PASSWORD = os.getenv("IQ_PASSWORD")
 
 PAR = "EURUSD-OTC"
-MONTO = 7500
+MONTO = 100
 EXPIRACION = 1
-
-CONTROL_FILE = "estado.txt"
 
 
 def silent(func, *args, **kwargs):
@@ -21,22 +19,14 @@ def silent(func, *args, **kwargs):
         return None
 
 
+# 🔥 FIX ERROR UNDERLYING (OBLIGATORIO)
 def fix_api(iq):
     try:
         iq.api.digital_underlying_list = {}
-        iq.api.get_digital_underlying_list_data = lambda: {"underlying": []}
+        iq.api.get_digital_underlying_list_data = lambda: {}
         iq.api._IQ_Option__get_digital_open = lambda *args, **kwargs: None
     except:
         pass
-
-
-def estado_bot():
-    try:
-        with open(CONTROL_FILE, "r") as f:
-            estado = f.read().strip().upper()
-            return estado == "ON"
-    except:
-        return True  # por defecto encendido
 
 
 def connect():
@@ -46,8 +36,8 @@ def connect():
 
         if iq.check_connect():
             fix_api(iq)
-            print("🔥 BOT ACTIVO")
-            send_message("🔥 BOT ACTIVO")
+            print("✅ BOT CONECTADO")
+            send_message("✅ BOT CONECTADO")
             return iq
 
         time.sleep(5)
@@ -63,41 +53,44 @@ def esperar_apertura():
         time.sleep(0.001)
 
 
-def resultado(iq, trade_id):
+def obtener_resultado(iq, trade_id):
 
     while True:
-        r = silent(iq.check_win_v4, trade_id)
+        result = silent(iq.check_win_v4, trade_id)
 
-        if r is None:
+        if result is None:
             time.sleep(1)
             continue
 
+        if isinstance(result, tuple):
+            result = result[0]
+
         try:
-            if isinstance(r, tuple):
-                r = r[0]
-            r = float(r)
+            result = float(result)
         except:
             return
 
-        send_message("✅ WIN" if r > 0 else "❌ LOSS")
+        if result > 0:
+            send_message("✅ WIN")
+        else:
+            send_message("❌ LOSS")
+
         return
 
 
-def ejecutar(iq, accion):
+def ejecutar_trade(iq, accion):
 
-    for _ in range(3):
-        status, trade_id = silent(
-            iq.buy, MONTO, PAR, accion, EXPIRACION
-        )
+    status, trade_id = silent(
+        iq.buy, MONTO, PAR, accion, EXPIRACION
+    )
 
-        if status:
-            send_message(f"🎯 {accion.upper()} {PAR} (1M)")
-            resultado(iq, trade_id)
-            return
+    if not status:
+        send_message("❌ ERROR ENTRADA")
+        return
 
-        time.sleep(1)
+    send_message(f"📊 {accion.upper()} {PAR}")
 
-    send_message("⛔ No ejecutó operación")
+    obtener_resultado(iq, trade_id)
 
 
 def run():
@@ -106,14 +99,9 @@ def run():
 
     while True:
 
-        # 🔴 BOT APAGADO
-        if not estado_bot():
-            print("⛔ BOT DETENIDO")
-            time.sleep(2)
-            continue
-
         esperar_cierre()
 
+        # 🔥 USO EXACTO DE LA ESTRATEGIA
         señal = detectar_trampa(iq, PAR)
 
         if not señal:
@@ -122,12 +110,133 @@ def run():
 
         accion = señal["action"]
 
-        print(f"🎯 {PAR} {accion}")
-        send_message(f"🎯 {PAR} {accion}")
+        print(f"🎯 SEÑAL {accion} {PAR}")
+        send_message(f"🎯 {accion.upper()} {PAR}")
 
         esperar_apertura()
 
-        ejecutar(iq, accion)
+        ejecutar_trade(iq, accion)
+
+
+if __name__ == "__main__":
+    run()import os
+import time
+from iqoptionapi.stable_api import IQ_Option
+from strategy import detectar_trampa
+from telegram_bot import send_message
+
+IQ_EMAIL = os.getenv("IQ_EMAIL")
+IQ_PASSWORD = os.getenv("IQ_PASSWORD")
+
+PAR = "EURUSD-OTC"
+MONTO = 10
+EXPIRACION = 1
+
+
+def silent(func, *args, **kwargs):
+    try:
+        return func(*args, **kwargs)
+    except:
+        return None
+
+
+# 🔥 FIX ERROR UNDERLYING (OBLIGATORIO)
+def fix_api(iq):
+    try:
+        iq.api.digital_underlying_list = {}
+        iq.api.get_digital_underlying_list_data = lambda: {}
+        iq.api._IQ_Option__get_digital_open = lambda *args, **kwargs: None
+    except:
+        pass
+
+
+def connect():
+    while True:
+        iq = IQ_Option(IQ_EMAIL, IQ_PASSWORD)
+        silent(iq.connect)
+
+        if iq.check_connect():
+            fix_api(iq)
+            print("✅ BOT CONECTADO")
+            send_message("✅ BOT CONECTADO")
+            return iq
+
+        time.sleep(5)
+
+
+def esperar_cierre():
+    while int(time.time()) % 60 != 59:
+        time.sleep(0.02)
+
+
+def esperar_apertura():
+    while int(time.time()) % 60 != 0:
+        time.sleep(0.001)
+
+
+def obtener_resultado(iq, trade_id):
+
+    while True:
+        result = silent(iq.check_win_v4, trade_id)
+
+        if result is None:
+            time.sleep(1)
+            continue
+
+        if isinstance(result, tuple):
+            result = result[0]
+
+        try:
+            result = float(result)
+        except:
+            return
+
+        if result > 0:
+            send_message("✅ WIN")
+        else:
+            send_message("❌ LOSS")
+
+        return
+
+
+def ejecutar_trade(iq, accion):
+
+    status, trade_id = silent(
+        iq.buy, MONTO, PAR, accion, EXPIRACION
+    )
+
+    if not status:
+        send_message("❌ ERROR ENTRADA")
+        return
+
+    send_message(f"📊 {accion.upper()} {PAR}")
+
+    obtener_resultado(iq, trade_id)
+
+
+def run():
+
+    iq = connect()
+
+    while True:
+
+        esperar_cierre()
+
+        # 🔥 USO EXACTO DE LA ESTRATEGIA
+        señal = detectar_trampa(iq, PAR)
+
+        if not señal:
+            print("⏳ Sin señal...")
+            continue
+
+        accion = señal["action"]
+
+        print(f"🎯 SEÑAL {accion} {PAR}")
+        send_message(f"🎯 {accion.upper()} {PAR}")
+
+        esperar_apertura()
+
+        ejecutar_trade(iq, accion)
 
 
 if __name__ == "__main__":
