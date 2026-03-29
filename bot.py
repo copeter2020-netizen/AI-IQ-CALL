@@ -19,18 +19,19 @@ def silent(func, *args, **kwargs):
         return None
 
 
-# 🔥 FIX TOTAL (ELIMINA ERROR UNDERLYING)
+# 🔥 FIX DEFINITIVO (ELIMINA UNDERLYING)
 def fix_api(iq):
     try:
-        iq.api.digital_underlying_list = {}
+        iq.api.digital_underlying_list = {"underlying": {}}
         iq.api.get_digital_underlying_list_data = lambda: {"underlying": {}}
         iq.api._IQ_Option__get_digital_open = lambda *args, **kwargs: None
+        iq.get_digital_underlying_list_data = lambda: {"underlying": {}}
     except:
         pass
 
 
 # =========================
-# 🔥 SOLO FOREX OTC REALES
+# 🔥 SOLO PARES REALES
 # =========================
 def obtener_pares(iq):
 
@@ -49,9 +50,11 @@ def obtener_pares(iq):
         if "-OTC" not in par:
             continue
 
-        # 🔥 SOLO FOREX (evita errores)
-        if any(x in par for x in [
-            "USD", "EUR", "GBP", "JPY", "AUD", "CHF", "CAD"
+        # 🔥 SOLO FOREX REALES
+        if any(divisa in par for divisa in [
+            "EURUSD", "GBPUSD", "USDJPY", "USDCHF",
+            "AUDUSD", "USDCAD", "EURJPY", "GBPJPY",
+            "EURGBP", "AUDJPY"
         ]):
             pares_validos.append(par)
 
@@ -67,11 +70,8 @@ def connect():
         if iq.check_connect():
             fix_api(iq)
 
-            # 🔥 FORZAR BINARIAS
-            iq.change_balance("PRACTICE")
-
-            print("🔥 BOT BINARIO ACTIVO")
-            send_message("🔥 BOT BINARIO ACTIVO")
+            print("🔥 BOT ESTABLE OPERANDO")
+            send_message("🔥 BOT ESTABLE OPERANDO")
 
             return iq
 
@@ -111,13 +111,12 @@ def resultado(iq, trade_id):
 
 def ejecutar(iq, par, accion):
 
-    # 🔥 BINARIAS (NO DIGITAL)
     status, trade_id = silent(
         iq.buy, MONTO, par, accion, EXPIRACION
     )
 
     if not status:
-        print(f"❌ No ejecutó {par}")
+        print(f"❌ Falló entrada {par}")
         return
 
     send_message(f"📊 {accion.upper()} {par}")
@@ -139,10 +138,10 @@ def run():
         pares = obtener_pares(iq)
 
         if not pares:
-            print("⚠️ No hay pares")
+            print("⚠️ Sin pares válidos")
             continue
 
-        print(f"🔍 Analizando {len(pares)} pares...")
+        print(f"🔍 Analizando {len(pares)} pares reales...")
 
         for par in pares:
 
