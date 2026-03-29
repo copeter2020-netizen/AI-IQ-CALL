@@ -8,7 +8,7 @@ from telegram_bot import send_message
 IQ_EMAIL = os.getenv("IQ_EMAIL")
 IQ_PASSWORD = os.getenv("IQ_PASSWORD")
 
-MONTO = 3333.33
+MONTO = 10000
 EXPIRACION = 1
 
 PARES = [
@@ -27,6 +27,7 @@ def silent(func, *args, **kwargs):
         return None
 
 
+# 🔥 FIX ERROR UNDERLYING (CLAVE)
 def fix_api(iq):
     try:
         iq.api.digital_underlying_list = {}
@@ -37,14 +38,15 @@ def fix_api(iq):
 
 
 def connect():
+
     while True:
         iq = IQ_Option(IQ_EMAIL, IQ_PASSWORD)
         silent(iq.connect)
 
         if iq.check_connect():
             fix_api(iq)
-            print("🔥 BOT INDICADORES ACTIVO")
-            send_message("🔥 BOT INDICADORES ACTIVO")
+            print("🔥 BOT OPERANDO")
+            send_message("🔥 BOT OPERANDO")
             return iq
 
         time.sleep(5)
