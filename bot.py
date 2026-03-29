@@ -8,7 +8,7 @@ IQ_EMAIL = os.getenv("IQ_EMAIL")
 IQ_PASSWORD = os.getenv("IQ_PASSWORD")
 
 PAR = "EURUSD-OTC"
-MONTO = 3333.33
+MONTO = 6161
 EXPIRACION = 1
 
 
