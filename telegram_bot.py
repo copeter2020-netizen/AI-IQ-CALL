@@ -1,38 +1,43 @@
 import os
 import requests
 
-TOKEN = os.getenv("TELEGRAM_TOKEN")
-CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
-
-URL = f"https://api.telegram.org/bot{TOKEN}/sendMessage" if TOKEN else None
-
 
 def send_message(text):
 
-    # 🔴 VALIDACIÓN
+    TOKEN = os.getenv("TELEGRAM_TOKEN")
+    CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+
+    # 🔴 VALIDACIÓN FUERTE
     if not TOKEN or not CHAT_ID:
         print("❌ TELEGRAM NO CONFIGURADO")
+        print("TOKEN:", TOKEN)
+        print("CHAT_ID:", CHAT_ID)
         return
+
+    url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
 
     try:
         response = requests.post(
-            URL,
+            url,
             json={
                 "chat_id": CHAT_ID,
                 "text": str(text)
             },
-            timeout=5
+            timeout=10
         )
 
-        # 🔥 VALIDAR RESPUESTA REAL DE TELEGRAM
+        # 🔥 DEBUG REAL (IMPORTANTE)
+        print("📡 Telegram status:", response.status_code)
+        print("📡 Telegram respuesta:", response.text)
+
         if response.status_code != 200:
-            print(f"❌ Error HTTP Telegram: {response.status_code}")
+            print("❌ Error HTTP Telegram")
             return
 
         data = response.json()
 
         if not data.get("ok"):
-            print(f"❌ Telegram respondió error: {data}")
+            print("❌ Error Telegram:", data)
             return
 
     except requests.exceptions.Timeout:
