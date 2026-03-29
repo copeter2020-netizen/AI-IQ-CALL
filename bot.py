@@ -19,7 +19,7 @@ def silent(func, *args, **kwargs):
         return None
 
 
-# 🔥 FIX DEFINITIVO ERROR UNDERLYING
+# 🔥 FIX TOTAL (ELIMINA ERROR UNDERLYING)
 def fix_api(iq):
     try:
         iq.api.digital_underlying_list = {}
@@ -30,7 +30,7 @@ def fix_api(iq):
 
 
 # =========================
-# 🔥 SOLO PARES VÁLIDOS
+# 🔥 SOLO FOREX OTC REALES
 # =========================
 def obtener_pares(iq):
 
@@ -43,18 +43,17 @@ def obtener_pares(iq):
 
     for par, data in activos["binary"].items():
 
-        # 🔥 SOLO OTC REALES
-        if "-OTC" not in par:
-            continue
-
         if not data["open"]:
             continue
 
-        # 🔥 FILTRO: evitar assets bug
-        if any(x in par for x in ["LABUBU", "AMAZON", "TESLA", "SNAP", "COFFEE"]):
+        if "-OTC" not in par:
             continue
 
-        pares_validos.append(par)
+        # 🔥 SOLO FOREX (evita errores)
+        if any(x in par for x in [
+            "USD", "EUR", "GBP", "JPY", "AUD", "CHF", "CAD"
+        ]):
+            pares_validos.append(par)
 
     return pares_validos
 
@@ -67,8 +66,13 @@ def connect():
 
         if iq.check_connect():
             fix_api(iq)
-            print("🔥 BOT OPERANDO REAL")
-            send_message("🔥 BOT OPERANDO REAL")
+
+            # 🔥 FORZAR BINARIAS
+            iq.change_balance("PRACTICE")
+
+            print("🔥 BOT BINARIO ACTIVO")
+            send_message("🔥 BOT BINARIO ACTIVO")
+
             return iq
 
         time.sleep(5)
@@ -107,6 +111,7 @@ def resultado(iq, trade_id):
 
 def ejecutar(iq, par, accion):
 
+    # 🔥 BINARIAS (NO DIGITAL)
     status, trade_id = silent(
         iq.buy, MONTO, par, accion, EXPIRACION
     )
@@ -134,7 +139,7 @@ def run():
         pares = obtener_pares(iq)
 
         if not pares:
-            print("⚠️ No hay pares válidos")
+            print("⚠️ No hay pares")
             continue
 
         print(f"🔍 Analizando {len(pares)} pares...")
