@@ -1,51 +1,45 @@
 import os
-import telebot
-from telebot.types import ReplyKeyboardMarkup, KeyboardButton
+import requests
 
 TOKEN = os.getenv("TELEGRAM_TOKEN")
-CHAT_ID = os.getenv("CHAT_ID")
+CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-bot = telebot.TeleBot(TOKEN)
-
-cambiar_cuenta_func = None
-cambiar_monto_func = None
+URL = f"https://api.telegram.org/bot{TOKEN}/sendMessage" if TOKEN else None
 
 
-def send_message(msg):
+def send_message(text):
+
+    # 🔴 VALIDACIÓN
+    if not TOKEN or not CHAT_ID:
+        print("❌ TELEGRAM NO CONFIGURADO")
+        return
+
     try:
-        bot.send_message(CHAT_ID, msg)
-    except:
-        pass
+        response = requests.post(
+            URL,
+            json={
+                "chat_id": CHAT_ID,
+                "text": str(text)
+            },
+            timeout=5
+        )
 
+        # 🔥 VALIDAR RESPUESTA REAL DE TELEGRAM
+        if response.status_code != 200:
+            print(f"❌ Error HTTP Telegram: {response.status_code}")
+            return
 
-def start_telegram(cuenta_func, monto_func):
-    global cambiar_cuenta_func, cambiar_monto_func
+        data = response.json()
 
-    cambiar_cuenta_func = cuenta_func
-    cambiar_monto_func = monto_func
+        if not data.get("ok"):
+            print(f"❌ Telegram respondió error: {data}")
+            return
 
-    markup = ReplyKeyboardMarkup(resize_keyboard=True)
-    markup.add(
-        KeyboardButton("🟢 DEMO"),
-        KeyboardButton("🔴 REAL"),
-        KeyboardButton("💰 MONTO")
-    )
+    except requests.exceptions.Timeout:
+        print("⏳ Timeout Telegram")
 
-    @bot.message_handler(func=lambda m: True)
-    def handle(msg):
+    except requests.exceptions.ConnectionError:
+        print("🌐 Error conexión Telegram")
 
-        text = msg.text
-
-        if text == "🟢 DEMO":
-            cambiar_cuenta_func("PRACTICE")
-
-        elif text == "🔴 REAL":
-            cambiar_cuenta_func("REAL")
-
-        elif text == "💰 MONTO":
-            bot.send_message(CHAT_ID, "Escribe nuevo monto:")
-
-        elif text.replace(".", "").isdigit():
-            cambiar_monto_func(text)
-
-    bot.polling(none_stop=True)
+    except Exception as e:
+        print("❌ Error Telegram:", e)
