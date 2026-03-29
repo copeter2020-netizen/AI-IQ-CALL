@@ -8,7 +8,7 @@ from telegram_bot import send_message
 IQ_EMAIL = os.getenv("IQ_EMAIL")
 IQ_PASSWORD = os.getenv("IQ_PASSWORD")
 
-MONTO = 13000
+MONTO = 12000
 EXPIRACION = 1
 
 
@@ -19,33 +19,44 @@ def silent(func, *args, **kwargs):
         return None
 
 
-# 🔥 FIX ERROR UNDERLYING
+# 🔥 FIX DEFINITIVO ERROR UNDERLYING
 def fix_api(iq):
     try:
         iq.api.digital_underlying_list = {}
-        iq.api.get_digital_underlying_list_data = lambda: {}
+        iq.api.get_digital_underlying_list_data = lambda: {"underlying": {}}
         iq.api._IQ_Option__get_digital_open = lambda *args, **kwargs: None
     except:
         pass
 
 
 # =========================
-# 🔥 OBTENER TODOS LOS OTC
+# 🔥 SOLO PARES VÁLIDOS
 # =========================
 def obtener_pares(iq):
+
+    pares_validos = []
 
     try:
         activos = iq.get_all_open_time()
     except:
         return []
 
-    pares = []
-
     for par, data in activos["binary"].items():
-        if "-OTC" in par and data["open"]:
-            pares.append(par)
 
-    return pares
+        # 🔥 SOLO OTC REALES
+        if "-OTC" not in par:
+            continue
+
+        if not data["open"]:
+            continue
+
+        # 🔥 FILTRO: evitar assets bug
+        if any(x in par for x in ["LABUBU", "AMAZON", "TESLA", "SNAP", "COFFEE"]):
+            continue
+
+        pares_validos.append(par)
+
+    return pares_validos
 
 
 def connect():
@@ -56,8 +67,8 @@ def connect():
 
         if iq.check_connect():
             fix_api(iq)
-            print("🔥 BOT ANALIZANDO TODOS LOS PARES")
-            send_message("🔥 BOT ANALIZANDO TODOS LOS PARES")
+            print("🔥 BOT OPERANDO REAL")
+            send_message("🔥 BOT OPERANDO REAL")
             return iq
 
         time.sleep(5)
@@ -101,7 +112,7 @@ def ejecutar(iq, par, accion):
     )
 
     if not status:
-        send_message(f"❌ ERROR {par}")
+        print(f"❌ No ejecutó {par}")
         return
 
     send_message(f"📊 {accion.upper()} {par}")
@@ -123,7 +134,7 @@ def run():
         pares = obtener_pares(iq)
 
         if not pares:
-            print("❌ No hay pares")
+            print("⚠️ No hay pares válidos")
             continue
 
         print(f"🔍 Analizando {len(pares)} pares...")
@@ -145,6 +156,8 @@ def run():
             ejecutar(iq, par, accion)
 
             break
+        else:
+            print("⏳ Sin señal...")
 
 
 if __name__ == "__main__":
