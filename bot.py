@@ -8,9 +8,9 @@ IQ_EMAIL = os.getenv("IQ_EMAIL")
 IQ_PASSWORD = os.getenv("IQ_PASSWORD")
 
 PAR = "EURUSD-OTC"
-TIMEFRAME = 60  # 1 minuto
+TIMEFRAME = 60
 MONTO = 100
-EXPIRACION = 5  # 🔥 5 minutos
+EXPIRACION = 5
 
 
 def silent(func, *args, **kwargs):
@@ -20,11 +20,11 @@ def silent(func, *args, **kwargs):
         return None
 
 
-# 🔥 FIX ERROR UNDERLYING
+# 🔥 FIX REAL ERROR UNDERLYING (ESTABLE)
 def fix_api(iq):
     try:
         iq.api.digital_underlying_list = {}
-        iq.api.get_digital_underlying_list_data = lambda: {}
+        iq.api.get_digital_underlying_list_data = lambda: {"underlying": []}
         iq.api._IQ_Option__get_digital_open = lambda *args, **kwargs: None
     except:
         pass
@@ -37,11 +37,20 @@ def connect():
 
         if iq.check_connect():
             fix_api(iq)
-            print("🔥 BOT ESTRUCTURA ACTIVO")
-            send_message("🔥 BOT ESTRUCTURA ACTIVO")
+            print("✅ BOT CONECTADO")
+            send_message("✅ BOT ACTIVADO")
             return iq
 
+        print("❌ Reintentando conexión...")
         time.sleep(5)
+
+
+def par_abierto(iq, par):
+    try:
+        activos = iq.get_all_open_time()
+        return activos["binary"][par]["open"]
+    except:
+        return False
 
 
 def esperar_cierre():
@@ -55,6 +64,7 @@ def esperar_apertura():
 
 
 def resultado(iq, trade_id):
+
     while True:
         r = silent(iq.check_win_v4, trade_id)
 
@@ -65,26 +75,36 @@ def resultado(iq, trade_id):
         try:
             if isinstance(r, tuple):
                 r = r[0]
+
             r = float(r)
         except:
             return
 
-        send_message("✅ WIN" if r > 0 else "❌ LOSS")
+        if r > 0:
+            send_message("✅ WIN")
+        elif r == 0:
+            send_message("➖ DRAW")
+        else:
+            send_message("❌ LOSS")
+
         return
 
 
 def ejecutar(iq, accion):
 
-    status, trade_id = silent(
-        iq.buy, MONTO, PAR, accion, EXPIRACION
-    )
+    for _ in range(3):  # 🔥 reintento real
+        status, trade_id = silent(
+            iq.buy, MONTO, PAR, accion, EXPIRACION
+        )
 
-    if not status:
-        send_message("⛔ Error entrada")
-        return
+        if status:
+            send_message(f"📊 {accion.upper()} {PAR} (5M)")
+            resultado(iq, trade_id)
+            return
 
-    send_message(f"📊 {accion.upper()} EURUSD (5M)")
-    resultado(iq, trade_id)
+        time.sleep(1)
+
+    send_message("⛔ No ejecutó operación")
 
 
 def run():
@@ -95,19 +115,25 @@ def run():
 
         esperar_cierre()
 
-        # 🔥 ANALISIS COMPLETO
+        # 🔥 VALIDAR PAR
+        if not par_abierto(iq, PAR):
+            print("🚫 Par cerrado")
+            continue
+
         señal = analizar_estructura(iq, PAR)
 
         if not señal:
-            print("⏳ Sin zona clara...")
+            print("⏳ Sin señal...")
             continue
 
-        print(f"🎯 ZONA DETECTADA {señal['action']}")
-        send_message(f"🎯 {PAR} {señal['action']} zona fuerte")
+        accion = señal["action"]
+
+        print(f"🎯 {PAR} {accion}")
+        send_message(f"🎯 {PAR} {accion}")
 
         esperar_apertura()
 
-        ejecutar(iq, señal["action"])
+        ejecutar(iq, accion)
 
 
 if __name__ == "__main__":
