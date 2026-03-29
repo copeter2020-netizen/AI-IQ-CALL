@@ -1,16 +1,15 @@
 import os
 import time
 from iqoptionapi.stable_api import IQ_Option
-from strategy import analizar_estructura
+from strategy import detectar_trampa
 from telegram_bot import send_message
 
 IQ_EMAIL = os.getenv("IQ_EMAIL")
 IQ_PASSWORD = os.getenv("IQ_PASSWORD")
 
 PAR = "EURUSD-OTC"
-TIMEFRAME = 60
-MONTO = 100
-EXPIRACION = 5
+MONTO = 3333.33
+EXPIRACION = 1
 
 
 def silent(func, *args, **kwargs):
@@ -20,7 +19,6 @@ def silent(func, *args, **kwargs):
         return None
 
 
-# 🔥 FIX REAL ERROR UNDERLYING (ESTABLE)
 def fix_api(iq):
     try:
         iq.api.digital_underlying_list = {}
@@ -37,20 +35,11 @@ def connect():
 
         if iq.check_connect():
             fix_api(iq)
-            print("✅ BOT CONECTADO")
-            send_message("✅ BOT ACTIVADO")
+            print("🔥 BOT MANIPULACIÓN ACTIVO")
+            send_message("🔥 BOT MANIPULACIÓN ACTIVO")
             return iq
 
-        print("❌ Reintentando conexión...")
         time.sleep(5)
-
-
-def par_abierto(iq, par):
-    try:
-        activos = iq.get_all_open_time()
-        return activos["binary"][par]["open"]
-    except:
-        return False
 
 
 def esperar_cierre():
@@ -75,30 +64,23 @@ def resultado(iq, trade_id):
         try:
             if isinstance(r, tuple):
                 r = r[0]
-
             r = float(r)
         except:
             return
 
-        if r > 0:
-            send_message("✅ WIN")
-        elif r == 0:
-            send_message("➖ DRAW")
-        else:
-            send_message("❌ LOSS")
-
+        send_message("✅ WIN" if r > 0 else "❌ LOSS")
         return
 
 
 def ejecutar(iq, accion):
 
-    for _ in range(3):  # 🔥 reintento real
+    for _ in range(3):
         status, trade_id = silent(
             iq.buy, MONTO, PAR, accion, EXPIRACION
         )
 
         if status:
-            send_message(f"📊 {accion.upper()} {PAR} (5M)")
+            send_message(f"🎯 {accion.upper()} {PAR} (1M)")
             resultado(iq, trade_id)
             return
 
@@ -115,21 +97,16 @@ def run():
 
         esperar_cierre()
 
-        # 🔥 VALIDAR PAR
-        if not par_abierto(iq, PAR):
-            print("🚫 Par cerrado")
-            continue
-
-        señal = analizar_estructura(iq, PAR)
+        señal = detectar_trampa(iq, PAR)
 
         if not señal:
-            print("⏳ Sin señal...")
+            print("⏳ Sin manipulación...")
             continue
 
         accion = señal["action"]
 
-        print(f"🎯 {PAR} {accion}")
-        send_message(f"🎯 {PAR} {accion}")
+        print(f"🎯 TRAMPA DETECTADA {accion}")
+        send_message(f"🎯 TRAMPA {PAR} {accion}")
 
         esperar_apertura()
 
