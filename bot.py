@@ -7,7 +7,16 @@ from telegram_bot import send_message
 IQ_EMAIL = os.getenv("IQ_EMAIL")
 IQ_PASSWORD = os.getenv("IQ_PASSWORD")
 
-PAR = "EURUSD-OTC"
+# 🔥 MULTIPARES
+PARES = [
+    "EURUSD-OTC",
+    "GBPUSD-OTC",
+    "EURJPY-OTC",
+    "USDCHF -OTC",
+    "EURGBP-OTC",
+    "USDZAR-OTC"
+]
+
 MONTO = 7500
 EXPIRACION = 1
 
@@ -36,7 +45,7 @@ def estado_bot():
             estado = f.read().strip().upper()
             return estado == "ON"
     except:
-        return True  # por defecto encendido
+        return True
 
 
 def connect():
@@ -64,7 +73,6 @@ def esperar_apertura():
 
 
 def resultado(iq, trade_id):
-
     while True:
         r = silent(iq.check_win_v4, trade_id)
 
@@ -83,21 +91,21 @@ def resultado(iq, trade_id):
         return
 
 
-def ejecutar(iq, accion):
+def ejecutar(iq, par, accion):
 
     for _ in range(3):
         status, trade_id = silent(
-            iq.buy, MONTO, PAR, accion, EXPIRACION
+            iq.buy, MONTO, par, accion, EXPIRACION
         )
 
         if status:
-            send_message(f"🎯 {accion.upper()} {PAR} (1M)")
+            send_message(f"🎯 {accion.upper()} {par} (1M)")
             resultado(iq, trade_id)
             return
 
         time.sleep(1)
 
-    send_message("⛔ No ejecutó operación")
+    send_message(f"⛔ No ejecutó operación en {par}")
 
 
 def run():
@@ -106,7 +114,6 @@ def run():
 
     while True:
 
-        # 🔴 BOT APAGADO
         if not estado_bot():
             print("⛔ BOT DETENIDO")
             time.sleep(2)
@@ -114,20 +121,24 @@ def run():
 
         esperar_cierre()
 
-        señal = detectar_trampa(iq, PAR)
+        for par in PARES:
 
-        if not señal:
-            print("⏳ Sin señal...")
-            continue
+            señal = detectar_trampa(iq, par)
 
-        accion = señal["action"]
+            if not señal:
+                continue
 
-        print(f"🎯 {PAR} {accion}")
-        send_message(f"🎯 {PAR} {accion}")
+            accion = señal["action"]
 
-        esperar_apertura()
+            print(f"🎯 {par} {accion}")
+            send_message(f"🎯 {par} {accion}")
 
-        ejecutar(iq, accion)
+            # 🔥 CONTINUIDAD (ENTRA EN LA SIGUIENTE VELA)
+            esperar_apertura()
+
+            ejecutar(iq, par, accion)
+
+            break  # 🔥 SOLO UNA OPERACIÓN POR VELA
 
 
 if __name__ == "__main__":
