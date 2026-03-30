@@ -17,8 +17,8 @@ PARES = [
     "USDZAR-OTC"
 ]
 
-MONTO = 7500
-EXPIRACION = 1
+MONTO = 75
+EXPIRACION = 3
 
 CONTROL_FILE = "estado.txt"
 
