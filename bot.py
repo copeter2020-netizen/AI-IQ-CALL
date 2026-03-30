@@ -8,7 +8,7 @@ from telegram_bot import send_message
 IQ_EMAIL = os.getenv("IQ_EMAIL")
 IQ_PASSWORD = os.getenv("IQ_PASSWORD")
 
-MONTO = 12000
+MONTO = 3333.33
 EXPIRACION = 1
 
 
