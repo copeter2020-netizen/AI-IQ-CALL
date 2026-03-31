@@ -12,18 +12,9 @@ PARES = [
     "EURUSD-OTC",
     "GBPUSD-OTC",
     "EURJPY-OTC",
-    "USDIDR-OTC",
-    "USDZAR-OTC",
-    "USDTRY-OTC",
-    "USDTHB-OTC",
+    "USDZAR-OTC"
     "USDSGD-OTC",
-    "USDSEK-OTC",
-    "USDPLN-OTC",
-    "USDNOK-OTC",
-    "USDMXN-OTC",
-    "USDINR-OTC",
     "USDHKD-OTC",
-    "USDCOP-OTC", 
     "EURGBP-OTC",
     "USDZAR-OTC"
 ]
