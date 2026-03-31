@@ -46,6 +46,9 @@ EXPIRACION = 1
 
 CONTROL_FILE = "estado.txt"
 
+# 🔒 CONTROL DE PÉRDIDAS
+ULTIMO_RESULTADO = "WIN"  # inicia permitido
+
 
 def silent(func, *args, **kwargs):
     try:
@@ -96,6 +99,8 @@ def esperar_apertura():
 
 
 def resultado(iq, trade_id):
+    global ULTIMO_RESULTADO
+
     while True:
         r = silent(iq.check_win_v4, trade_id)
 
@@ -110,7 +115,13 @@ def resultado(iq, trade_id):
         except:
             return
 
-        send_message("✅ WIN" if r > 0 else "❌ LOSS")
+        if r > 0:
+            ULTIMO_RESULTADO = "WIN"
+            send_message("✅ WIN")
+        else:
+            ULTIMO_RESULTADO = "LOSS"
+            send_message("❌ LOSS")
+
         return
 
 
@@ -142,6 +153,12 @@ def run():
             time.sleep(2)
             continue
 
+        # 🔒 BLOQUEO POR PÉRDIDA
+        if ULTIMO_RESULTADO == "LOSS":
+            print("🛑 BLOQUEADO POR LOSS")
+            time.sleep(5)
+            continue
+
         esperar_cierre()
 
         for par in PARES:
@@ -161,7 +178,7 @@ def run():
 
             ejecutar(iq, par, accion)
 
-            break  # SOLO UNA OPERACIÓN
+            break
 
 
 if __name__ == "__main__":
