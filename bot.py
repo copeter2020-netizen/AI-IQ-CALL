@@ -7,8 +7,9 @@ from telegram_bot import send_message
 IQ_EMAIL = os.getenv("IQ_EMAIL")
 IQ_PASSWORD = os.getenv("IQ_PASSWORD")
 
-# 🔥 MULTIPARES (CORREGIDO)
+# 🔥 MULTIPARES (corregido)
 PARES = [
+    
     "EURUSD-OTC",
     "GBPUSD-OTC",
     "EURAUD-OTC",
@@ -46,8 +47,8 @@ PARES = [
     "EURGBP-OTC"
 ]
 
-MONTO = 100
-EXPIRACION = 2
+MONTO = 150
+EXPIRACION = 1
 
 CONTROL_FILE = "estado.txt"
 
@@ -71,7 +72,8 @@ def fix_api(iq):
 def estado_bot():
     try:
         with open(CONTROL_FILE, "r") as f:
-            return f.read().strip().upper() == "ON"
+            estado = f.read().strip().upper()
+            return estado == "ON"
     except:
         return True
 
@@ -165,8 +167,8 @@ def run():
 
             ejecutar(iq, par, accion)
 
-            break  # 🔥 SOLO UNA OPERACIÓN POR VELA
+            break  # SOLO UNA OPERACIÓN POR VELA
 
 
 if __name__ == "__main__":
-    run() 
+    run()
