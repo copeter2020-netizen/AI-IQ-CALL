@@ -5,37 +5,39 @@ def detectar_trampa(iq, par):
 
     velas = iq.get_candles(par, 60, 20, time.time())
 
-    if not velas:
+    if not velas or len(velas) < 3:
         return None
 
-    c1 = velas[-1]  # vela actual
-    c2 = velas[-2]  # 🔥 vela anterior (condición obligatoria)
+    c1 = velas[-1]  # vela actual (trampa)
+    c2 = velas[-2]  # 🔥 vela anterior (OBLIGATORIA)
 
     max_prev = max(v["max"] for v in velas[:-1])
     min_prev = min(v["min"] for v in velas[:-1])
 
+    # ==========================
     # 🔻 TRAMPA ALCISTA → CALL
+    # ==========================
     if (
         c1["max"] > max_prev and
         c1["close"] < c1["open"] and
         (c1["max"] - c1["close"]) > abs(c1["close"] - c1["open"])
     ):
-        # 🔥 SOLO si vela anterior es VERDE
+        # 🔥 FORZADO: vela anterior debe ser VERDE
         if c2["close"] > c2["open"]:
             return {"action": "call"}
-        else:
-            return None
+        return None
 
+    # ==========================
     # 🔺 TRAMPA BAJISTA → PUT
+    # ==========================
     if (
         c1["min"] < min_prev and
         c1["close"] > c1["open"] and
         (c1["close"] - c1["min"]) > abs(c1["close"] - c1["open"])
     ):
-        # 🔥 SOLO si vela anterior es ROJA
+        # 🔥 FORZADO: vela anterior debe ser ROJA
         if c2["close"] < c2["open"]:
             return {"action": "put"}
-        else:
-            return None
+        return None
 
     return None
