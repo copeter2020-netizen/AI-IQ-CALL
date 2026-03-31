@@ -7,41 +7,14 @@ from telegram_bot import send_message
 IQ_EMAIL = os.getenv("IQ_EMAIL")
 IQ_PASSWORD = os.getenv("IQ_PASSWORD")
 
+# 🔥 TODOS TUS PARES (SNIPER)
 PARES = [
-    "EURUSD-OTC",
-    "GBPUSD-OTC",
-    "EURAUD-OTC",
-    "CHFNOK-OTC",
-    "CHFJPY-OTC",
-    "CADJPY-OTC",
-    "CADCHF-OTC",
-    "AUDUSD-OTC",
-    "AUDNZD-OTC",
-    "AUDJPY-OTC",
-    "AUDCHF-OTC",
-    "AUDCAD-OTC",
-    "GBPCHF-OTC",
-    "GBPCAD-OTC",
-    "GBPAUD-OTC",
-    "EURTHB-OTC",
-    "EURNZD-OTC",
-    "EURJPY-OTC",
-    "EURGBP-OTC",
-    "EURCHF-OTC",
-    "USDCHF-OTC",
-    "USDCAD-OTC",
-    "USDBRL-OTC",
-    "PENUSD-OTC",
-    "NZDJPY-OTC",
-    "NZDCAD-OTC",
-    "NOKJPY-OTC",
-    "JPYTHB-OTC",
-    "GBPNZD-OTC",
-    "GBPJPY-OTC",
-    "USDHKD-OTC"
+    "EURUSD-OTC","GBPUSD-OTC","EURJPY-OTC","USDCHF-OTC",
+    "GBPJPY-OTC","AUDUSD-OTC","EURGBP-OTC","USDHKD-OTC",
+    "AUDCAD-OTC","GBPCAD-OTC"
 ]
 
-MONTO = 15000
+MONTO = 20000
 EXPIRACION = 1
 
 CONTROL_FILE = "estado.txt"
@@ -54,45 +27,33 @@ def silent(func, *args, **kwargs):
         return None
 
 
-def fix_api(iq):
-    try:
-        iq.api.digital_underlying_list = {}
-        iq.api.get_digital_underlying_list_data = lambda: {"underlying": []}
-        iq.api._IQ_Option__get_digital_open = lambda *args, **kwargs: None
-    except:
-        pass
-
-
-def estado_bot():
-    try:
-        with open(CONTROL_FILE, "r") as f:
-            return f.read().strip().upper() == "ON"
-    except:
-        return True
-
-
 def connect():
     while True:
         iq = IQ_Option(IQ_EMAIL, IQ_PASSWORD)
         silent(iq.connect)
 
         if iq.check_connect():
-            fix_api(iq)
-            print("🔥 BOT ACTIVO")
-            send_message("🔥 BOT ACTIVO")
+            print("🔥 BOT SNIPER ACTIVO")
+            send_message("🔥 BOT SNIPER ACTIVO")
             return iq
 
-        time.sleep(5)
+        time.sleep(3)
 
 
-def esperar_cierre():
-    while int(time.time()) % 60 != 59:
-        time.sleep(0.02)
+def esperar_cierre_real():
+    while True:
+        if int(time.time()) % 60 == 59:
+            time.sleep(1.2)
+            return
+        time.sleep(0.1)
 
 
-def esperar_apertura():
-    while int(time.time()) % 60 != 0:
-        time.sleep(0.001)
+def esperar_apertura_real():
+    while True:
+        if int(time.time()) % 60 == 0:
+            time.sleep(0.3)
+            return
+        time.sleep(0.05)
 
 
 def resultado(iq, trade_id):
@@ -116,19 +77,15 @@ def resultado(iq, trade_id):
 
 def ejecutar(iq, par, accion):
 
-    for _ in range(3):
-        status, trade_id = silent(
-            iq.buy, MONTO, par, accion, EXPIRACION
-        )
+    status, trade_id = silent(
+        iq.buy, MONTO, par, accion, EXPIRACION
+    )
 
-        if status:
-            send_message(f"🎯 {accion.upper()} {par}")
-            resultado(iq, trade_id)
-            return
-
-        time.sleep(1)
-
-    send_message(f"⛔ No ejecutó operación en {par}")
+    if status:
+        send_message(f"🎯 {accion.upper()} {par}")
+        resultado(iq, trade_id)
+    else:
+        send_message(f"⛔ Error en {par}")
 
 
 def run():
@@ -137,28 +94,31 @@ def run():
 
     while True:
 
-        if not estado_bot():
-            time.sleep(2)
-            continue
+        esperar_cierre_real()
 
-        esperar_cierre()
+        señal_encontrada = False
 
+        # 🔥 ESCANEO SNIPER (NO PIERDE ENTRADAS)
         for par in PARES:
 
             señal = detectar_trampa(iq, par)
 
-            if señal is None:
-                continue
+            if señal:
 
-            accion = señal["action"]
+                accion = señal["action"]
 
-            send_message(f"🎯 {par} {accion}")
+                send_message(f"🎯 SNIPER {par} {accion}")
 
-            esperar_apertura()
+                esperar_apertura_real()
 
-            ejecutar(iq, par, accion)
+                ejecutar(iq, par, accion)
 
-            break
+                señal_encontrada = True
+                break
+
+        # 🔥 SI NO HAY SEÑAL → SIGUE BUSCANDO
+        if not señal_encontrada:
+            continue
 
 
 if __name__ == "__main__":
