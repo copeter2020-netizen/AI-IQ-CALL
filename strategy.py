@@ -9,31 +9,32 @@ def detectar_trampa(iq, par):
         return None
 
     c1 = velas[-1]  # vela actual
-    c2 = velas[-2]  # 🔥 vela anterior
+    c2 = velas[-2]  # 🔥 vela anterior (MANDA)
 
     max_prev = max(v["max"] for v in velas[:-1])
     min_prev = min(v["min"] for v in velas[:-1])
 
-    # 🔻 CALL
-    if (
-        c1["max"] > max_prev and
-        c1["close"] < c1["open"] and
-        (c1["max"] - c1["close"]) > abs(c1["close"] - c1["open"])
-    ):
-        # 🔒 SOLO vela verde
-        if c2["close"] > c2["open"]:
-            return {"action": "call"}
+    # ==========================
+    # 🔥 DETECTAR TRAMPA (NO CAMBIA)
+    # ==========================
+    trampa = (
+        (c1["max"] > max_prev and c1["close"] < c1["open"]) or
+        (c1["min"] < min_prev and c1["close"] > c1["open"])
+    )
+
+    if not trampa:
         return None
 
-    # 🔺 PUT
-    if (
-        c1["min"] < min_prev and
-        c1["close"] > c1["open"] and
-        (c1["close"] - c1["min"]) > abs(c1["close"] - c1["open"])
-    ):
-        # 🔒 SOLO vela roja
-        if c2["close"] < c2["open"]:
-            return {"action": "put"}
-        return None
+    # ==========================
+    # 🔥 CONTINUIDAD OBLIGATORIA
+    # ==========================
+
+    # 🟢 VELA VERDE → CALL
+    if c2["close"] > c2["open"]:
+        return {"action": "call"}
+
+    # 🔴 VELA ROJA → PUT
+    if c2["close"] < c2["open"]:
+        return {"action": "put"}
 
     return None
