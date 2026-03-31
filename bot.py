@@ -7,7 +7,7 @@ from telegram_bot import send_message
 IQ_EMAIL = os.getenv("IQ_EMAIL")
 IQ_PASSWORD = os.getenv("IQ_PASSWORD")
 
-# 🔥 MULTIPARES
+# 🔥 MULTIPARES LIMPIO
 PARES = [
     "EURUSD-OTC",
     "GBPUSD-OTC",
@@ -149,6 +149,7 @@ def run():
 
             señal = detectar_trampa(iq, par)
 
+            # 🔥 AQUÍ ESTÁ EL CONTROL TOTAL → SI NO CUMPLE TU REGLA, NO PASA
             if not señal:
                 continue
 
@@ -161,7 +162,7 @@ def run():
 
             ejecutar(iq, par, accion)
 
-            break
+            break  # SOLO UNA OPERACIÓN POR VELA
 
 
 if __name__ == "__main__":
