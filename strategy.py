@@ -8,7 +8,7 @@ def detectar_trampa(iq, par):
     if not velas or len(velas) < 3:
         return None
 
-    c1 = velas[-1]  # vela actual (trampa)
+    c1 = velas[-1]  # vela actual
     c2 = velas[-2]  # 🔥 vela anterior (REGLA OBLIGATORIA)
 
     max_prev = max(v["max"] for v in velas[:-1])
@@ -22,10 +22,11 @@ def detectar_trampa(iq, par):
         c1["close"] < c1["open"] and
         (c1["max"] - c1["close"]) > abs(c1["close"] - c1["open"])
     ):
-        # 🔥 ORDEN ABSOLUTA: vela anterior debe ser VERDE
-        if c2["close"] > c2["open"]:
-            return {"action": "call"}
-        return None
+        # 🔒 BLOQUEO TOTAL
+        if not (c2["close"] > c2["open"]):
+            return None
+
+        return {"action": "call"}
 
     # ==========================
     # 🔺 TRAMPA → PUT
@@ -35,9 +36,10 @@ def detectar_trampa(iq, par):
         c1["close"] > c1["open"] and
         (c1["close"] - c1["min"]) > abs(c1["close"] - c1["open"])
     ):
-        # 🔥 ORDEN ABSOLUTA: vela anterior debe ser ROJA
-        if c2["close"] < c2["open"]:
-            return {"action": "put"}
-        return None
+        # 🔒 BLOQUEO TOTAL
+        if not (c2["close"] < c2["open"]):
+            return None
+
+        return {"action": "put"}
 
     return None
