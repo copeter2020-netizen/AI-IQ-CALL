@@ -5,17 +5,18 @@ def detectar_trampa(iq, par):
 
     velas = iq.get_candles(par, 60, 20, time.time())
 
-    if not velas or len(velas) < 3:
+    if not velas or len(velas) < 4:
         return None
 
-    c1 = velas[-1]  # vela actual
-    c2 = velas[-2]  # 🔥 vela anterior (MANDA TODO)
+    # 🔥 SOLO VELAS CERRADAS
+    c1 = velas[-2]  # última vela cerrada
+    c2 = velas[-3]  # vela anterior real
 
-    max_prev = max(v["max"] for v in velas[:-1])
-    min_prev = min(v["min"] for v in velas[:-1])
+    max_prev = max(v["max"] for v in velas[:-2])
+    min_prev = min(v["min"] for v in velas[:-2])
 
     # ==========================
-    # 🔥 SOLO VALIDACIÓN DE TRAMPA
+    # 🔥 VALIDAR TRAMPA (solo filtro)
     # ==========================
     hay_trampa = (
         (c1["max"] > max_prev and c1["close"] < c1["open"]) or
@@ -26,7 +27,7 @@ def detectar_trampa(iq, par):
         return None
 
     # ==========================
-    # 🔒 CONTINUIDAD FORZADA
+    # 🔒 CONTINUIDAD REAL
     # ==========================
 
     # 🟢 VERDE → CALL
@@ -37,5 +38,4 @@ def detectar_trampa(iq, par):
     if c2["close"] < c2["open"]:
         return {"action": "put"}
 
-    # ❌ DOJI → BLOQUEADO
     return None
