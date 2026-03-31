@@ -41,13 +41,10 @@ PARES = [
     "USDHKD-OTC"
 ]
 
-MONTO = 150
+MONTO = 12000
 EXPIRACION = 1
 
 CONTROL_FILE = "estado.txt"
-
-# 🔒 CONTROL DE PÉRDIDAS
-ULTIMO_RESULTADO = "WIN"  # inicia permitido
 
 
 def silent(func, *args, **kwargs):
@@ -99,8 +96,6 @@ def esperar_apertura():
 
 
 def resultado(iq, trade_id):
-    global ULTIMO_RESULTADO
-
     while True:
         r = silent(iq.check_win_v4, trade_id)
 
@@ -115,13 +110,7 @@ def resultado(iq, trade_id):
         except:
             return
 
-        if r > 0:
-            ULTIMO_RESULTADO = "WIN"
-            send_message("✅ WIN")
-        else:
-            ULTIMO_RESULTADO = "LOSS"
-            send_message("❌ LOSS")
-
+        send_message("✅ WIN" if r > 0 else "❌ LOSS")
         return
 
 
@@ -151,12 +140,6 @@ def run():
         if not estado_bot():
             print("⛔ BOT DETENIDO")
             time.sleep(2)
-            continue
-
-        # 🔒 BLOQUEO POR PÉRDIDA
-        if ULTIMO_RESULTADO == "LOSS":
-            print("🛑 BLOQUEADO POR LOSS")
-            time.sleep(5)
             continue
 
         esperar_cierre()
