@@ -8,7 +8,6 @@ IQ_EMAIL = os.getenv("IQ_EMAIL")
 IQ_PASSWORD = os.getenv("IQ_PASSWORD")
 
 PARES = [
-    
     "EURUSD-OTC",
     "GBPUSD-OTC",
     "EURAUD-OTC",
@@ -117,10 +116,6 @@ def resultado(iq, trade_id):
 
 def ejecutar(iq, par, accion):
 
-    # 🔒 SEGURIDAD: NO CAMBIAR DIRECCIÓN
-    if accion not in ["call", "put"]:
-        return
-
     for _ in range(3):
         status, trade_id = silent(
             iq.buy, MONTO, par, accion, EXPIRACION
@@ -143,7 +138,6 @@ def run():
     while True:
 
         if not estado_bot():
-            print("⛔ BOT DETENIDO")
             time.sleep(2)
             continue
 
@@ -153,13 +147,11 @@ def run():
 
             señal = detectar_trampa(iq, par)
 
-            # 🔒 BLOQUEO TOTAL
             if señal is None:
                 continue
 
             accion = señal["action"]
 
-            print(f"🎯 {par} {accion}")
             send_message(f"🎯 {par} {accion}")
 
             esperar_apertura()
