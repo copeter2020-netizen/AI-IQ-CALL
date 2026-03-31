@@ -7,20 +7,19 @@ from telegram_bot import send_message
 IQ_EMAIL = os.getenv("IQ_EMAIL")
 IQ_PASSWORD = os.getenv("IQ_PASSWORD")
 
-# 🔥 MULTIPARES
+# 🔥 MULTIPARES (CORREGIDO)
 PARES = [
     "EURUSD-OTC",
     "GBPUSD-OTC",
     "EURJPY-OTC",
-    "USDZAR-OTC"
+    "USDZAR-OTC",
     "USDSGD-OTC",
     "USDHKD-OTC",
-    "EURGBP-OTC",
-    "USDZAR-OTC"
+    "EURGBP-OTC"
 ]
 
 MONTO = 75
-EXPIRACION = 2
+EXPIRACION = 1
 
 CONTROL_FILE = "estado.txt"
 
@@ -101,7 +100,7 @@ def ejecutar(iq, par, accion):
         )
 
         if status:
-            send_message(f"🎯 {accion.upper()} {par} (1M)")
+            send_message(f"🎯 {accion.upper()} {par} ({EXPIRACION}M)")
             resultado(iq, trade_id)
             return
 
@@ -135,7 +134,6 @@ def run():
             print(f"🎯 {par} {accion}")
             send_message(f"🎯 {par} {accion}")
 
-            # 🔥 CONTINUIDAD (ENTRA EN LA SIGUIENTE VELA)
             esperar_apertura()
 
             ejecutar(iq, par, accion)
