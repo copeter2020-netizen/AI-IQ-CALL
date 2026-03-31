@@ -42,7 +42,7 @@ PARES = [
     "USDHKD-OTC"
 ]
 
-MONTO = 150
+MONTO = 15000
 EXPIRACION = 1
 
 CONTROL_FILE = "estado.txt"
