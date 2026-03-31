@@ -8,6 +8,7 @@ IQ_EMAIL = os.getenv("IQ_EMAIL")
 IQ_PASSWORD = os.getenv("IQ_PASSWORD")
 
 PARES = [
+    
     "EURUSD-OTC",
     "GBPUSD-OTC",
     "EURAUD-OTC",
@@ -41,7 +42,7 @@ PARES = [
     "USDHKD-OTC"
 ]
 
-MONTO = 12000
+MONTO = 15000
 EXPIRACION = 1
 
 CONTROL_FILE = "estado.txt"
@@ -115,6 +116,10 @@ def resultado(iq, trade_id):
 
 
 def ejecutar(iq, par, accion):
+
+    # 🔒 SEGURIDAD: NO CAMBIAR DIRECCIÓN
+    if accion not in ["call", "put"]:
+        return
 
     for _ in range(3):
         status, trade_id = silent(
