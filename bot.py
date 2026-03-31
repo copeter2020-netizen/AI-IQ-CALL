@@ -12,13 +12,24 @@ PARES = [
     "EURUSD-OTC",
     "GBPUSD-OTC",
     "EURJPY-OTC",
-    "USDCHF -OTC",
+    "USDIDR-OTC",
+    "USDZAR-OTC",
+    "USDTRY-OTC",
+    "USDTHB-OTC",
+    "USDSGD-OTC",
+    "USDSEK-OTC",
+    "USDPLN-OTC",
+    "USDNOK-OTC",
+    "USDMXN-OTC",
+    "USDINR-OTC",
+    "USDHKD-OTC",
+    "USDCOP-OTC", 
     "EURGBP-OTC",
     "USDZAR-OTC"
 ]
 
 MONTO = 75
-EXPIRACION = 3
+EXPIRACION = 2
 
 CONTROL_FILE = "estado.txt"
 
