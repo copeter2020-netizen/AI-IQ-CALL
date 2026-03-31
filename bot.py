@@ -7,17 +7,13 @@ from telegram_bot import send_message
 IQ_EMAIL = os.getenv("IQ_EMAIL")
 IQ_PASSWORD = os.getenv("IQ_PASSWORD")
 
-# 🔥 TODOS TUS PARES (SNIPER)
 PARES = [
-    "EURUSD-OTC","GBPUSD-OTC","EURJPY-OTC","USDCHF-OTC",
-    "GBPJPY-OTC","AUDUSD-OTC","EURGBP-OTC","USDHKD-OTC",
-    "AUDCAD-OTC","GBPCAD-OTC"
+    "EURUSD-OTC","GBPUSD-OTC","EURJPY-OTC",
+    "USDCHF-OTC","GBPJPY-OTC","AUDUSD-OTC"
 ]
 
 MONTO = 20000
 EXPIRACION = 1
-
-CONTROL_FILE = "estado.txt"
 
 
 def silent(func, *args, **kwargs):
@@ -33,27 +29,23 @@ def connect():
         silent(iq.connect)
 
         if iq.check_connect():
-            print("🔥 BOT SNIPER ACTIVO")
-            send_message("🔥 BOT SNIPER ACTIVO")
+            print("🔥 SNIPER ACTIVO")
+            send_message("🔥 SNIPER ACTIVO")
             return iq
 
         time.sleep(3)
 
 
-def esperar_cierre_real():
-    while True:
-        if int(time.time()) % 60 == 59:
-            time.sleep(1.2)
-            return
-        time.sleep(0.1)
-
-
-def esperar_apertura_real():
-    while True:
-        if int(time.time()) % 60 == 0:
-            time.sleep(0.3)
-            return
+def esperar_cierre():
+    while int(time.time()) % 60 != 59:
         time.sleep(0.05)
+    time.sleep(1.1)  # 🔥 cierre real confirmado
+
+
+def esperar_apertura():
+    while int(time.time()) % 60 != 0:
+        time.sleep(0.01)
+    time.sleep(0.2)  # 🔥 entrada exacta
 
 
 def resultado(iq, trade_id):
@@ -84,8 +76,6 @@ def ejecutar(iq, par, accion):
     if status:
         send_message(f"🎯 {accion.upper()} {par}")
         resultado(iq, trade_id)
-    else:
-        send_message(f"⛔ Error en {par}")
 
 
 def run():
@@ -94,31 +84,33 @@ def run():
 
     while True:
 
-        esperar_cierre_real()
+        # 🔥 1. ESPERA CIERRE
+        esperar_cierre()
 
-        señal_encontrada = False
+        señal_guardada = None
+        par_guardado = None
 
-        # 🔥 ESCANEO SNIPER (NO PIERDE ENTRADAS)
+        # 🔥 2. BUSCA SEÑAL (UNA SOLA VEZ)
         for par in PARES:
 
             señal = detectar_trampa(iq, par)
 
             if señal:
-
-                accion = señal["action"]
-
-                send_message(f"🎯 SNIPER {par} {accion}")
-
-                esperar_apertura_real()
-
-                ejecutar(iq, par, accion)
-
-                señal_encontrada = True
+                señal_guardada = señal["action"]
+                par_guardado = par
                 break
 
-        # 🔥 SI NO HAY SEÑAL → SIGUE BUSCANDO
-        if not señal_encontrada:
+        # 🔒 SI NO HAY SEÑAL → CONTINÚA
+        if not señal_guardada:
             continue
+
+        send_message(f"🎯 SNIPER DETECTADO {par_guardado} {señal_guardada}")
+
+        # 🔥 3. ESPERA APERTURA (SIN RECALCULAR)
+        esperar_apertura()
+
+        # 🔥 4. EJECUTA EXACTO
+        ejecutar(iq, par_guardado, señal_guardada)
 
 
 if __name__ == "__main__":
