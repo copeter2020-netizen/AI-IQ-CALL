@@ -46,8 +46,8 @@ PARES = [
     "EURGBP-OTC"
 ]
 
-MONTO = 75
-EXPIRACION = 1
+MONTO = 100
+EXPIRACION = 2
 
 CONTROL_FILE = "estado.txt"
 
@@ -71,8 +71,7 @@ def fix_api(iq):
 def estado_bot():
     try:
         with open(CONTROL_FILE, "r") as f:
-            estado = f.read().strip().upper()
-            return estado == "ON"
+            return f.read().strip().upper() == "ON"
     except:
         return True
 
@@ -170,4 +169,4 @@ def run():
 
 
 if __name__ == "__main__":
-    run()
+    run() 
