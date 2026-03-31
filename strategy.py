@@ -9,7 +9,7 @@ def detectar_trampa(iq, par):
         return None
 
     c1 = velas[-1]   # vela actual (trampa)
-    c2 = velas[-2]   # 🔥 vela anterior (confirmación)
+    c2 = velas[-2]   # 🔥 vela anterior (confirmación OBLIGATORIA)
 
     max_prev = max(v["max"] for v in velas[:-1])
     min_prev = min(v["min"] for v in velas[:-1])
@@ -22,10 +22,11 @@ def detectar_trampa(iq, par):
         c1["close"] < c1["open"] and
         (c1["max"] - c1["close"]) > abs(c1["close"] - c1["open"])
     ):
-
-        # 🔥 CONFIRMACIÓN: vela anterior VERDE
+        # 🔥 FORZADO: vela anterior VERDE
         if c2["close"] > c2["open"]:
             return {"action": "call"}
+        else:
+            return None
 
     # ==========================
     # 🔺 TRAMPA BAJISTA → PUT
@@ -35,9 +36,10 @@ def detectar_trampa(iq, par):
         c1["close"] > c1["open"] and
         (c1["close"] - c1["min"]) > abs(c1["close"] - c1["open"])
     ):
-
-        # 🔥 CONFIRMACIÓN: vela anterior ROJA
+        # 🔥 FORZADO: vela anterior ROJA
         if c2["close"] < c2["open"]:
             return {"action": "put"}
+        else:
+            return None
 
     return None
