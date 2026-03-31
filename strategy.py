@@ -3,39 +3,32 @@ import time
 
 def detectar_trampa(iq, par):
 
-    velas = iq.get_candles(par, 60, 20, time.time())
+    velas = iq.get_candles(par, 60, 30, time.time())
 
-    if not velas or len(velas) < 4:
+    if not velas or len(velas) < 5:
         return None
 
     # 🔥 SOLO VELAS CERRADAS
-    c1 = velas[-2]  # última vela cerrada
-    c2 = velas[-3]  # vela anterior real
+    vela_trampa = velas[-2]
+    vela_anterior = velas[-3]
 
     max_prev = max(v["max"] for v in velas[:-2])
     min_prev = min(v["min"] for v in velas[:-2])
 
-    # ==========================
-    # 🔥 VALIDAR TRAMPA (solo filtro)
-    # ==========================
+    # 🔥 FILTRO TRAMPA (OBLIGATORIO)
     hay_trampa = (
-        (c1["max"] > max_prev and c1["close"] < c1["open"]) or
-        (c1["min"] < min_prev and c1["close"] > c1["open"])
+        (vela_trampa["max"] > max_prev and vela_trampa["close"] < vela_trampa["open"]) or
+        (vela_trampa["min"] < min_prev and vela_trampa["close"] > vela_trampa["open"])
     )
 
     if not hay_trampa:
         return None
 
-    # ==========================
-    # 🔒 CONTINUIDAD REAL
-    # ==========================
-
-    # 🟢 VERDE → CALL
-    if c2["close"] > c2["open"]:
+    # 🔒 CONTINUIDAD PURA (MANDATO)
+    if vela_anterior["close"] > vela_anterior["open"]:
         return {"action": "call"}
 
-    # 🔴 ROJA → PUT
-    if c2["close"] < c2["open"]:
+    if vela_anterior["close"] < vela_anterior["open"]:
         return {"action": "put"}
 
     return None
