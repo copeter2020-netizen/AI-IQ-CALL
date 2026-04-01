@@ -1,78 +1,26 @@
-import os
 import requests
+import os
 
 TOKEN = os.getenv("TELEGRAM_TOKEN")
-CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-URL = f"https://api.telegram.org/bot{TOKEN}"
-
-LAST_UPDATE_ID = None
+# 🔥 REEMPLAZA ESTE ID POR EL DE TU GRUPO
+CHAT_ID = "-1001234567890"
 
 
-# ==========================
-# 📤 MENSAJE TEXTO
-# ==========================
 def send_message(text):
-    try:
-        requests.post(
-            f"{URL}/sendMessage",
-            data={
-                "chat_id": CHAT_ID,
-                "text": text
-            },
-            timeout=5
-        )
-    except:
-        pass
+    url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
+    data = {
+        "chat_id": CHAT_ID,
+        "text": text
+    }
+    requests.post(url, data=data)
 
 
-# ==========================
-# 🖼️ ENVIAR IMAGEN
-# ==========================
-def send_image(path, caption=""):
-    try:
-        with open(path, "rb") as photo:
-            requests.post(
-                f"{URL}/sendPhoto",
-                data={
-                    "chat_id": CHAT_ID,
-                    "caption": caption
-                },
-                files={"photo": photo},
-                timeout=10
-            )
-    except:
-        pass
-
-
-# ==========================
-# 📥 LEER COMANDOS
-# ==========================
-def get_command():
-    global LAST_UPDATE_ID
-
-    try:
-        response = requests.get(
-            f"{URL}/getUpdates",
-            params={"timeout": 5, "offset": LAST_UPDATE_ID},
-            timeout=5
-        ).json()
-
-        if not response.get("ok"):
-            return None
-
-        results = response.get("result", [])
-
-        if not results:
-            return None
-
-        last = results[-1]
-        LAST_UPDATE_ID = last["update_id"] + 1
-
-        message = last.get("message", {})
-        text = message.get("text", "")
-
-        return text
-
-    except:
-        return None
+def send_image(image_url, caption=""):
+    url = f"https://api.telegram.org/bot{TOKEN}/sendPhoto"
+    data = {
+        "chat_id": CHAT_ID,
+        "photo": image_url,
+        "caption": caption
+    }
+    requests.post(url, data=data)
