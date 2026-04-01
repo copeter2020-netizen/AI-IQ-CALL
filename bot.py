@@ -19,7 +19,7 @@ PARES_OTC = [
 ]
 
 MONTO = 20000
-EXPIRACION = 2  # 🔥 2 MINUTOS
+EXPIRACION = 1  # 🔥 1 MINUTOS
 
 
 def silent(func, *args, **kwargs):
