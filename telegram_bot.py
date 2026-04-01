@@ -18,16 +18,17 @@ def send_message(text):
             f"{URL}/sendMessage",
             data={
                 "chat_id": CHAT_ID,
-                "text": text
+                "text": text,
+                "parse_mode": "HTML"
             },
             timeout=5
         )
-    except:
-        pass
+    except Exception as e:
+        print("Error enviando mensaje:", e)
 
 
 # ==========================
-# 🖼️ ENVIAR IMAGEN
+# 🖼️ ENVIAR IMAGEN LOCAL
 # ==========================
 def send_image(path, caption=""):
     try:
@@ -36,17 +37,37 @@ def send_image(path, caption=""):
                 f"{URL}/sendPhoto",
                 data={
                     "chat_id": CHAT_ID,
-                    "caption": caption
+                    "caption": caption,
+                    "parse_mode": "HTML"
                 },
                 files={"photo": photo},
                 timeout=10
             )
-    except:
-        pass
+    except Exception as e:
+        print("Error enviando imagen:", e)
 
 
 # ==========================
-# 📥 LEER COMANDOS
+# 🖼️ ENVIAR IMAGEN POR URL (MEJOR OPCIÓN)
+# ==========================
+def send_image_url(url_img, caption=""):
+    try:
+        requests.post(
+            f"{URL}/sendPhoto",
+            data={
+                "chat_id": CHAT_ID,
+                "photo": url_img,
+                "caption": caption,
+                "parse_mode": "HTML"
+            },
+            timeout=10
+        )
+    except Exception as e:
+        print("Error enviando imagen URL:", e)
+
+
+# ==========================
+# 📥 LEER COMANDOS (/start /stop)
 # ==========================
 def get_command():
     global LAST_UPDATE_ID
@@ -67,6 +88,8 @@ def get_command():
             return None
 
         last = results[-1]
+
+        # 🔥 evitar repetir mensajes
         LAST_UPDATE_ID = last["update_id"] + 1
 
         message = last.get("message", {})
@@ -74,5 +97,6 @@ def get_command():
 
         return text
 
-    except:
+    except Exception as e:
+        print("Error leyendo comandos:", e)
         return None
