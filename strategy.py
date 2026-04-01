@@ -3,59 +3,61 @@ import time
 
 def detectar_trampa(iq, par):
 
-    velas = iq.get_candles(par, 60, 30, time.time())
+    velas = iq.get_candles(par, 60, 40, time.time())
 
-    if not velas or len(velas) < 6:
+    if not velas or len(velas) < 10:
         return None
 
+    # 🔥 VELAS CLAVE
+    vela_base = velas[-4]
     vela_trampa = velas[-3]
     vela_confirm = velas[-2]
-    vela_base = velas[-4]
 
-    max_prev = max(v["max"] for v in velas[:-3])
-    min_prev = min(v["min"] for v in velas[:-3])
+    historial = velas[:-3]
+
+    max_prev = max(v["max"] for v in historial)
+    min_prev = min(v["min"] for v in historial)
 
     # ==========================
-    # 🔥 FILTRO DOJI (EVITA BASURA)
+    # 🔥 FILTRO DOJI (FUERTE)
     # ==========================
     cuerpo_confirm = abs(vela_confirm["close"] - vela_confirm["open"])
     rango_confirm = vela_confirm["max"] - vela_confirm["min"]
 
-    if rango_confirm == 0 or cuerpo_confirm < (rango_confirm * 0.3):
+    if rango_confirm == 0 or cuerpo_confirm < (rango_confirm * 0.4):
         return None
 
     # ==========================
-    # 🔥 DETECTAR TRAMPA
+    # 🔥 RECHAZO EN TRAMPA
     # ==========================
-    hay_trampa = (
-        (vela_trampa["max"] > max_prev and vela_trampa["close"] < vela_trampa["open"]) or
-        (vela_trampa["min"] < min_prev and vela_trampa["close"] > vela_trampa["open"])
-    )
-
-    if not hay_trampa:
-        return None
+    cuerpo_trampa = abs(vela_trampa["close"] - vela_trampa["open"])
+    mecha_sup = vela_trampa["max"] - max(vela_trampa["close"], vela_trampa["open"])
+    mecha_inf = min(vela_trampa["close"], vela_trampa["open"]) - vela_trampa["min"]
 
     # ==========================
-    # 🔥 DIRECCIÓN BASE (INVERTIDA)
+    # 🔻 TRAMPA BAJISTA → CALL (INVERTIDO)
     # ==========================
-    if vela_base["close"] > vela_base["open"]:
-        direccion = "put"
-    elif vela_base["close"] < vela_base["open"]:
-        direccion = "call"
-    else:
-        return None
+    if (
+        vela_trampa["min"] < min_prev and                # rompe soporte
+        vela_trampa["close"] > vela_trampa["open"] and  # cierra verde
+        mecha_inf > cuerpo_trampa * 1.5                 # rechazo fuerte
+    ):
 
-    # ==========================
-    # 🔥 CONFIRMACIÓN FUERTE (INVERTIDA)
-    # ==========================
-    if direccion == "call":
-        # ahora buscamos vela ROJA fuerte → PUT
-        if vela_confirm["close"] < vela_confirm["open"]:
-            return {"action": "put"}
-
-    if direccion == "put":
-        # ahora buscamos vela VERDE fuerte → CALL
+        # 🔥 CONFIRMACIÓN VERDE FUERTE
         if vela_confirm["close"] > vela_confirm["open"]:
             return {"action": "call"}
+
+    # ==========================
+    # 🔺 TRAMPA ALCISTA → PUT (INVERTIDO)
+    # ==========================
+    if (
+        vela_trampa["max"] > max_prev and                # rompe resistencia
+        vela_trampa["close"] < vela_trampa["open"] and  # cierra roja
+        mecha_sup > cuerpo_trampa * 1.5                 # rechazo fuerte
+    ):
+
+        # 🔥 CONFIRMACIÓN ROJA FUERTE
+        if vela_confirm["close"] < vela_confirm["open"]:
+            return {"action": "put"}
 
     return None
