@@ -1,16 +1,18 @@
 import os
 import requests
 
+# 🔐 CONFIGURACIÓN (usa variables de entorno)
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 URL = f"https://api.telegram.org/bot{TOKEN}"
 
+# 🔥 CONTROL DE ÚLTIMO MENSAJE
 LAST_UPDATE_ID = None
 
 
 # ==========================
-# 📤 MENSAJE TEXTO
+# 📤 ENVIAR MENSAJE
 # ==========================
 def send_message(text):
     try:
@@ -18,56 +20,16 @@ def send_message(text):
             f"{URL}/sendMessage",
             data={
                 "chat_id": CHAT_ID,
-                "text": text,
-                "parse_mode": "HTML"
+                "text": text
             },
             timeout=5
         )
-    except Exception as e:
-        print("Error enviando mensaje:", e)
+    except:
+        pass
 
 
 # ==========================
-# 🖼️ ENVIAR IMAGEN LOCAL
-# ==========================
-def send_image(path, caption=""):
-    try:
-        with open(path, "rb") as photo:
-            requests.post(
-                f"{URL}/sendPhoto",
-                data={
-                    "chat_id": CHAT_ID,
-                    "caption": caption,
-                    "parse_mode": "HTML"
-                },
-                files={"photo": photo},
-                timeout=10
-            )
-    except Exception as e:
-        print("Error enviando imagen:", e)
-
-
-# ==========================
-# 🖼️ ENVIAR IMAGEN POR URL (MEJOR OPCIÓN)
-# ==========================
-def send_image_url(url_img, caption=""):
-    try:
-        requests.post(
-            f"{URL}/sendPhoto",
-            data={
-                "chat_id": CHAT_ID,
-                "photo": url_img,
-                "caption": caption,
-                "parse_mode": "HTML"
-            },
-            timeout=10
-        )
-    except Exception as e:
-        print("Error enviando imagen URL:", e)
-
-
-# ==========================
-# 📥 LEER COMANDOS (/start /stop)
+# 📥 LEER COMANDO (/start /stop)
 # ==========================
 def get_command():
     global LAST_UPDATE_ID
@@ -89,7 +51,7 @@ def get_command():
 
         last = results[-1]
 
-        # 🔥 evitar repetir mensajes
+        # 🔥 GUARDAR UPDATE_ID PARA NO REPETIR
         LAST_UPDATE_ID = last["update_id"] + 1
 
         message = last.get("message", {})
@@ -97,6 +59,5 @@ def get_command():
 
         return text
 
-    except Exception as e:
-        print("Error leyendo comandos:", e)
+    except:
         return None
