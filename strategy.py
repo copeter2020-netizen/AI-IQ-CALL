@@ -8,8 +8,8 @@ def detectar_trampa(iq, par):
     if not velas or len(velas) < 5:
         return None
 
-    vela_trampa = velas[-2]      # última cerrada
-    vela_anterior = velas[-3]    # 🔥 ESTA MANDA
+    vela_trampa = velas[-2]
+    vela_anterior = velas[-3]
 
     max_prev = max(v["max"] for v in velas[:-2])
     min_prev = min(v["min"] for v in velas[:-2])
@@ -22,11 +22,11 @@ def detectar_trampa(iq, par):
     if not hay_trampa:
         return None
 
-    # 🔒 CONTINUIDAD REAL
+    # 🔥 INVERSIÓN TOTAL DE ENTRADAS
     if vela_anterior["close"] > vela_anterior["open"]:
-        return {"action": "call"}
+        return {"action": "put"}   # antes call
 
     if vela_anterior["close"] < vela_anterior["open"]:
-        return {"action": "put"}
+        return {"action": "call"}  # antes put
 
     return None
