@@ -45,4 +45,4 @@ def detectar_trampa(iq, par):
     if direccion == "put" and vela_confirm["close"] < vela_confirm["open"]:
         return {"action": "put"}
 
-    return None
+    return None 
