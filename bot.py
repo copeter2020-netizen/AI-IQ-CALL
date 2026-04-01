@@ -2,49 +2,19 @@ import os
 import time
 from iqoptionapi.stable_api import IQ_Option
 from strategy import detectar_trampa
-from telegram_bot import send_message, get_command
+from telegram_bot import send_message, send_image, get_command
 
 IQ_EMAIL = os.getenv("IQ_EMAIL")
 IQ_PASSWORD = os.getenv("IQ_PASSWORD")
 
 PARES = [
-    "EURUSD-OTC",
-    "GBPUSD-OTC",
-    "EURAUD-OTC",
-    "CHFNOK-OTC",
-    "CHFJPY-OTC",
-    "CADJPY-OTC",
-    "CADCHF-OTC",
-    "AUDUSD-OTC",
-    "AUDNZD-OTC",
-    "AUDJPY-OTC",
-    "AUDCHF-OTC",
-    "AUDCAD-OTC",
-    "GBPCHF-OTC",
-    "GBPCAD-OTC",
-    "GBPAUD-OTC",
-    "EURTHB-OTC",
-    "EURNZD-OTC",
-    "EURJPY-OTC",
-    "EURGBP-OTC",
-    "EURCHF-OTC",
-    "USDCHF-OTC",
-    "USDCAD-OTC",
-    "USDBRL-OTC",
-    "PENUSD-OTC",
-    "NZDJPY-OTC",
-    "NZDCAD-OTC",
-    "NOKJPY-OTC",
-    "JPYTHB-OTC",
-    "GBPNZD-OTC",
-    "GBPJPY-OTC",
-    "USDHKD-OTC"
+    "EURUSD-OTC","GBPUSD-OTC","EURJPY-OTC",
+    "USDCHF-OTC","GBPJPY-OTC","AUDUSD-OTC"
 ]
 
-MONTO = 20000
+MONTO = 7000
 EXPIRACION = 1
 
-# 🔥 ESTADO GLOBAL
 BOT_ACTIVO = True
 
 
@@ -80,7 +50,9 @@ def esperar_apertura():
     time.sleep(0.2)
 
 
+# ==========================
 # 🔥 CONTROL TELEGRAM
+# ==========================
 def verificar_comandos():
     global BOT_ACTIVO
 
@@ -100,7 +72,9 @@ def verificar_comandos():
         send_message("✅ BOT ACTIVADO")
 
 
-# 🔥 RESULTADO
+# ==========================
+# 🏁 RESULTADO + IMAGEN
+# ==========================
 def resultado(iq, trade_id):
 
     while True:
@@ -121,14 +95,11 @@ def resultado(iq, trade_id):
             return
 
         if r > 0:
-            mensaje = f"✅ WIN +{round(r,2)}"
+            send_image("win.jpg", f"✅ WIN +{round(r,2)}")
         elif r < 0:
-            mensaje = f"❌ LOSS {round(r,2)}"
+            send_image("loss.jpg", f"❌ LOSS {round(r,2)}")
         else:
-            mensaje = "⚖️ EMPATE"
-
-        print(mensaje)
-        send_message(mensaje)
+            send_message("⚖️ EMPATE")
 
         return
 
@@ -152,10 +123,8 @@ def run():
 
     while True:
 
-        # 🔥 VERIFICAR TELEGRAM SIEMPRE
         verificar_comandos()
 
-        # 🔒 SI ESTÁ DETENIDO → NO OPERA
         if not BOT_ACTIVO:
             time.sleep(1)
             continue
@@ -192,7 +161,7 @@ def run():
         verificar_comandos()
 
         if not BOT_ACTIVO:
-            send_message("⛔ CANCELADO ANTES DE ENTRAR")
+            send_message("⛔ CANCELADO")
             continue
 
         ejecutar(iq, par_guardado, señal_guardada)
