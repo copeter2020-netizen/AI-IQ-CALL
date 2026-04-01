@@ -39,17 +39,20 @@ def connect():
 def esperar_cierre():
     while int(time.time()) % 60 != 59:
         time.sleep(0.05)
-    time.sleep(1.1)  # 🔥 cierre real confirmado
+    time.sleep(1.1)
 
 
 def esperar_apertura():
     while int(time.time()) % 60 != 0:
         time.sleep(0.01)
-    time.sleep(0.2)  # 🔥 entrada exacta
+    time.sleep(0.2)
 
 
+# 🔥 RESULTADO MEJORADO
 def resultado(iq, trade_id):
+
     while True:
+
         r = silent(iq.check_win_v4, trade_id)
 
         if r is None:
@@ -59,11 +62,23 @@ def resultado(iq, trade_id):
         try:
             if isinstance(r, tuple):
                 r = r[0]
+
             r = float(r)
+
         except:
             return
 
-        send_message("✅ WIN" if r > 0 else "❌ LOSS")
+        # 🔥 MENSAJE CLARO
+        if r > 0:
+            mensaje = f"✅ WIN +{round(r,2)}"
+        elif r < 0:
+            mensaje = f"❌ LOSS {round(r,2)}"
+        else:
+            mensaje = "⚖️ EMPATE"
+
+        print(mensaje)
+        send_message(mensaje)
+
         return
 
 
@@ -76,6 +91,8 @@ def ejecutar(iq, par, accion):
     if status:
         send_message(f"🎯 {accion.upper()} {par}")
         resultado(iq, trade_id)
+    else:
+        send_message(f"⛔ ERROR EN {par}")
 
 
 def run():
@@ -84,13 +101,11 @@ def run():
 
     while True:
 
-        # 🔥 1. ESPERA CIERRE
         esperar_cierre()
 
         señal_guardada = None
         par_guardado = None
 
-        # 🔥 2. BUSCA SEÑAL (UNA SOLA VEZ)
         for par in PARES:
 
             señal = detectar_trampa(iq, par)
@@ -100,16 +115,13 @@ def run():
                 par_guardado = par
                 break
 
-        # 🔒 SI NO HAY SEÑAL → CONTINÚA
         if not señal_guardada:
             continue
 
         send_message(f"🎯 SNIPER DETECTADO {par_guardado} {señal_guardada}")
 
-        # 🔥 3. ESPERA APERTURA (SIN RECALCULAR)
         esperar_apertura()
 
-        # 🔥 4. EJECUTA EXACTO
         ejecutar(iq, par_guardado, señal_guardada)
 
 
