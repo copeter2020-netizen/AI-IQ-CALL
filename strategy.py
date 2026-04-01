@@ -8,12 +8,21 @@ def detectar_trampa(iq, par):
     if not velas or len(velas) < 6:
         return None
 
-    vela_trampa = velas[-3]      # trampa
-    vela_confirm = velas[-2]     # confirmación
-    vela_base = velas[-4]        # dirección
+    vela_trampa = velas[-3]
+    vela_confirm = velas[-2]
+    vela_base = velas[-4]
 
     max_prev = max(v["max"] for v in velas[:-3])
     min_prev = min(v["min"] for v in velas[:-3])
+
+    # ==========================
+    # 🔥 FILTRO DOJI (EVITA BASURA)
+    # ==========================
+    cuerpo_confirm = abs(vela_confirm["close"] - vela_confirm["open"])
+    rango_confirm = vela_confirm["max"] - vela_confirm["min"]
+
+    if rango_confirm == 0 or cuerpo_confirm < (rango_confirm * 0.3):
+        return None
 
     # ==========================
     # 🔥 DETECTAR TRAMPA
@@ -37,12 +46,16 @@ def detectar_trampa(iq, par):
         return None
 
     # ==========================
-    # 🔥 CONFIRMACIÓN MISMO COLOR
+    # 🔥 CONFIRMACIÓN FUERTE (INVERTIDA)
     # ==========================
-    if direccion == "call" and vela_confirm["close"] > vela_confirm["open"]:
-        return {"action": "call"}
+    if direccion == "call":
+        # ahora buscamos vela ROJA fuerte → PUT
+        if vela_confirm["close"] < vela_confirm["open"]:
+            return {"action": "put"}
 
-    if direccion == "put" and vela_confirm["close"] < vela_confirm["open"]:
-        return {"action": "put"}
+    if direccion == "put":
+        # ahora buscamos vela VERDE fuerte → CALL
+        if vela_confirm["close"] > vela_confirm["open"]:
+            return {"action": "call"}
 
-    return None 
+    return None
