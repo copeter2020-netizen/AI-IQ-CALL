@@ -1,18 +1,16 @@
 import os
 import requests
 
-# 🔐 CONFIGURACIÓN (usa variables de entorno)
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 URL = f"https://api.telegram.org/bot{TOKEN}"
 
-# 🔥 CONTROL DE ÚLTIMO MENSAJE
 LAST_UPDATE_ID = None
 
 
 # ==========================
-# 📤 ENVIAR MENSAJE
+# 📤 MENSAJE TEXTO
 # ==========================
 def send_message(text):
     try:
@@ -29,7 +27,26 @@ def send_message(text):
 
 
 # ==========================
-# 📥 LEER COMANDO (/start /stop)
+# 🖼️ ENVIAR IMAGEN
+# ==========================
+def send_image(path, caption=""):
+    try:
+        with open(path, "rb") as photo:
+            requests.post(
+                f"{URL}/sendPhoto",
+                data={
+                    "chat_id": CHAT_ID,
+                    "caption": caption
+                },
+                files={"photo": photo},
+                timeout=10
+            )
+    except:
+        pass
+
+
+# ==========================
+# 📥 LEER COMANDOS
 # ==========================
 def get_command():
     global LAST_UPDATE_ID
@@ -50,8 +67,6 @@ def get_command():
             return None
 
         last = results[-1]
-
-        # 🔥 GUARDAR UPDATE_ID PARA NO REPETIR
         LAST_UPDATE_ID = last["update_id"] + 1
 
         message = last.get("message", {})
