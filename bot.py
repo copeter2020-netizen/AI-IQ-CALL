@@ -2,68 +2,24 @@ import os
 import time
 from iqoptionapi.stable_api import IQ_Option
 from strategy import detectar_trampa
-from telegram_bot import send_message, send_image
+from telegram_bot import send_message, send_image_url
 
 IQ_EMAIL = os.getenv("IQ_EMAIL")
 IQ_PASSWORD = os.getenv("IQ_PASSWORD")
 
 PARES_OTC = [
-    "EURUSD-OTC",
-    "GBPUSD-OTC",
-    "EURJPY-OTC",
-    "USDCHF-OTC",
-    "GBPJPY-OTC",
-    "AUDUSD-OTC",
-    "AUDCAD-OTC",
-    "AUDJPY-OTC",
-    "AUDNZD-OTC",
-    "CADCHF-OTC",
-    "CADJPY-OTC",
-    "CHFJPY-OTC",
-    "EURAUD-OTC",
-    "EURCAD-OTC",
-    "EURCHF-OTC",
-    "EURNZD-OTC",
-    "GBPAUD-OTC",
-    "GBPCAD-OTC",
-    "GBPCHF-OTC",
-    "GBPNZD-OTC",
-    "NZDUSD-OTC",
-    "NZDJPY-OTC",
-    "NZDCAD-OTC",
-    "NZDCHF-OTC",
-    "USDCAD-OTC",
-    "USDJPY-OTC",
-    "USDNOK-OTC",
-    "USDSEK-OTC",
-    "USDTRY-OTC",
-    "USDZAR-OTC",
-    "USDSGD-OTC",
-    "USDHKD-OTC",
-    "USDTHB-OTC",
-    "USDMXN-OTC",
-    "USDINR-OTC",
-    "USDIDR-OTC",
-    "USDARS-OTC",
-    "USDCLP-OTC",
-    "USDCOP-OTC",
-    "USDNGN-OTC",
-    "USDVND-OTC",
-    "USDPLN-OTC",
-    "USDPKR-OTC",
-    "USDHUF-OTC",
-    "USDCZK-OTC",
-    "USDILS-OTC",
-    "USDQAR-OTC",
-    "USDKZT-OTC",
-    "USDBDT-OTC",
-    "USDGHS-OTC"
+    "EURUSD-OTC","GBPUSD-OTC","EURJPY-OTC","USDCHF-OTC",
+    "GBPJPY-OTC","AUDUSD-OTC","AUDCAD-OTC","AUDJPY-OTC",
+    "AUDNZD-OTC","CADCHF-OTC","CADJPY-OTC","CHFJPY-OTC",
+    "EURAUD-OTC","EURCAD-OTC","EURCHF-OTC","EURNZD-OTC",
+    "GBPAUD-OTC","GBPCAD-OTC","GBPCHF-OTC","GBPNZD-OTC",
+    "NZDUSD-OTC","NZDJPY-OTC","NZDCAD-OTC","NZDCHF-OTC",
+    "USDCAD-OTC","USDJPY-OTC","USDZAR-OTC","USDSGD-OTC",
+    "USDHKD-OTC"
 ]
 
-MONTO = 12000
-EXPIRACION = 1
-
-BOT_ACTIVO = True
+MONTO = 20000
+EXPIRACION = 2  # 🔥 2 MINUTOS
 
 
 def silent(func, *args, **kwargs):
@@ -79,7 +35,7 @@ def connect():
         silent(iq.connect)
 
         if iq.check_connect():
-            send_message("🔥 SNIPER ACTIVO CON LISTA OTC COMPLETA")
+            send_message("🔥 BOT 2M ACTIVADO")
             return iq
 
         time.sleep(3)
@@ -88,13 +44,13 @@ def connect():
 def esperar_cierre():
     while int(time.time()) % 60 != 59:
         time.sleep(0.05)
-    time.sleep(1.1)
+    time.sleep(1.2)
 
 
 def esperar_apertura():
     while int(time.time()) % 60 != 0:
         time.sleep(0.01)
-    time.sleep(0.2)
+    time.sleep(0.3)
 
 
 def resultado(iq, trade_id):
@@ -113,29 +69,20 @@ def resultado(iq, trade_id):
             return
 
         if r > 0:
-            send_message("✅ WIN")
-            send_image("https://i.imgur.com/2QZ7Z6G.png", "WIN 🟢")
+            send_image_url("https://i.imgur.com/2QZ7Z6G.png", f"✅ WIN +{r}")
         else:
-            send_message("❌ LOSS")
-            send_image("https://i.imgur.com/Z6X7XwL.png", "LOSS 🔴")
+            send_image_url("https://i.imgur.com/Z6X7XwL.png", f"❌ LOSS {r}")
 
         return
 
 
 def ejecutar(iq, par, accion):
-
-    # 🔥 ENTRADAS INVERTIDAS
-    if accion == "call":
-        accion = "put"
-    else:
-        accion = "call"
-
     status, trade_id = silent(
         iq.buy, MONTO, par, accion, EXPIRACION
     )
 
     if status:
-        send_message(f"🎯 {accion.upper()} {par}")
+        send_message(f"🎯 {accion.upper()} {par} (2M)")
         resultado(iq, trade_id)
 
 
@@ -145,33 +92,28 @@ def run():
 
     while True:
 
-        if not BOT_ACTIVO:
-            time.sleep(1)
-            continue
-
         esperar_cierre()
 
-        señal_guardada = None
-        par_guardado = None
+        señal = None
+        par = None
 
-        # 🔥 ANALIZA TODOS LOS PARES OTC
-        for par in PARES_OTC:
+        for p in PARES_OTC:
 
-            señal = detectar_trampa(iq, par)
+            s = detectar_trampa(iq, p)
 
-            if señal:
-                señal_guardada = señal["action"]
-                par_guardado = par
+            if s:
+                señal = s["action"]
+                par = p
                 break
 
-        if not señal_guardada:
+        if not señal:
             continue
 
-        send_message(f"🚨 SEÑAL {par_guardado} {señal_guardada}")
+        send_message(f"🚨 CONFIRMADA {par} {señal}")
 
         esperar_apertura()
 
-        ejecutar(iq, par_guardado, señal_guardada)
+        ejecutar(iq, par, señal)
 
 
 if __name__ == "__main__":
