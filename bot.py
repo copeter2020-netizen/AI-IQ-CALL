@@ -2,17 +2,65 @@ import os
 import time
 from iqoptionapi.stable_api import IQ_Option
 from strategy import detectar_trampa
-from telegram_bot import send_message, send_image, get_command
+from telegram_bot import send_message, send_image
 
 IQ_EMAIL = os.getenv("IQ_EMAIL")
 IQ_PASSWORD = os.getenv("IQ_PASSWORD")
 
-PARES = [
-    "EURUSD-OTC","GBPUSD-OTC","EURJPY-OTC",
-    "USDCHF-OTC","GBPJPY-OTC","AUDUSD-OTC"
+PARES_OTC = [
+    "EURUSD-OTC",
+    "GBPUSD-OTC",
+    "EURJPY-OTC",
+    "USDCHF-OTC",
+    "GBPJPY-OTC",
+    "AUDUSD-OTC",
+    "AUDCAD-OTC",
+    "AUDJPY-OTC",
+    "AUDNZD-OTC",
+    "CADCHF-OTC",
+    "CADJPY-OTC",
+    "CHFJPY-OTC",
+    "EURAUD-OTC",
+    "EURCAD-OTC",
+    "EURCHF-OTC",
+    "EURNZD-OTC",
+    "GBPAUD-OTC",
+    "GBPCAD-OTC",
+    "GBPCHF-OTC",
+    "GBPNZD-OTC",
+    "NZDUSD-OTC",
+    "NZDJPY-OTC",
+    "NZDCAD-OTC",
+    "NZDCHF-OTC",
+    "USDCAD-OTC",
+    "USDJPY-OTC",
+    "USDNOK-OTC",
+    "USDSEK-OTC",
+    "USDTRY-OTC",
+    "USDZAR-OTC",
+    "USDSGD-OTC",
+    "USDHKD-OTC",
+    "USDTHB-OTC",
+    "USDMXN-OTC",
+    "USDINR-OTC",
+    "USDIDR-OTC",
+    "USDARS-OTC",
+    "USDCLP-OTC",
+    "USDCOP-OTC",
+    "USDNGN-OTC",
+    "USDVND-OTC",
+    "USDPLN-OTC",
+    "USDPKR-OTC",
+    "USDHUF-OTC",
+    "USDCZK-OTC",
+    "USDILS-OTC",
+    "USDQAR-OTC",
+    "USDKZT-OTC",
+    "USDBDT-OTC",
+    "USDGHS-OTC"
 ]
 
-MONTO = 7000
+MONTO = 12000
 EXPIRACION = 1
 
 BOT_ACTIVO = True
@@ -31,8 +79,7 @@ def connect():
         silent(iq.connect)
 
         if iq.check_connect():
-            print("🔥 SNIPER ACTIVO")
-            send_message("🔥 SNIPER ACTIVO")
+            send_message("🔥 SNIPER ACTIVO CON LISTA OTC COMPLETA")
             return iq
 
         time.sleep(3)
@@ -50,35 +97,8 @@ def esperar_apertura():
     time.sleep(0.2)
 
 
-# ==========================
-# 🔥 CONTROL TELEGRAM
-# ==========================
-def verificar_comandos():
-    global BOT_ACTIVO
-
-    cmd = get_command()
-
-    if not cmd:
-        return
-
-    cmd = cmd.lower()
-
-    if "/stop" in cmd:
-        BOT_ACTIVO = False
-        send_message("⛔ BOT DETENIDO")
-
-    elif "/start" in cmd:
-        BOT_ACTIVO = True
-        send_message("✅ BOT ACTIVADO")
-
-
-# ==========================
-# 🏁 RESULTADO + IMAGEN
-# ==========================
 def resultado(iq, trade_id):
-
     while True:
-
         r = silent(iq.check_win_v4, trade_id)
 
         if r is None:
@@ -88,23 +108,27 @@ def resultado(iq, trade_id):
         try:
             if isinstance(r, tuple):
                 r = r[0]
-
             r = float(r)
-
         except:
             return
 
         if r > 0:
-            send_image("win.jpg", f"✅ WIN +{round(r,2)}")
-        elif r < 0:
-            send_image("loss.jpg", f"❌ LOSS {round(r,2)}")
+            send_message("✅ WIN")
+            send_image("https://i.imgur.com/2QZ7Z6G.png", "WIN 🟢")
         else:
-            send_message("⚖️ EMPATE")
+            send_message("❌ LOSS")
+            send_image("https://i.imgur.com/Z6X7XwL.png", "LOSS 🔴")
 
         return
 
 
 def ejecutar(iq, par, accion):
+
+    # 🔥 ENTRADAS INVERTIDAS
+    if accion == "call":
+        accion = "put"
+    else:
+        accion = "call"
 
     status, trade_id = silent(
         iq.buy, MONTO, par, accion, EXPIRACION
@@ -113,8 +137,6 @@ def ejecutar(iq, par, accion):
     if status:
         send_message(f"🎯 {accion.upper()} {par}")
         resultado(iq, trade_id)
-    else:
-        send_message(f"⛔ ERROR EN {par}")
 
 
 def run():
@@ -122,8 +144,6 @@ def run():
     iq = connect()
 
     while True:
-
-        verificar_comandos()
 
         if not BOT_ACTIVO:
             time.sleep(1)
@@ -134,12 +154,8 @@ def run():
         señal_guardada = None
         par_guardado = None
 
-        for par in PARES:
-
-            verificar_comandos()
-
-            if not BOT_ACTIVO:
-                break
+        # 🔥 ANALIZA TODOS LOS PARES OTC
+        for par in PARES_OTC:
 
             señal = detectar_trampa(iq, par)
 
@@ -148,21 +164,12 @@ def run():
                 par_guardado = par
                 break
 
-        if not BOT_ACTIVO:
-            continue
-
         if not señal_guardada:
             continue
 
-        send_message(f"🎯 SNIPER DETECTADO {par_guardado} {señal_guardada}")
+        send_message(f"🚨 SEÑAL {par_guardado} {señal_guardada}")
 
         esperar_apertura()
-
-        verificar_comandos()
-
-        if not BOT_ACTIVO:
-            send_message("⛔ CANCELADO")
-            continue
 
         ejecutar(iq, par_guardado, señal_guardada)
 
