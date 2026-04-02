@@ -14,33 +14,35 @@ def detectar_trampa(iq, par):
     # ==========================
     # 🔥 DEFINICIÓN DE VELAS
     # ==========================
-    vela_trampa = velas[-2]   # vela actual cerrada (trampa)
-    vela_anterior = velas[-3]
+    vela_prev = velas[-4]     # vela anterior a la trampa (continuación)
+    vela_trampa = velas[-3]   # vela de trampa
 
     # ==========================
     # 🔥 NIVELES DEL MERCADO
     # ==========================
-    maximo = max(v["max"] for v in velas[-10:-2])
-    minimo = min(v["min"] for v in velas[-10:-2])
+    maximo = max(v["max"] for v in velas[-10:-3])
+    minimo = min(v["min"] for v in velas[-10:-3])
 
     # ==========================
     # 🔥 TRAMPA ALCISTA (FAKE BREAK ARRIBA)
-    # Rompe arriba pero cierra rojo
     # ==========================
     if (
         vela_trampa["max"] > maximo and
         vela_trampa["close"] < vela_trampa["open"]
     ):
-        return {"action": "put"}
+        # 🔥 CONTINUACIÓN PREVIA BAJISTA
+        if vela_prev["close"] < vela_prev["open"]:
+            return {"action": "put"}
 
     # ==========================
     # 🔥 TRAMPA BAJISTA (FAKE BREAK ABAJO)
-    # Rompe abajo pero cierra verde
     # ==========================
     if (
         vela_trampa["min"] < minimo and
         vela_trampa["close"] > vela_trampa["open"]
     ):
-        return {"action": "call"}
+        # 🔥 CONTINUACIÓN PREVIA ALCISTA
+        if vela_prev["close"] > vela_prev["open"]:
+            return {"action": "call"}
 
     return None
