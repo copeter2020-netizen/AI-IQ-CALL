@@ -2,13 +2,15 @@ import os
 import time
 from iqoptionapi.stable_api import IQ_Option
 from strategy import detectar_trampa
-from telegram_bot import send_message, send_image_url
+from telegram_bot import send_message, send_image
 
 IQ_EMAIL = os.getenv("IQ_EMAIL")
 IQ_PASSWORD = os.getenv("IQ_PASSWORD")
 
 MONTO = 20000
 EXPIRACION = 1
+
+PAYOUT_MINIMO = 80  # 🔥 filtro PRO
 
 
 def silent(func, *args, **kwargs):
@@ -18,59 +20,54 @@ def silent(func, *args, **kwargs):
         return None
 
 
-# ==========================
-# 🔥 PARES BINARIOS REALES
-# ==========================
-def obtener_pares_binarios(iq):
-
-    pares_validos = []
-
-    try:
-        activos = iq.get_all_open_time()
-        profit = iq.get_all_profit()
-
-        for par, data in activos["binary"].items():
-
-            if not data["open"]:
-                continue
-
-            # 🔥 SOLO OTC FOREX REALES
-            if "OTC" not in par:
-                continue
-
-            # 🔒 FILTRO PARA EVITAR CRYPTO/STOCKS
-            if "/" in par:
-                continue
-
-            # 🔥 VALIDAR QUE EXISTA PROFIT
-            if par not in profit:
-                continue
-
-            pares_validos.append(par)
-
-    except:
-        pass
-
-    return pares_validos
-
-
-# ==========================
 def connect():
     while True:
         iq = IQ_Option(IQ_EMAIL, IQ_PASSWORD)
         silent(iq.connect)
 
         if iq.check_connect():
-            send_message("🔥 BOT BINARIAS REALES ACTIVO")
+            send_message("🔥 BOT PRO MAX ACTIVO (OTC + FILTRO)")
             return iq
 
         time.sleep(3)
 
 
+# ==========================
+# 🔥 FILTRO PRO MAX
+# ==========================
+def obtener_pares_pro(iq):
+
+    abiertos = iq.get_all_open_time()
+    profit = iq.get_all_profit()
+
+    pares = []
+
+    for tipo in ["turbo", "binary"]:
+        for par, data in abiertos[tipo].items():
+
+            if not data["open"]:
+                continue
+
+            if "-OTC" not in par:
+                continue
+
+            payout = 0
+
+            try:
+                payout = int(profit[par]["turbo"] * 100)
+            except:
+                continue
+
+            if payout >= PAYOUT_MINIMO:
+                pares.append(par)
+
+    return list(set(pares))
+
+
 def esperar_cierre():
     while int(time.time()) % 60 != 59:
         time.sleep(0.05)
-    time.sleep(1)
+    time.sleep(1.1)
 
 
 def esperar_apertura():
@@ -79,11 +76,8 @@ def esperar_apertura():
     time.sleep(0.2)
 
 
-# ==========================
 def resultado(iq, trade_id):
-
     while True:
-
         r = silent(iq.check_win_v4, trade_id)
 
         if r is None:
@@ -93,28 +87,27 @@ def resultado(iq, trade_id):
         try:
             if isinstance(r, tuple):
                 r = r[0]
-
             r = float(r)
-
         except:
             return
 
         if r > 0:
-            send_image_url(
-                "https://i.imgur.com/2QZ7Z6G.png",
-                f"✅ WIN +{r}"
-            )
+            send_message("✅ WIN")
+            send_image("https://i.imgur.com/2QZ7Z6G.png", "WIN 🟢")
         else:
-            send_image_url(
-                "https://i.imgur.com/Z6X7XwL.png",
-                f"❌ LOSS {r}"
-            )
+            send_message("❌ LOSS")
+            send_image("https://i.imgur.com/Z6X7XwL.png", "LOSS 🔴")
 
         return
 
 
-# ==========================
 def ejecutar(iq, par, accion):
+
+    # 😈 ENTRADAS INVERTIDAS
+    if accion == "call":
+        accion = "put"
+    else:
+        accion = "call"
 
     status, trade_id = silent(
         iq.buy, MONTO, par, accion, EXPIRACION
@@ -125,7 +118,6 @@ def ejecutar(iq, par, accion):
         resultado(iq, trade_id)
 
 
-# ==========================
 def run():
 
     iq = connect()
@@ -134,34 +126,33 @@ def run():
 
         esperar_cierre()
 
-        pares = obtener_pares_binarios(iq)
+        pares = obtener_pares_pro(iq)
 
         if not pares:
-            send_message("⚠️ No hay pares binarios disponibles")
+            send_message("⚠️ No hay pares válidos")
             time.sleep(5)
             continue
 
-        señal = None
-        par_elegido = None
+        señal_guardada = None
+        par_guardado = None
 
-        # 🔥 ANALIZA SOLO PARES REALES
         for par in pares:
 
-            señal_data = detectar_trampa(iq, par)
+            señal = detectar_trampa(iq, par)
 
-            if señal_data:
-                señal = señal_data["action"]
-                par_elegido = par
+            if señal:
+                señal_guardada = señal["action"]
+                par_guardado = par
                 break
 
-        if not señal:
+        if not señal_guardada:
             continue
 
-        send_message(f"🚨 TRAMPA DETECTADA {par_elegido} {señal}")
+        send_message(f"🚨 SEÑAL PRO {par_guardado} {señal_guardada}")
 
         esperar_apertura()
 
-        ejecutar(iq, par_elegido, señal)
+        ejecutar(iq, par_guardado, señal_guardada)
 
 
 if __name__ == "__main__":
