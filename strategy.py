@@ -3,32 +3,50 @@ import time
 
 def detectar_trampa(iq, par):
 
-    velas = iq.get_candles(par, 60, 30, time.time())
+    velas = iq.get_candles(par, 60, 50, time.time())
 
-    if not velas or len(velas) < 10:
+    if not velas or len(velas) < 15:
         return None
 
     # 🔥 VELA DE TRAMPA (cerrada)
-    vela_trampa = velas[-2]
+    vela = velas[-2]
 
-    # 🔥 HISTORIAL PARA NIVELES
     historial = velas[:-2]
 
     max_prev = max(v["max"] for v in historial)
     min_prev = min(v["min"] for v in historial)
 
+    # ==========================
     # 🔥 CUERPO Y MECHAS
-    cuerpo = abs(vela_trampa["close"] - vela_trampa["open"])
-    mecha_sup = vela_trampa["max"] - max(vela_trampa["close"], vela_trampa["open"])
-    mecha_inf = min(vela_trampa["close"], vela_trampa["open"]) - vela_trampa["min"]
+    # ==========================
+    cuerpo = abs(vela["close"] - vela["open"])
+    rango = vela["max"] - vela["min"]
+
+    if rango == 0:
+        return None
+
+    mecha_sup = vela["max"] - max(vela["close"], vela["open"])
+    mecha_inf = min(vela["close"], vela["open"]) - vela["min"]
+
+    # ==========================
+    # 🔥 FILTRO DOJI (FUERTE)
+    # ==========================
+    if cuerpo < rango * 0.35:
+        return None
+
+    # ==========================
+    # 🔥 FILTRO FUERZA (EVITA VELAS DÉBILES)
+    # ==========================
+    if cuerpo < (rango * 0.5):
+        return None
 
     # ==========================
     # 🔻 TRAMPA BAJISTA → CALL
     # ==========================
     if (
-        vela_trampa["min"] < min_prev and            # rompe soporte
-        vela_trampa["close"] > vela_trampa["open"] and
-        mecha_inf > cuerpo * 1.5                     # rechazo fuerte
+        vela["min"] < min_prev and           # rompe soporte
+        vela["close"] > vela["open"] and     # cierra verde
+        mecha_inf > cuerpo * 1.8             # rechazo fuerte real
     ):
         return {"action": "call"}
 
@@ -36,9 +54,9 @@ def detectar_trampa(iq, par):
     # 🔺 TRAMPA ALCISTA → PUT
     # ==========================
     if (
-        vela_trampa["max"] > max_prev and            # rompe resistencia
-        vela_trampa["close"] < vela_trampa["open"] and
-        mecha_sup > cuerpo * 1.5                     # rechazo fuerte
+        vela["max"] > max_prev and           # rompe resistencia
+        vela["close"] < vela["open"] and     # cierra roja
+        mecha_sup > cuerpo * 1.8             # rechazo fuerte real
     ):
         return {"action": "put"}
 
