@@ -2,50 +2,13 @@ import os
 import time
 from iqoptionapi.stable_api import IQ_Option
 from strategy import detectar_trampa
-from telegram_bot import send_message, get_command
+from telegram_bot import send_message, send_image_url
 
 IQ_EMAIL = os.getenv("IQ_EMAIL")
 IQ_PASSWORD = os.getenv("IQ_PASSWORD")
 
-PARES = [
-    "EURUSD-OTC",
-    "GBPUSD-OTC",
-    "EURAUD-OTC",
-    "CHFNOK-OTC",
-    "CHFJPY-OTC",
-    "CADJPY-OTC",
-    "CADCHF-OTC",
-    "AUDUSD-OTC",
-    "AUDNZD-OTC",
-    "AUDJPY-OTC",
-    "AUDCHF-OTC",
-    "AUDCAD-OTC",
-    "GBPCHF-OTC",
-    "GBPCAD-OTC",
-    "GBPAUD-OTC",
-    "EURTHB-OTC",
-    "EURNZD-OTC",
-    "EURJPY-OTC",
-    "EURGBP-OTC",
-    "EURCHF-OTC",
-    "USDCHF-OTC",
-    "USDCAD-OTC",
-    "USDBRL-OTC",
-    "PENUSD-OTC",
-    "NZDJPY-OTC",
-    "NZDCAD-OTC",
-    "NOKJPY-OTC",
-    "JPYTHB-OTC",
-    "GBPNZD-OTC",
-    "GBPJPY-OTC",
-    "USDHKD-OTC"
-]
-
 MONTO = 20000
 EXPIRACION = 1
-
-# 🔥 ESTADO GLOBAL
-BOT_ACTIVO = True
 
 
 def silent(func, *args, **kwargs):
@@ -55,23 +18,47 @@ def silent(func, *args, **kwargs):
         return None
 
 
+# ==========================
+# 🔥 OBTENER PARES OTC ACTIVOS
+# ==========================
+def obtener_pares_otc(iq):
+
+    activos = iq.get_all_open_time()
+
+    pares = []
+
+    try:
+        for par, data in activos["binary"].items():
+
+            if "OTC" in par and data["open"]:
+                pares.append(par)
+
+    except:
+        pass
+
+    return pares
+
+
+# ==========================
+# 🔥 CONEXIÓN
+# ==========================
 def connect():
     while True:
         iq = IQ_Option(IQ_EMAIL, IQ_PASSWORD)
         silent(iq.connect)
 
         if iq.check_connect():
-            print("🔥 SNIPER ACTIVO")
-            send_message("🔥 SNIPER ACTIVO")
+            send_message("🔥 BOT AUTO OTC ACTIVO")
             return iq
 
         time.sleep(3)
 
 
+# ==========================
 def esperar_cierre():
     while int(time.time()) % 60 != 59:
         time.sleep(0.05)
-    time.sleep(1.1)
+    time.sleep(1)
 
 
 def esperar_apertura():
@@ -80,27 +67,9 @@ def esperar_apertura():
     time.sleep(0.2)
 
 
-# 🔥 CONTROL TELEGRAM
-def verificar_comandos():
-    global BOT_ACTIVO
-
-    cmd = get_command()
-
-    if not cmd:
-        return
-
-    cmd = cmd.lower()
-
-    if "/stop" in cmd:
-        BOT_ACTIVO = False
-        send_message("⛔ BOT DETENIDO")
-
-    elif "/start" in cmd:
-        BOT_ACTIVO = True
-        send_message("✅ BOT ACTIVADO")
-
-
+# ==========================
 # 🔥 RESULTADO
+# ==========================
 def resultado(iq, trade_id):
 
     while True:
@@ -121,18 +90,22 @@ def resultado(iq, trade_id):
             return
 
         if r > 0:
-            mensaje = f"✅ WIN +{round(r,2)}"
-        elif r < 0:
-            mensaje = f"❌ LOSS {round(r,2)}"
+            send_image_url(
+                "https://i.imgur.com/2QZ7Z6G.png",
+                f"✅ WIN +{r}"
+            )
         else:
-            mensaje = "⚖️ EMPATE"
-
-        print(mensaje)
-        send_message(mensaje)
+            send_image_url(
+                "https://i.imgur.com/Z6X7XwL.png",
+                f"❌ LOSS {r}"
+            )
 
         return
 
 
+# ==========================
+# 🔥 EJECUCIÓN
+# ==========================
 def ejecutar(iq, par, accion):
 
     status, trade_id = silent(
@@ -142,60 +115,47 @@ def ejecutar(iq, par, accion):
     if status:
         send_message(f"🎯 {accion.upper()} {par}")
         resultado(iq, trade_id)
-    else:
-        send_message(f"⛔ ERROR EN {par}")
 
 
+# ==========================
+# 🔥 BOT PRINCIPAL
+# ==========================
 def run():
 
     iq = connect()
 
     while True:
 
-        # 🔥 VERIFICAR TELEGRAM SIEMPRE
-        verificar_comandos()
-
-        # 🔒 SI ESTÁ DETENIDO → NO OPERA
-        if not BOT_ACTIVO:
-            time.sleep(1)
-            continue
-
         esperar_cierre()
 
-        señal_guardada = None
-        par_guardado = None
+        pares = obtener_pares_otc(iq)
 
-        for par in PARES:
-
-            verificar_comandos()
-
-            if not BOT_ACTIVO:
-                break
-
-            señal = detectar_trampa(iq, par)
-
-            if señal:
-                señal_guardada = señal["action"]
-                par_guardado = par
-                break
-
-        if not BOT_ACTIVO:
+        if not pares:
+            send_message("⚠️ No hay pares OTC activos")
+            time.sleep(5)
             continue
 
-        if not señal_guardada:
+        señal = None
+        par_elegido = None
+
+        # 🔥 ANALIZA TODOS LOS DISPONIBLES
+        for par in pares:
+
+            señal_data = detectar_trampa(iq, par)
+
+            if señal_data:
+                señal = señal_data["action"]
+                par_elegido = par
+                break
+
+        if not señal:
             continue
 
-        send_message(f"🎯 SNIPER DETECTADO {par_guardado} {señal_guardada}")
+        send_message(f"🚨 TRAMPA DETECTADA {par_elegido} {señal}")
 
         esperar_apertura()
 
-        verificar_comandos()
-
-        if not BOT_ACTIVO:
-            send_message("⛔ CANCELADO ANTES DE ENTRAR")
-            continue
-
-        ejecutar(iq, par_guardado, señal_guardada)
+        ejecutar(iq, par_elegido, señal)
 
 
 if __name__ == "__main__":
