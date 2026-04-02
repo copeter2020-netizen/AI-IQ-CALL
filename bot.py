@@ -2,7 +2,7 @@ import os
 import time
 import sys
 
-# 🔥 bloquear errores internos
+# 🔥 BLOQUEAR ERRORES IQ OPTION
 class NullWriter:
     def write(self, _): pass
     def flush(self): pass
@@ -40,7 +40,7 @@ def connect():
         time.sleep(3)
 
 
-# 🔥 obtener pares activos
+# 🔥 PARES ACTIVOS
 def get_pares(iq):
     pares = []
 
@@ -59,6 +59,12 @@ def get_pares(iq):
         pass
 
     return pares
+
+
+# 🔥 ENTRADA ANTES DEL CIERRE (SNIPER REAL)
+def esperar_pre_cierre():
+    while int(time.time()) % 60 != 58:
+        time.sleep(0.01)
 
 
 def resultado(iq, trade_id):
@@ -118,7 +124,9 @@ def run():
                 print(f"SEÑAL: {par} {señal['action']}")
                 send_message(f"🚨 {par} {señal['action']}")
 
-                # 🔥 ENTRA INMEDIATO
+                # 🔥 ENTRADA ANTES DEL CIERRE
+                esperar_pre_cierre()
+
                 ejecutar(iq, par, señal["action"])
                 break
 
