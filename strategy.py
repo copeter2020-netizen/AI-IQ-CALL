@@ -8,9 +8,6 @@ def detectar_trampa(iq, par):
     if not velas or len(velas) < 10:
         return None
 
-    # ==========================
-    # 🔥 VELAS CLAVE
-    # ==========================
     vela_trampa = velas[-2]
     vela_anterior = velas[-3]
 
@@ -23,30 +20,23 @@ def detectar_trampa(iq, par):
     mecha_superior = vela_trampa["max"] - max(vela_trampa["close"], vela_trampa["open"])
     mecha_inferior = min(vela_trampa["close"], vela_trampa["open"]) - vela_trampa["min"]
 
-    # ==========================
-    # 🔥 NIVELES (LIQUIDEZ)
-    # ==========================
     maximo = max(v["max"] for v in velas[:-2])
     minimo = min(v["min"] for v in velas[:-2])
 
-    # ==========================
-    # 🔥 TRAMPA ORIGINAL
-    # ==========================
+    # 🔴 TRAMPA VENTA
     trampa_venta = (
         vela_trampa["max"] > maximo and
         vela_trampa["close"] < vela_trampa["open"] and
         mecha_superior > cuerpo * 1.5
     )
 
+    # 🟢 TRAMPA COMPRA
     trampa_compra = (
         vela_trampa["min"] < minimo and
         vela_trampa["close"] > vela_trampa["open"] and
         mecha_inferior > cuerpo * 1.5
     )
 
-    # ==========================
-    # 🔥 CONFIRMACIÓN ORIGINAL
-    # ==========================
     confirmacion_put = (
         trampa_venta and
         vela_anterior["close"] > vela_anterior["open"]
@@ -57,13 +47,11 @@ def detectar_trampa(iq, par):
         vela_anterior["close"] < vela_anterior["open"]
     )
 
-    # ==========================
-    # 😈 INVERSIÓN TOTAL
-    # ==========================
+    # 😈 INVERTIDO PRO
     if confirmacion_put:
-        return {"action": "call"}   # 🔥 antes era PUT
+        return {"action": "call"}
 
     if confirmacion_call:
-        return {"action": "put"}    # 🔥 antes era CALL
+        return {"action": "put"}
 
     return None
