@@ -9,8 +9,7 @@ IQ_PASSWORD = os.getenv("IQ_PASSWORD")
 
 MONTO = 20000
 EXPIRACION = 1
-
-PAYOUT_MINIMO = 80  # 🔥 filtro PRO
+PAYOUT_MINIMO = 80
 
 
 def silent(func, *args, **kwargs):
@@ -26,42 +25,56 @@ def connect():
         silent(iq.connect)
 
         if iq.check_connect():
-            send_message("🔥 BOT PRO MAX ACTIVO (OTC + FILTRO)")
+            send_message("🔥 BOT PRO MAX ACTIVO (FIX TOTAL)")
             return iq
 
         time.sleep(3)
 
 
 # ==========================
-# 🔥 FILTRO PRO MAX
+# 🔥 FILTRO REAL SIN ERRORES
 # ==========================
 def obtener_pares_pro(iq):
 
-    abiertos = iq.get_all_open_time()
-    profit = iq.get_all_profit()
+    try:
+        open_time = iq.get_all_open_time()
+        profit = iq.get_all_profit()
+    except:
+        return []
 
-    pares = []
+    pares_validos = []
 
-    for tipo in ["turbo", "binary"]:
-        for par, data in abiertos[tipo].items():
+    for tipo in ["binary", "turbo"]:
 
-            if not data["open"]:
+        if tipo not in open_time:
+            continue
+
+        for par, data in open_time[tipo].items():
+
+            # 🔥 SOLO ABIERTOS
+            if not data.get("open"):
                 continue
 
+            # 🔥 SOLO OTC
             if "-OTC" not in par:
                 continue
 
-            payout = 0
+            # 🔥 EVITA ACTIVOS FAKE / BUG
+            if "/" in par or " " in par:
+                continue
 
+            # 🔥 FILTRO PAYOUT
             try:
                 payout = int(profit[par]["turbo"] * 100)
             except:
                 continue
 
-            if payout >= PAYOUT_MINIMO:
-                pares.append(par)
+            if payout < PAYOUT_MINIMO:
+                continue
 
-    return list(set(pares))
+            pares_validos.append(par)
+
+    return list(set(pares_validos))
 
 
 def esperar_cierre():
@@ -103,7 +116,7 @@ def resultado(iq, trade_id):
 
 def ejecutar(iq, par, accion):
 
-    # 😈 ENTRADAS INVERTIDAS
+    # 😈 ENTRADA INVERTIDA
     if accion == "call":
         accion = "put"
     else:
@@ -129,8 +142,7 @@ def run():
         pares = obtener_pares_pro(iq)
 
         if not pares:
-            send_message("⚠️ No hay pares válidos")
-            time.sleep(5)
+            time.sleep(3)
             continue
 
         señal_guardada = None
@@ -138,7 +150,10 @@ def run():
 
         for par in pares:
 
-            señal = detectar_trampa(iq, par)
+            try:
+                señal = detectar_trampa(iq, par)
+            except:
+                continue
 
             if señal:
                 señal_guardada = señal["action"]
