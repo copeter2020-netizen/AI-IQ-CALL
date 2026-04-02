@@ -8,14 +8,14 @@ def detectar_trampa(iq, par):
     except:
         return None
 
-    if not velas or len(velas) < 30:
+    if not velas or len(velas) < 40:
         return None
 
     vela_prev = velas[-4]
     vela_trampa = velas[-3]
 
     # ==========================
-    # 🔧 FUNCIONES
+    # FUNCIONES
     # ==========================
     def cuerpo(v):
         return abs(v["close"] - v["open"])
@@ -29,7 +29,7 @@ def detectar_trampa(iq, par):
     score = 0
 
     # ==========================
-    # 🔥 1. FUERZA (ANTI DOJI)
+    # 🔥 1. FUERZA VELAS
     # ==========================
     if cuerpo(vela_prev) > rango(vela_prev) * 0.6:
         score += 1
@@ -38,30 +38,46 @@ def detectar_trampa(iq, par):
         score += 1
 
     # ==========================
-    # 🔥 2. ANTI LATERAL
+    # 🔥 2. CONTINUACIÓN REAL
     # ==========================
-    zona = velas[-15:]
+    if (
+        vela_prev["close"] > vela_prev["open"] and
+        velas[-5]["close"] > velas[-5]["open"]
+    ) or (
+        vela_prev["close"] < vela_prev["open"] and
+        velas[-5]["close"] < velas[-5]["open"]
+    ):
+        score += 1
+    else:
+        return None  # 🔴 obligatorio
+
+    # ==========================
+    # 🔥 3. ANTI LATERAL
+    # ==========================
+    zona = velas[-20:]
     rango_total = max(v["max"] for v in zona) - min(v["min"] for v in zona)
 
     if rango_total > rango(vela_trampa) * 3:
         score += 1
 
     # ==========================
-    # 🔥 3. LIQUIDEZ (SWEEP)
+    # 🔥 4. LIQUIDEZ (SWEEP)
     # ==========================
-    maximo = max(v["max"] for v in velas[-30:-3])
-    minimo = min(v["min"] for v in velas[-30:-3])
+    maximo = max(v["max"] for v in velas[-40:-3])
+    minimo = min(v["min"] for v in velas[-40:-3])
 
     sweep_alcista = vela_trampa["max"] > maximo
     sweep_bajista = vela_trampa["min"] < minimo
 
     if sweep_alcista or sweep_bajista:
         score += 1
+    else:
+        return None  # 🔴 obligatorio
 
     # ==========================
-    # 🔥 4. IMPULSO PREVIO
+    # 🔥 5. IMPULSO PREVIO
     # ==========================
-    impulso = velas[-7:-3]
+    impulso = velas[-8:-3]
 
     alcista = all(v["close"] > v["open"] for v in impulso)
     bajista = all(v["close"] < v["open"] for v in impulso)
@@ -70,18 +86,18 @@ def detectar_trampa(iq, par):
         score += 1
 
     # ==========================
-    # 🔥 5. ESTRUCTURA
+    # 🔥 6. ESTRUCTURA
     # ==========================
-    estructura = velas[-12:-3]
+    estructura = velas[-15:-3]
 
     alc = sum(1 for v in estructura if v["close"] > v["open"])
     baj = sum(1 for v in estructura if v["close"] < v["open"])
 
-    if alc >= 7 or baj >= 7:
+    if alc >= 9 or baj >= 9:
         score += 1
 
     # ==========================
-    # 🔥 6. RECHAZO (MECHA)
+    # 🔥 7. RECHAZO FUERTE
     # ==========================
     mecha_sup = vela_trampa["max"] - max(vela_trampa["close"], vela_trampa["open"])
     mecha_inf = min(vela_trampa["close"], vela_trampa["open"]) - vela_trampa["min"]
@@ -90,7 +106,7 @@ def detectar_trampa(iq, par):
         score += 1
 
     # ==========================
-    # 🔥 DECISIÓN FINAL (QUANT)
+    # 🔥 FILTRO FINAL
     # ==========================
     if score < 6:
         return None
