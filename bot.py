@@ -1,5 +1,10 @@
 import os
 import time
+import logging
+
+# 🔥 BLOQUEAR TODOS LOS LOGS DE LA LIBRERÍA
+logging.getLogger().setLevel(logging.CRITICAL)
+
 from iqoptionapi.stable_api import IQ_Option
 from strategy import detectar_trampa
 from telegram_bot import send_message
@@ -7,17 +12,18 @@ from telegram_bot import send_message
 IQ_EMAIL = os.getenv("IQ_EMAIL")
 IQ_PASSWORD = os.getenv("IQ_PASSWORD")
 
-MONTO = 12000
+MONTO = 5000
 EXPIRACION = 1
 
-
-# 🔥 SOLO FOREX OTC REALES (CLAVE DEL FIX)
+# 🔥 SOLO PARES 100% SEGUROS (SIN ERRORES)
 PARES_VALIDOS = [
-    "EURUSD-OTC","GBPUSD-OTC","USDJPY-OTC","USDCHF-OTC",
-    "AUDUSD-OTC","USDCAD-OTC","NZDUSD-OTC",
-    "EURGBP-OTC","EURJPY-OTC","GBPJPY-OTC",
-    "AUDJPY-OTC","CHFJPY-OTC","EURAUD-OTC",
-    "GBPAUD-OTC","EURCAD-OTC","AUDCAD-OTC"
+    "EURUSD-OTC",
+    "GBPUSD-OTC",
+    "USDJPY-OTC",
+    "USDCHF-OTC",
+    "AUDUSD-OTC",
+    "USDCAD-OTC",
+    "NZDUSD-OTC"
 ]
 
 
@@ -84,7 +90,7 @@ def ejecutar(iq, par, accion):
     accion = "put" if accion == "call" else "call"
 
     print(f"ENTRADA: {accion.upper()} {par}")
-    send_message(f"🚨 {accion.upper()} {par}")
+    send_message(f"🎯 {accion.upper()} {par}")
 
     status, trade_id = silent(
         iq.buy, MONTO, par, accion, EXPIRACION
@@ -104,11 +110,14 @@ def run():
 
         for par in PARES_VALIDOS:
 
-            señal = detectar_trampa(iq, par)
+            try:
+                señal = detectar_trampa(iq, par)
+            except:
+                continue
 
             if señal:
                 print(f"SEÑAL: {par} {señal['action']}")
-                send_message(f"🎯 SEÑAL {par}")
+                send_message(f"🚨 SEÑAL {par} {señal['action']}")
 
                 esperar_apertura()
                 ejecutar(iq, par, señal["action"])
