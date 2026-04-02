@@ -1,5 +1,14 @@
 import os
 import time
+import sys
+
+# 🔥 BLOQUEAR ERRORES INTERNOS (CLAVE)
+class NullWriter:
+    def write(self, _): pass
+    def flush(self): pass
+
+sys.stderr = NullWriter()
+
 from iqoptionapi.stable_api import IQ_Option
 from strategy import detectar_trampa
 from telegram_bot import send_message
@@ -14,7 +23,7 @@ BOT_ACTIVO = True
 
 
 # ==========================
-# 🔇 BLOQUEADOR TOTAL ERRORES
+# 🔇 SILENCIAR FUNCIONES
 # ==========================
 def silent(func, *args, **kwargs):
     try:
@@ -40,7 +49,7 @@ def connect():
 
 
 # ==========================
-# ⏱️ SNIPER (APERTURA EXACTA)
+# ⏱️ SNIPER
 # ==========================
 def esperar_cierre():
     while int(time.time()) % 60 != 59:
@@ -82,15 +91,12 @@ def resultado(iq, trade_id):
 
 
 # ==========================
-# 🚀 EJECUTAR OPERACIÓN
+# 🚀 EJECUTAR
 # ==========================
 def ejecutar(iq, par, accion):
 
-    # 🔥 INVERTIDO (como tú lo quieres)
-    if accion == "call":
-        accion = "put"
-    else:
-        accion = "call"
+    # 🔥 INVERTIDO
+    accion = "put" if accion == "call" else "call"
 
     status, trade_id = silent(
         iq.buy, MONTO, par, accion, EXPIRACION
@@ -103,7 +109,7 @@ def ejecutar(iq, par, accion):
 
 
 # ==========================
-# 🔥 OBTENER SOLO PARES ACTIVOS
+# 🔥 SOLO ACTIVOS REALES
 # ==========================
 def get_activos(iq):
     activos = []
@@ -114,8 +120,9 @@ def get_activos(iq):
         return activos
 
     try:
-        for par, data in all_open["digital"].items():
-            if data["open"]:
+        digital = all_open.get("digital", {})
+        for par, data in digital.items():
+            if data.get("open"):
                 activos.append(par)
     except:
         pass
@@ -124,7 +131,7 @@ def get_activos(iq):
 
 
 # ==========================
-# 🧠 LOOP PRINCIPAL
+# 🧠 LOOP
 # ==========================
 def run():
 
@@ -146,7 +153,6 @@ def run():
         señal = None
         par_elegido = None
 
-        # 🔥 ANALIZA SOLO PARES ACTIVOS
         for par in pares:
 
             data = detectar_trampa(iq, par)
