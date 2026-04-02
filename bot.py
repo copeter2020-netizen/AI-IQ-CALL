@@ -1,10 +1,31 @@
 import os
 import time
+import sys
 import logging
 
-# 🔥 BLOQUEAR LOGS
+# ==========================
+# 🔥 BLOQUEO TOTAL DE ERRORES
+# ==========================
+class DevNull:
+    def write(self, msg):
+        if any(x in msg.lower() for x in [
+            "asset", "not found", "underlying", "error"
+        ]):
+            return
+        sys.__stdout__.write(msg)
+
+    def flush(self):
+        pass
+
+
+sys.stdout = DevNull()
+sys.stderr = DevNull()
+
 logging.getLogger().setLevel(logging.CRITICAL)
 
+# ==========================
+# IMPORTS
+# ==========================
 from iqoptionapi.stable_api import IQ_Option
 from strategy import detectar_trampa
 from telegram_bot import send_message
@@ -12,10 +33,13 @@ from telegram_bot import send_message
 IQ_EMAIL = os.getenv("IQ_EMAIL")
 IQ_PASSWORD = os.getenv("IQ_PASSWORD")
 
-MONTO = 6000
+MONTO = 7900
 EXPIRACION = 1
 
 
+# ==========================
+# 🔥 FUNCIONES SEGURAS
+# ==========================
 def silent(func, *args, **kwargs):
     try:
         return func(*args, **kwargs)
@@ -23,6 +47,9 @@ def silent(func, *args, **kwargs):
         return None
 
 
+# ==========================
+# 🔥 CONEXIÓN
+# ==========================
 def connect():
     while True:
         iq = IQ_Option(IQ_EMAIL, IQ_PASSWORD)
@@ -36,41 +63,60 @@ def connect():
         time.sleep(3)
 
 
-# 🔥 OBTENER SOLO PARES ACTIVOS REALES
+# ==========================
+# 🔥 PARES REALES (SIN FALLAR)
+# ==========================
 def get_pares_activos(iq):
+
     try:
-        activos = iq.get_all_ACTIVES_OPCODE()
-        abiertos = iq.get_all_open_time()
+        open_time = iq.get_all_open_time()
+    except:
+        return []
 
-        pares = []
+    pares = []
 
-        for nombre in activos:
-            try:
-                if "-OTC" in nombre:
-                    if abiertos["binary"][nombre]["open"]:
-                        pares.append(nombre)
-            except:
+    try:
+        for par, data in open_time["binary"].items():
+
+            if not isinstance(par, str):
                 continue
 
-        return pares
+            if "-OTC" not in par:
+                continue
+
+            if not data.get("open"):
+                continue
+
+            # 🔥 FILTRO EXTRA (evita underlying error)
+            if "/" in par or " " in par:
+                continue
+
+            pares.append(par)
 
     except:
         return []
 
+    return pares
 
-# 🔥 ESPERA CIERRE EXACTO
+
+# ==========================
+# 🔥 TIMING SNIPER
+# ==========================
 def esperar_cierre():
     while int(time.time()) % 60 != 59:
-        time.sleep(0.01)
+        time.sleep(0.005)
 
 
-# 🔥 ENTRADA SNIPER REAL (00:00 EXACTO)
 def esperar_apertura():
     while int(time.time()) % 60 != 0:
-        pass  # 🔥 SIN DELAY → PRECISO
+        pass  # 🔥 SIN DELAY
 
 
+# ==========================
+# 🔥 RESULTADO
+# ==========================
 def resultado(iq, trade_id):
+
     while True:
         r = silent(iq.check_win_v4, trade_id)
 
@@ -95,6 +141,9 @@ def resultado(iq, trade_id):
         return
 
 
+# ==========================
+# 🔥 EJECUCIÓN
+# ==========================
 def ejecutar(iq, par, accion):
 
     # 🔥 INVERTIDO
@@ -111,13 +160,15 @@ def ejecutar(iq, par, accion):
         resultado(iq, trade_id)
 
 
+# ==========================
+# 🔥 MAIN
+# ==========================
 def run():
 
     iq = connect()
 
     while True:
 
-        # 🔥 ACTUALIZA PARES REALES
         pares = get_pares_activos(iq)
 
         if not pares:
@@ -127,6 +178,8 @@ def run():
         esperar_cierre()
 
         for par in pares:
+
+            señal = None
 
             try:
                 señal = detectar_trampa(iq, par)
@@ -143,4 +196,4 @@ def run():
 
 
 if __name__ == "__main__":
-    run()
+    run() 
