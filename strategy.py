@@ -4,52 +4,41 @@ import time
 def detectar_trampa(iq, par):
 
     try:
-        velas = iq.get_candles(par, 60, 60, time.time())
+        velas = iq.get_candles(par, 60, 50, time.time())
     except:
         return None
 
-    if not velas or len(velas) < 15:
+    if not velas or len(velas) < 10:
         return None
 
-    vela_trampa = velas[-2]
-    vela_anterior = velas[-3]
+    vela = velas[-1]
 
-    cuerpo = abs(vela_trampa["close"] - vela_trampa["open"])
-    rango = vela_trampa["max"] - vela_trampa["min"]
+    cuerpo = abs(vela["close"] - vela["open"])
+    rango = vela["max"] - vela["min"]
 
     if rango == 0:
         return None
 
-    mecha_superior = vela_trampa["max"] - max(vela_trampa["close"], vela_trampa["open"])
-    mecha_inferior = min(vela_trampa["close"], vela_trampa["open"]) - vela_trampa["min"]
-
-    ultimas = velas[-10:]
-    rango_total = max(v["max"] for v in ultimas) - min(v["min"] for v in ultimas)
-
-    if rango_total < (rango * 3):
-        return None
+    mecha_sup = vela["max"] - max(vela["close"], vela["open"])
+    mecha_inf = min(vela["close"], vela["open"]) - vela["min"]
 
     maximo = max(v["max"] for v in velas[:-2])
     minimo = min(v["min"] for v in velas[:-2])
 
-    trampa_venta = (
-        vela_trampa["max"] > maximo and
-        vela_trampa["close"] < vela_trampa["open"] and
-        mecha_superior > cuerpo * 1.8 and
-        cuerpo > (rango * 0.3)
-    )
+    # 🔥 TRAMPA VENTA → invertido (CALL)
+    if (
+        vela["max"] > maximo and
+        vela["close"] < vela["open"] and
+        mecha_sup > cuerpo * 1.5
+    ):
+        return {"action": "call"}
 
-    trampa_compra = (
-        vela_trampa["min"] < minimo and
-        vela_trampa["close"] > vela_trampa["open"] and
-        mecha_inferior > cuerpo * 1.8 and
-        cuerpo > (rango * 0.3)
-    )
-
-    if trampa_venta and vela_anterior["close"] > vela_anterior["open"]:
-        return {"action": "call"}  # invertido
-
-    if trampa_compra and vela_anterior["close"] < vela_anterior["open"]:
-        return {"action": "put"}   # invertido
+    # 🔥 TRAMPA COMPRA → invertido (PUT)
+    if (
+        vela["min"] < minimo and
+        vela["close"] > vela["open"] and
+        mecha_inf > cuerpo * 1.5
+    ):
+        return {"action": "put"}
 
     return None
