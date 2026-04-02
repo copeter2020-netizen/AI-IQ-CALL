@@ -4,11 +4,11 @@ import time
 def detectar_entrada(iq, par):
 
     try:
-        velas = iq.get_candles(par, 60, 80, time.time())
+        velas = iq.get_candles(par, 60, 70, time.time())
     except:
         return None
 
-    if not velas or len(velas) < 35:
+    if not velas or len(velas) < 25:
         return None
 
     vela_ruptura = velas[-3]
@@ -23,78 +23,67 @@ def detectar_entrada(iq, par):
     if rango(vela_ruptura) == 0 or rango(vela_confirmacion) == 0:
         return None
 
-    # 🔥 FUERZA INSTITUCIONAL
-    if cuerpo(vela_ruptura) < rango(vela_ruptura) * 0.7:
+    # 🔥 MENOS ESTRICTO (ANTES 0.7)
+    if cuerpo(vela_ruptura) < rango(vela_ruptura) * 0.55:
         return None
 
-    if cuerpo(vela_confirmacion) < rango(vela_confirmacion) * 0.7:
+    if cuerpo(vela_confirmacion) < rango(vela_confirmacion) * 0.55:
         return None
 
     # ==========================
-    # 🔥 TENDENCIA ULTRA FUERTE
+    # 🔥 TENDENCIA FLEXIBLE
     # ==========================
-    estructura = velas[-30:-3]
+    estructura = velas[-20:-3]
 
     alcistas = sum(1 for v in estructura if v["close"] > v["open"])
     bajistas = sum(1 for v in estructura if v["close"] < v["open"])
 
-    tendencia_alcista = alcistas >= 18
-    tendencia_bajista = bajistas >= 18
+    # 🔥 ANTES 18 → AHORA 11
+    tendencia_alcista = alcistas >= 11
+    tendencia_bajista = bajistas >= 11
 
     # ==========================
-    # 🔥 NIVELES LIMPIOS
+    # 🔥 NIVELES
     # ==========================
-    maximo = max(v["max"] for v in velas[-35:-3])
-    minimo = min(v["min"] for v in velas[-35:-3])
+    maximo = max(v["max"] for v in velas[-25:-3])
+    minimo = min(v["min"] for v in velas[-25:-3])
 
     rompe_arriba = vela_ruptura["close"] > maximo
     rompe_abajo = vela_ruptura["close"] < minimo
 
     # ==========================
-    # 🔥 FILTRO FAKE BREAKOUT PRO
-    # ==========================
-    ruptura_real_alcista = (
-        rompe_arriba and
-        vela_confirmacion["close"] > vela_ruptura["close"]
-    )
-
-    ruptura_real_bajista = (
-        rompe_abajo and
-        vela_confirmacion["close"] < vela_ruptura["close"]
-    )
-
-    # ==========================
-    # 🔥 CONFIRMACIÓN INSTITUCIONAL
+    # 🔥 CONFIRMACIÓN (SE MANTIENE FUERTE)
     # ==========================
     confirmacion_call = (
         vela_confirmacion["close"] > vela_confirmacion["open"] and
-        ruptura_real_alcista
+        vela_confirmacion["close"] > vela_ruptura["close"]
     )
 
     confirmacion_put = (
         vela_confirmacion["close"] < vela_confirmacion["open"] and
-        ruptura_real_bajista
+        vela_confirmacion["close"] < vela_ruptura["close"]
     )
 
     # ==========================
-    # 🔥 ANTI LATERAL EXTREMO
+    # 🔥 ANTI LATERAL (MENOS ESTRICTO)
     # ==========================
-    zona = velas[-25:]
+    zona = velas[-15:]
     rango_total = max(v["max"] for v in zona) - min(v["min"] for v in zona)
 
-    if rango_total < rango(vela_ruptura) * 4:
+    # 🔥 ANTES *4 → AHORA *2.5
+    if rango_total < rango(vela_ruptura) * 2.5:
         return None
 
     # ==========================
     # 🔺 CALL
     # ==========================
-    if tendencia_alcista and confirmacion_call:
+    if tendencia_alcista and rompe_arriba and confirmacion_call:
         return {"action": "call"}
 
     # ==========================
     # 🔻 PUT
     # ==========================
-    if tendencia_bajista and confirmacion_put:
+    if tendencia_bajista and rompe_abajo and confirmacion_put:
         return {"action": "put"}
 
     return None
