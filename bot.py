@@ -11,6 +11,9 @@ MONTO = 2000
 EXPIRACION = 1
 
 
+# ==========================
+# 🔒 SAFE (ANTI ERRORES)
+# ==========================
 def safe(func, *args, **kwargs):
     try:
         return func(*args, **kwargs)
@@ -18,19 +21,26 @@ def safe(func, *args, **kwargs):
         return None
 
 
+# ==========================
+# 🔌 CONEXIÓN
+# ==========================
 def connect():
     while True:
         iq = IQ_Option(IQ_EMAIL, IQ_PASSWORD)
         safe(iq.connect)
 
         if iq.check_connect():
+            iq.change_balance("PRACTICE")  # 🔥 usa demo (puedes cambiar a REAL)
             print("BOT ACTIVADO")
-            send_message("🔥 BOT OPERANDO")
+            send_message("🔥 BOT OPERANDO REAL")
             return iq
 
         time.sleep(3)
 
 
+# ==========================
+# ⏱️ TIEMPOS SNIPER
+# ==========================
 def esperar_cierre():
     while int(time.time()) % 60 != 59:
         time.sleep(0.03)
@@ -41,33 +51,60 @@ def esperar_apertura():
         time.sleep(0.005)
 
 
-# 🔥 SOLO PARES REALES OPERABLES
+# ==========================
+# 📊 PARES ACTIVOS REALES
+# ==========================
 def obtener_pares(iq):
+
+    pares_validos = []
+
     try:
         activos = iq.get_all_ACTIVES_OPCODE()
-        return [par for par in activos.keys() if "-OTC" in par]
+        open_time = iq.get_all_open_time()
     except:
         return []
 
+    for par in activos.keys():
+        try:
+            if open_time["digital"][par]["open"]:
+                pares_validos.append(par)
+        except:
+            continue
 
-# 🔥 EJECUCIÓN REAL
+    return pares_validos
+
+
+# ==========================
+# 💥 EJECUCIÓN REAL
+# ==========================
 def ejecutar(iq, par, accion):
 
     try:
-        status, trade_id = iq.buy_digital_spot(
-            par,
+        # 🔥 activar digitales
+        iq.subscribe_strike_list(par, EXPIRACION)
+        time.sleep(1)
+
+        # 🔥 ejecutar operación REAL
+        status, trade_id = iq.buy_digital(
             MONTO,
+            par,
             accion,
             EXPIRACION
         )
+
     except:
         return
 
     if status:
         print(f"ENTRADA: {accion.upper()} {par}")
         send_message(f"🎯 ENTRADA {accion.upper()} {par}")
+    else:
+        print("FALLO ENTRADA")
 
 
+# ==========================
+# 🚀 LOOP PRINCIPAL
+# ==========================
 def run():
 
     iq = connect()
@@ -90,13 +127,17 @@ def run():
                 accion = señal["action"]
 
                 print(f"SEÑAL: {par} {accion}")
-                send_message(f"🚨 {par} {accion}")
+                send_message(f"🚨 SEÑAL {par} {accion}")
 
                 esperar_apertura()
+
                 ejecutar(iq, par, accion)
 
                 break
 
 
+# ==========================
+# ▶️ START
+# ==========================
 if __name__ == "__main__":
     run()
