@@ -4,41 +4,43 @@ import time
 def detectar_trampa(iq, par):
 
     try:
-        velas = iq.get_candles(par, 60, 50, time.time())
+        velas = iq.get_candles(par, 60, 30, time.time())
     except:
         return None
 
     if not velas or len(velas) < 10:
         return None
 
-    vela = velas[-2]
+    # ==========================
+    # 🔥 DEFINICIÓN DE VELAS
+    # ==========================
+    vela_trampa = velas[-2]   # vela actual cerrada (trampa)
+    vela_anterior = velas[-3]
 
-    cuerpo = abs(vela["close"] - vela["open"])
-    rango = vela["max"] - vela["min"]
+    # ==========================
+    # 🔥 NIVELES DEL MERCADO
+    # ==========================
+    maximo = max(v["max"] for v in velas[-10:-2])
+    minimo = min(v["min"] for v in velas[-10:-2])
 
-    if rango == 0:
-        return None
-
-    mecha_sup = vela["max"] - max(vela["close"], vela["open"])
-    mecha_inf = min(vela["close"], vela["open"]) - vela["min"]
-
-    maximo = max(v["max"] for v in velas[:-2])
-    minimo = min(v["min"] for v in velas[:-2])
-
-    # 🔥 TRAMPA VENTA (invertido → CALL)
+    # ==========================
+    # 🔥 TRAMPA ALCISTA (FAKE BREAK ARRIBA)
+    # Rompe arriba pero cierra rojo
+    # ==========================
     if (
-        vela["max"] > maximo and
-        vela["close"] < vela["open"] and
-        mecha_sup > cuerpo * 1.5
-    ):
-        return {"action": "call"}
-
-    # 🔥 TRAMPA COMPRA (invertido → PUT)
-    if (
-        vela["min"] < minimo and
-        vela["close"] > vela["open"] and
-        mecha_inf > cuerpo * 1.5
+        vela_trampa["max"] > maximo and
+        vela_trampa["close"] < vela_trampa["open"]
     ):
         return {"action": "put"}
+
+    # ==========================
+    # 🔥 TRAMPA BAJISTA (FAKE BREAK ABAJO)
+    # Rompe abajo pero cierra verde
+    # ==========================
+    if (
+        vela_trampa["min"] < minimo and
+        vela_trampa["close"] > vela_trampa["open"]
+    ):
+        return {"action": "call"}
 
     return None
