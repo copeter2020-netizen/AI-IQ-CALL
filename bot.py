@@ -12,22 +12,12 @@ EXPIRACION = 1
 
 
 # ==========================
-# 🔒 BLOQUEADOR TOTAL DE ERRORES
-# ==========================
-def safe(func, *args, **kwargs):
-    try:
-        return func(*args, **kwargs)
-    except:
-        return None
-
-
-# ==========================
 # 🔌 CONEXIÓN
 # ==========================
 def connect():
     while True:
         iq = IQ_Option(IQ_EMAIL, IQ_PASSWORD)
-        safe(iq.connect)
+        iq.connect()
 
         if iq.check_connect():
             iq.change_balance("PRACTICE")
@@ -39,7 +29,7 @@ def connect():
 
 
 # ==========================
-# ⏱️ TIEMPO EXACTO
+# ⏱️ TIEMPO
 # ==========================
 def esperar_cierre():
     while int(time.time()) % 60 != 59:
@@ -52,20 +42,17 @@ def esperar_apertura():
 
 
 # ==========================
-# 📊 PARES ACTIVOS REALES
+# 📊 PARES ACTIVOS
 # ==========================
 def obtener_pares(iq):
 
     pares = []
 
-    try:
-        open_time = iq.get_all_open_time()
-    except:
-        return []
+    open_time = iq.get_all_open_time()
 
-    for par in open_time.get("digital", {}):
+    for par in open_time.get("binary", {}):
         try:
-            if open_time["digital"][par]["open"]:
+            if open_time["binary"][par]["open"]:
                 pares.append(par)
         except:
             continue
@@ -74,35 +61,12 @@ def obtener_pares(iq):
 
 
 # ==========================
-# 🚫 ANTI ERROR UNDERLYING
-# ==========================
-def preparar_par(iq, par):
-
-    try:
-        iq.subscribe_strike_list(par, EXPIRACION)
-        time.sleep(1.5)
-
-        data = iq.get_digital_underlying_list_data()
-        if not data:
-            return False
-
-        return True
-
-    except:
-        return False
-
-
-# ==========================
-# 💥 EJECUCIÓN SEGURA REAL
+# 💥 EJECUCIÓN (SIN ERRORES)
 # ==========================
 def ejecutar(iq, par, accion):
 
-    # 🔥 evitar error underlying
-    if not preparar_par(iq, par):
-        return
-
     try:
-        status, trade_id = iq.buy_digital(
+        status, trade_id = iq.buy(
             MONTO,
             par,
             accion,
@@ -117,7 +81,7 @@ def ejecutar(iq, par, accion):
 
 
 # ==========================
-# 🚀 LOOP PRINCIPAL
+# 🚀 LOOP
 # ==========================
 def run():
 
@@ -155,4 +119,4 @@ def run():
 # ▶️ START
 # ==========================
 if __name__ == "__main__":
-    run() 
+    run()
