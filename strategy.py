@@ -1,4 +1,74 @@
 import time
+import json
+import os
+
+DB_FILE = "ia_data.json"
+
+
+# ==========================
+# 🧠 CARGAR DATOS IA
+# ==========================
+def cargar_datos():
+    if not os.path.exists(DB_FILE):
+        return {}
+
+    try:
+        with open(DB_FILE, "r") as f:
+            return json.load(f)
+    except:
+        return {}
+
+
+# ==========================
+# 💾 GUARDAR DATOS IA
+# ==========================
+def guardar_datos(data):
+    try:
+        with open(DB_FILE, "w") as f:
+            json.dump(data, f)
+    except:
+        pass
+
+
+# ==========================
+# 📊 REGISTRAR RESULTADO
+# ==========================
+def registrar_resultado(par, resultado):
+
+    data = cargar_datos()
+
+    if par not in data:
+        data[par] = {"win": 0, "loss": 0}
+
+    if resultado == "win":
+        data[par]["win"] += 1
+    else:
+        data[par]["loss"] += 1
+
+    guardar_datos(data)
+
+
+# ==========================
+# 🧠 FILTRO IA (WINRATE)
+# ==========================
+def par_permitido(par):
+
+    data = cargar_datos()
+
+    if par not in data:
+        return True  # nuevo par → probar
+
+    wins = data[par]["win"]
+    loss = data[par]["loss"]
+
+    total = wins + loss
+
+    if total < 5:
+        return True  # no hay suficiente info
+
+    winrate = wins / total
+
+    return winrate >= 0.6  # 🔥 SOLO BUENOS PARES
 
 
 # ==========================
@@ -8,34 +78,21 @@ def payout_valido(iq, par, minimo=70):
     try:
         profit = iq.get_all_profit()
         p = profit.get(par, {})
-        digital = p.get("digital", 0)
-        return digital >= minimo
+        return p.get("digital", 0) >= minimo
     except:
         return False
 
 
 # ==========================
-# 🔥 MULTI ENTRADA CONTROLADA
-# ==========================
-def multi_entrada(resultado_anterior):
-    """
-    Martingala inteligente (máximo 2 niveles)
-    """
-    if resultado_anterior == "loss_1":
-        return 2  # segunda entrada
-    if resultado_anterior == "loss_2":
-        return 3  # tercera entrada
-    return 1      # entrada normal
-
-
-# ==========================
-# 🧠 ESTRATEGIA PRINCIPAL
+# 🧠 ESTRATEGIA IA
 # ==========================
 def detectar_trampa(iq, par):
 
-    # ==========================
-    # 🔥 FILTRO PAYOUT
-    # ==========================
+    # 🔥 IA FILTRO
+    if not par_permitido(par):
+        return None
+
+    # 🔥 PAYOUT
     if not payout_valido(iq, par):
         return None
 
@@ -51,9 +108,6 @@ def detectar_trampa(iq, par):
     vela_prev = velas[-4]
     vela_trampa = velas[-3]
 
-    # ==========================
-    # FUNCIONES
-    # ==========================
     def cuerpo(v):
         return abs(v["close"] - v["open"])
 
@@ -65,15 +119,7 @@ def detectar_trampa(iq, par):
 
     score = 0
 
-    # ==========================
-    # 🔥 1. IMPULSO FUERTE
-    # ==========================
-    if cuerpo(vela_prev) > rango(vela_prev) * 0.6:
-        score += 1
-
-    # ==========================
-    # 🔥 2. CONTINUIDAD (OBLIGATORIO)
-    # ==========================
+    # 🔥 CONTINUACIÓN
     if (
         vela_base["close"] > vela_base["open"] and
         vela_prev["close"] > vela_prev["open"]
@@ -85,9 +131,7 @@ def detectar_trampa(iq, par):
     else:
         return None
 
-    # ==========================
-    # 🔥 3. TRAMPA INSTITUCIONAL (LIQUIDEZ)
-    # ==========================
+    # 🔥 TRAMPA (LIQUIDEZ)
     maximo = max(v["max"] for v in velas[-50:-3])
     minimo = min(v["min"] for v in velas[-50:-3])
 
@@ -95,69 +139,34 @@ def detectar_trampa(iq, par):
     sweep_bajista = vela_trampa["min"] < minimo
 
     if sweep_alcista or sweep_bajista:
-        score += 2  # peso fuerte
+        score += 2
     else:
         return None
 
-    # ==========================
-    # 🔥 4. RECHAZO FUERTE (MANIPULACIÓN)
-    # ==========================
+    # 🔥 RECHAZO
     mecha_sup = vela_trampa["max"] - max(vela_trampa["close"], vela_trampa["open"])
     mecha_inf = min(vela_trampa["close"], vela_trampa["open"]) - vela_trampa["min"]
 
-    if mecha_sup > cuerpo(vela_trampa) * 1.5 or mecha_inf > cuerpo(vela_trampa) * 1.5:
+    if mecha_sup > cuerpo(vela_trampa) or mecha_inf > cuerpo(vela_trampa):
         score += 1
 
-    # ==========================
-    # 🔥 5. ANTI LATERAL
-    # ==========================
-    zona = velas[-20:]
-    rango_total = max(v["max"] for v in zona) - min(v["min"] for v in zona)
-
-    if rango_total > rango(vela_trampa) * 3:
-        score += 1
-
-    # ==========================
-    # 🔥 6. ESTRUCTURA (DOMINANCIA)
-    # ==========================
+    # 🔥 ESTRUCTURA
     estructura = velas[-15:-3]
-
     alc = sum(1 for v in estructura if v["close"] > v["open"])
     baj = sum(1 for v in estructura if v["close"] < v["open"])
 
     if alc >= 10 or baj >= 10:
         score += 1
 
-    # ==========================
-    # 🔥 FILTRO FINAL (ALTA PRECISIÓN)
-    # ==========================
-    if score < 6:
+    if score < 4:
         return None
 
-    # ==========================
-    # 🔻 TRAMPA ARRIBA → PUT
-    # ==========================
-    if (
-        sweep_alcista and
-        vela_trampa["close"] < vela_trampa["open"] and
-        vela_prev["close"] < vela_prev["open"]
-    ):
-        return {
-            "action": "put",
-            "entrada": multi_entrada(None)
-        }
+    # 🔻 PUT
+    if sweep_alcista and vela_trampa["close"] < vela_trampa["open"]:
+        return {"action": "put"}
 
-    # ==========================
-    # 🔺 TRAMPA ABAJO → CALL
-    # ==========================
-    if (
-        sweep_bajista and
-        vela_trampa["close"] > vela_trampa["open"] and
-        vela_prev["close"] > vela_prev["open"]
-    ):
-        return {
-            "action": "call",
-            "entrada": multi_entrada(None)
-        }
+    # 🔺 CALL
+    if sweep_bajista and vela_trampa["close"] > vela_trampa["open"]:
+        return {"action": "call"}
 
     return None
