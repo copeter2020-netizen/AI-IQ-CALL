@@ -2,7 +2,7 @@ import os
 import time
 import logging
 
-# 🔥 BLOQUEAR TODOS LOS LOGS DE LA LIBRERÍA
+# 🔥 BLOQUEAR LOGS
 logging.getLogger().setLevel(logging.CRITICAL)
 
 from iqoptionapi.stable_api import IQ_Option
@@ -12,19 +12,8 @@ from telegram_bot import send_message
 IQ_EMAIL = os.getenv("IQ_EMAIL")
 IQ_PASSWORD = os.getenv("IQ_PASSWORD")
 
-MONTO = 5000
+MONTO = 6000
 EXPIRACION = 1
-
-# 🔥 SOLO PARES 100% SEGUROS (SIN ERRORES)
-PARES_VALIDOS = [
-    "EURUSD-OTC",
-    "GBPUSD-OTC",
-    "USDJPY-OTC",
-    "USDCHF-OTC",
-    "AUDUSD-OTC",
-    "USDCAD-OTC",
-    "NZDUSD-OTC"
-]
 
 
 def silent(func, *args, **kwargs):
@@ -40,23 +29,45 @@ def connect():
         silent(iq.connect)
 
         if iq.check_connect():
-            print("🔥 BOT ACTIVO SIN ERRORES")
-            send_message("🔥 BOT ACTIVO SIN ERRORES")
+            print("🔥 BOT SNIPER ACTIVO")
+            send_message("🔥 BOT SNIPER ACTIVO")
             return iq
 
         time.sleep(3)
 
 
+# 🔥 OBTENER SOLO PARES ACTIVOS REALES
+def get_pares_activos(iq):
+    try:
+        activos = iq.get_all_ACTIVES_OPCODE()
+        abiertos = iq.get_all_open_time()
+
+        pares = []
+
+        for nombre in activos:
+            try:
+                if "-OTC" in nombre:
+                    if abiertos["binary"][nombre]["open"]:
+                        pares.append(nombre)
+            except:
+                continue
+
+        return pares
+
+    except:
+        return []
+
+
+# 🔥 ESPERA CIERRE EXACTO
 def esperar_cierre():
     while int(time.time()) % 60 != 59:
-        time.sleep(0.05)
-    time.sleep(1)
+        time.sleep(0.01)
 
 
+# 🔥 ENTRADA SNIPER REAL (00:00 EXACTO)
 def esperar_apertura():
     while int(time.time()) % 60 != 0:
-        time.sleep(0.01)
-    time.sleep(0.2)
+        pass  # 🔥 SIN DELAY → PRECISO
 
 
 def resultado(iq, trade_id):
@@ -106,9 +117,16 @@ def run():
 
     while True:
 
+        # 🔥 ACTUALIZA PARES REALES
+        pares = get_pares_activos(iq)
+
+        if not pares:
+            time.sleep(1)
+            continue
+
         esperar_cierre()
 
-        for par in PARES_VALIDOS:
+        for par in pares:
 
             try:
                 señal = detectar_trampa(iq, par)
