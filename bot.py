@@ -4,23 +4,20 @@ import sys
 import logging
 
 # ==========================
-# 🔥 BLOQUEO TOTAL DE ERRORES
+# 🔥 BLOQUEO TOTAL CONSOLA
 # ==========================
-class DevNull:
+class CleanConsole:
     def write(self, msg):
-        if any(x in msg.lower() for x in [
-            "asset", "not found", "underlying", "error"
-        ]):
-            return
-        sys.__stdout__.write(msg)
+        # SOLO permite estos textos
+        if any(x in msg for x in ["BOT ACTIVADO", "SEÑAL:", "ENTRADA:", "WIN", "LOSS"]):
+            sys.__stdout__.write(msg)
 
     def flush(self):
         pass
 
 
-sys.stdout = DevNull()
-sys.stderr = DevNull()
-
+sys.stdout = CleanConsole()
+sys.stderr = CleanConsole()
 logging.getLogger().setLevel(logging.CRITICAL)
 
 # ==========================
@@ -33,12 +30,12 @@ from telegram_bot import send_message
 IQ_EMAIL = os.getenv("IQ_EMAIL")
 IQ_PASSWORD = os.getenv("IQ_PASSWORD")
 
-MONTO = 7900
+MONTO = 7500
 EXPIRACION = 1
 
 
 # ==========================
-# 🔥 FUNCIONES SEGURAS
+# 🔒 SILENCIADOR
 # ==========================
 def silent(func, *args, **kwargs):
     try:
@@ -56,18 +53,17 @@ def connect():
         silent(iq.connect)
 
         if iq.check_connect():
-            print("🔥 BOT SNIPER ACTIVO")
-            send_message("🔥 BOT SNIPER ACTIVO")
+            print("BOT ACTIVADO")
+            send_message("🔥 BOT ACTIVADO")
             return iq
 
         time.sleep(3)
 
 
 # ==========================
-# 🔥 PARES REALES (SIN FALLAR)
+# 🔥 PARES ACTIVOS REALES
 # ==========================
 def get_pares_activos(iq):
-
     try:
         open_time = iq.get_all_open_time()
     except:
@@ -77,22 +73,8 @@ def get_pares_activos(iq):
 
     try:
         for par, data in open_time["binary"].items():
-
-            if not isinstance(par, str):
-                continue
-
-            if "-OTC" not in par:
-                continue
-
-            if not data.get("open"):
-                continue
-
-            # 🔥 FILTRO EXTRA (evita underlying error)
-            if "/" in par or " " in par:
-                continue
-
-            pares.append(par)
-
+            if "-OTC" in par and data["open"]:
+                pares.append(par)
     except:
         return []
 
@@ -100,7 +82,7 @@ def get_pares_activos(iq):
 
 
 # ==========================
-# 🔥 TIMING SNIPER
+# ⏱️ TIMING SNIPER
 # ==========================
 def esperar_cierre():
     while int(time.time()) % 60 != 59:
@@ -109,14 +91,13 @@ def esperar_cierre():
 
 def esperar_apertura():
     while int(time.time()) % 60 != 0:
-        pass  # 🔥 SIN DELAY
+        pass
 
 
 # ==========================
 # 🔥 RESULTADO
 # ==========================
 def resultado(iq, trade_id):
-
     while True:
         r = silent(iq.check_win_v4, trade_id)
 
@@ -142,7 +123,7 @@ def resultado(iq, trade_id):
 
 
 # ==========================
-# 🔥 EJECUCIÓN
+# 🚀 EJECUCIÓN
 # ==========================
 def ejecutar(iq, par, accion):
 
@@ -196,4 +177,4 @@ def run():
 
 
 if __name__ == "__main__":
-    run() 
+    run()
