@@ -2,7 +2,7 @@ import os
 import time
 import sys
 
-# 🔥 BLOQUEAR ERRORES INTERNOS (CLAVE)
+# 🔥 BLOQUEAR ERRORES INTERNOS (IQ OPTION)
 class NullWriter:
     def write(self, _): pass
     def flush(self): pass
@@ -10,13 +10,13 @@ class NullWriter:
 sys.stderr = NullWriter()
 
 from iqoptionapi.stable_api import IQ_Option
-from strategy import detectar_trampa
+from strategy import detectar_trampa, registrar_resultado
 from telegram_bot import send_message
 
 IQ_EMAIL = os.getenv("IQ_EMAIL")
 IQ_PASSWORD = os.getenv("IQ_PASSWORD")
 
-MONTO = 20000
+MONTO = 5000
 EXPIRACION = 1
 
 BOT_ACTIVO = True
@@ -63,9 +63,9 @@ def esperar_apertura():
 
 
 # ==========================
-# 📊 RESULTADO
+# 📊 RESULTADO + IA
 # ==========================
-def resultado(iq, trade_id):
+def resultado(iq, trade_id, par):
     while True:
         r = silent(iq.check_win_v4, trade_id)
 
@@ -83,9 +83,11 @@ def resultado(iq, trade_id):
         if r > 0:
             print("WIN")
             send_message("✅ WIN")
+            registrar_resultado(par, "win")
         else:
             print("LOSS")
             send_message("❌ LOSS")
+            registrar_resultado(par, "loss")
 
         return
 
@@ -95,7 +97,7 @@ def resultado(iq, trade_id):
 # ==========================
 def ejecutar(iq, par, accion):
 
-    # 🔥 INVERTIDO
+    # 🔥 ENTRADAS INVERTIDAS
     accion = "put" if accion == "call" else "call"
 
     status, trade_id = silent(
@@ -105,7 +107,7 @@ def ejecutar(iq, par, accion):
     if status:
         print(f"ENTRADA: {accion.upper()} {par}")
         send_message(f"🎯 ENTRADA: {accion.upper()} {par}")
-        resultado(iq, trade_id)
+        resultado(iq, trade_id, par)
 
 
 # ==========================
@@ -131,7 +133,7 @@ def get_activos(iq):
 
 
 # ==========================
-# 🧠 LOOP
+# 🧠 LOOP PRINCIPAL
 # ==========================
 def run():
 
@@ -153,6 +155,7 @@ def run():
         señal = None
         par_elegido = None
 
+        # 🔥 ANALIZA SOLO PARES ACTIVOS + IA
         for par in pares:
 
             data = detectar_trampa(iq, par)
