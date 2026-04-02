@@ -7,7 +7,7 @@ from telegram_bot import send_message, send_image
 IQ_EMAIL = os.getenv("IQ_EMAIL")
 IQ_PASSWORD = os.getenv("IQ_PASSWORD")
 
-MONTO = 20000
+MONTO = 12000
 EXPIRACION = 1
 PAYOUT_MINIMO = 80
 
@@ -25,16 +25,15 @@ def connect():
         silent(iq.connect)
 
         if iq.check_connect():
-            send_message("🔥 BOT PRO MAX ACTIVO (FIX TOTAL)")
+            print("🔥 BOT ACTIVO")
+            send_message("🔥 BOT ACTIVO")
             return iq
 
         time.sleep(3)
 
 
-# ==========================
-# 🔥 FILTRO REAL SIN ERRORES
-# ==========================
-def obtener_pares_pro(iq):
+# 🔥 SOLO ACTIVOS REALES (FIX ERROR)
+def obtener_pares_validos(iq):
 
     try:
         open_time = iq.get_all_open_time()
@@ -42,7 +41,7 @@ def obtener_pares_pro(iq):
     except:
         return []
 
-    pares_validos = []
+    pares = []
 
     for tipo in ["binary", "turbo"]:
 
@@ -51,19 +50,12 @@ def obtener_pares_pro(iq):
 
         for par, data in open_time[tipo].items():
 
-            # 🔥 SOLO ABIERTOS
             if not data.get("open"):
                 continue
 
-            # 🔥 SOLO OTC
             if "-OTC" not in par:
                 continue
 
-            # 🔥 EVITA ACTIVOS FAKE / BUG
-            if "/" in par or " " in par:
-                continue
-
-            # 🔥 FILTRO PAYOUT
             try:
                 payout = int(profit[par]["turbo"] * 100)
             except:
@@ -72,9 +64,9 @@ def obtener_pares_pro(iq):
             if payout < PAYOUT_MINIMO:
                 continue
 
-            pares_validos.append(par)
+            pares.append(par)
 
-    return list(set(pares_validos))
+    return list(set(pares))
 
 
 def esperar_cierre():
@@ -105,9 +97,11 @@ def resultado(iq, trade_id):
             return
 
         if r > 0:
+            print("WIN")
             send_message("✅ WIN")
             send_image("https://i.imgur.com/2QZ7Z6G.png", "WIN 🟢")
         else:
+            print("LOSS")
             send_message("❌ LOSS")
             send_image("https://i.imgur.com/Z6X7XwL.png", "LOSS 🔴")
 
@@ -116,18 +110,19 @@ def resultado(iq, trade_id):
 
 def ejecutar(iq, par, accion):
 
-    # 😈 ENTRADA INVERTIDA
     if accion == "call":
         accion = "put"
     else:
         accion = "call"
+
+    print(f"ENTRADA: {accion.upper()} {par}")
+    send_message(f"🚨 ENTRADA {accion.upper()} {par}")
 
     status, trade_id = silent(
         iq.buy, MONTO, par, accion, EXPIRACION
     )
 
     if status:
-        send_message(f"🎯 {accion.upper()} {par}")
         resultado(iq, trade_id)
 
 
@@ -139,14 +134,12 @@ def run():
 
         esperar_cierre()
 
-        pares = obtener_pares_pro(iq)
+        pares = obtener_pares_validos(iq)
 
         if not pares:
-            time.sleep(3)
+            print("Sin pares válidos")
+            time.sleep(2)
             continue
-
-        señal_guardada = None
-        par_guardado = None
 
         for par in pares:
 
@@ -156,18 +149,12 @@ def run():
                 continue
 
             if señal:
-                señal_guardada = señal["action"]
-                par_guardado = par
+                print(f"SEÑAL DETECTADA: {par} {señal['action']}")
+                send_message(f"🎯 SEÑAL {par} {señal['action']}")
+
+                esperar_apertura()
+                ejecutar(iq, par, señal["action"])
                 break
-
-        if not señal_guardada:
-            continue
-
-        send_message(f"🚨 SEÑAL PRO {par_guardado} {señal_guardada}")
-
-        esperar_apertura()
-
-        ejecutar(iq, par_guardado, señal_guardada)
 
 
 if __name__ == "__main__":
