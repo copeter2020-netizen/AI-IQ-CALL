@@ -18,8 +18,8 @@ PARES_OTC = [
     "USDHKD-OTC"
 ]
 
-MONTO = 20000
-EXPIRACION = 2  # 🔥 2 MINUTOS
+MONTO = 2000
+EXPIRACION = 1  # 🔥 1 MINUTOS
 
 
 def silent(func, *args, **kwargs):
