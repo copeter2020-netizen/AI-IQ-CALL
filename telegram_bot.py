@@ -33,4 +33,4 @@ def send_image(url, caption=""):
             timeout=10
         )
     except:
-        pass 
+        pass
