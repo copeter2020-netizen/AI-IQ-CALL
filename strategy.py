@@ -30,8 +30,7 @@ def detectar_trampa(iq, par):
     minimo = min(v["min"] for v in velas[:-2])
 
     # ==========================
-    # 🔥 CONDICIÓN TRAMPA VENTA (PUT)
-    # Rompe arriba y cierra bajista
+    # 🔥 TRAMPA ORIGINAL
     # ==========================
     trampa_venta = (
         vela_trampa["max"] > maximo and
@@ -39,10 +38,6 @@ def detectar_trampa(iq, par):
         mecha_superior > cuerpo * 1.5
     )
 
-    # ==========================
-    # 🔥 CONDICIÓN TRAMPA COMPRA (CALL)
-    # Rompe abajo y cierra alcista
-    # ==========================
     trampa_compra = (
         vela_trampa["min"] < minimo and
         vela_trampa["close"] > vela_trampa["open"] and
@@ -50,25 +45,25 @@ def detectar_trampa(iq, par):
     )
 
     # ==========================
-    # 🔥 FILTRO EXTRA (CONFIRMACIÓN REAL)
+    # 🔥 CONFIRMACIÓN ORIGINAL
     # ==========================
     confirmacion_put = (
         trampa_venta and
-        vela_anterior["close"] > vela_anterior["open"]  # venía subiendo
+        vela_anterior["close"] > vela_anterior["open"]
     )
 
     confirmacion_call = (
         trampa_compra and
-        vela_anterior["close"] < vela_anterior["open"]  # venía bajando
+        vela_anterior["close"] < vela_anterior["open"]
     )
 
     # ==========================
-    # 🔥 RESULTADO FINAL
+    # 😈 INVERSIÓN TOTAL
     # ==========================
     if confirmacion_put:
-        return {"action": "put"}
+        return {"action": "call"}   # 🔥 antes era PUT
 
     if confirmacion_call:
-        return {"action": "call"}
+        return {"action": "put"}    # 🔥 antes era CALL
 
     return None
