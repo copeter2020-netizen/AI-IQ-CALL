@@ -11,7 +11,7 @@ def detectar_trampa(iq, par):
     if not velas or len(velas) < 10:
         return None
 
-    vela = velas[-1]
+    vela = velas[-2]
 
     cuerpo = abs(vela["close"] - vela["open"])
     rango = vela["max"] - vela["min"]
@@ -25,7 +25,7 @@ def detectar_trampa(iq, par):
     maximo = max(v["max"] for v in velas[:-2])
     minimo = min(v["min"] for v in velas[:-2])
 
-    # 🔥 TRAMPA VENTA → invertido (CALL)
+    # 🔥 TRAMPA VENTA (invertido → CALL)
     if (
         vela["max"] > maximo and
         vela["close"] < vela["open"] and
@@ -33,7 +33,7 @@ def detectar_trampa(iq, par):
     ):
         return {"action": "call"}
 
-    # 🔥 TRAMPA COMPRA → invertido (PUT)
+    # 🔥 TRAMPA COMPRA (invertido → PUT)
     if (
         vela["min"] < minimo and
         vela["close"] > vela["open"] and
