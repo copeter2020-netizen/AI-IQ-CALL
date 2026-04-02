@@ -2,7 +2,7 @@ import os
 import time
 import sys
 
-# 🔥 BLOQUEAR ERRORES IQ OPTION
+# 🔥 BLOQUEAR ERRORES
 class NullWriter:
     def write(self, _): pass
     def flush(self): pass
@@ -40,6 +40,18 @@ def connect():
         time.sleep(3)
 
 
+# 🔥 ESPERAR CIERRE DE VELA (CLAVE)
+def esperar_cierre():
+    while int(time.time()) % 60 != 59:
+        time.sleep(0.1)
+
+
+def esperar_apertura():
+    while int(time.time()) % 60 != 0:
+        time.sleep(0.01)
+    time.sleep(0.2)
+
+
 # 🔥 PARES ACTIVOS
 def get_pares(iq):
     pares = []
@@ -59,12 +71,6 @@ def get_pares(iq):
         pass
 
     return pares
-
-
-# 🔥 ENTRADA ANTES DEL CIERRE (SNIPER REAL)
-def esperar_pre_cierre():
-    while int(time.time()) % 60 != 58:
-        time.sleep(0.01)
 
 
 def resultado(iq, trade_id):
@@ -110,25 +116,37 @@ def run():
 
     while True:
 
+        # 🔥 ESPERA CIERRE DE VELA (CLAVE PARA QUE OPERE)
+        esperar_cierre()
+
         pares = get_pares(iq)
 
         if not pares:
-            time.sleep(1)
             continue
 
+        señal = None
+        par_operar = None
+
+        # 🔥 ANALIZA TODOS LOS PARES
         for par in pares:
 
-            señal = detectar_entrada(iq, par)
+            data = detectar_entrada(iq, par)
 
-            if señal:
-                print(f"SEÑAL: {par} {señal['action']}")
-                send_message(f"🚨 {par} {señal['action']}")
-
-                # 🔥 ENTRADA ANTES DEL CIERRE
-                esperar_pre_cierre()
-
-                ejecutar(iq, par, señal["action"])
+            if data:
+                señal = data["action"]
+                par_operar = par
                 break
+
+        if not señal:
+            continue
+
+        print(f"SEÑAL: {par_operar} {señal}")
+        send_message(f"🚨 {par_operar} {señal}")
+
+        # 🔥 ENTRA JUSTO EN APERTURA
+        esperar_apertura()
+
+        ejecutar(iq, par_operar, señal)
 
 
 if __name__ == "__main__":
