@@ -2,14 +2,23 @@ import os
 import time
 from iqoptionapi.stable_api import IQ_Option
 from strategy import detectar_trampa
-from telegram_bot import send_message, send_image
+from telegram_bot import send_message
 
 IQ_EMAIL = os.getenv("IQ_EMAIL")
 IQ_PASSWORD = os.getenv("IQ_PASSWORD")
 
 MONTO = 12000
 EXPIRACION = 1
-PAYOUT_MINIMO = 80
+
+
+# 🔥 SOLO FOREX OTC REALES (CLAVE DEL FIX)
+PARES_VALIDOS = [
+    "EURUSD-OTC","GBPUSD-OTC","USDJPY-OTC","USDCHF-OTC",
+    "AUDUSD-OTC","USDCAD-OTC","NZDUSD-OTC",
+    "EURGBP-OTC","EURJPY-OTC","GBPJPY-OTC",
+    "AUDJPY-OTC","CHFJPY-OTC","EURAUD-OTC",
+    "GBPAUD-OTC","EURCAD-OTC","AUDCAD-OTC"
+]
 
 
 def silent(func, *args, **kwargs):
@@ -25,54 +34,17 @@ def connect():
         silent(iq.connect)
 
         if iq.check_connect():
-            print("🔥 BOT ACTIVO")
-            send_message("🔥 BOT ACTIVO")
+            print("🔥 BOT ACTIVO SIN ERRORES")
+            send_message("🔥 BOT ACTIVO SIN ERRORES")
             return iq
 
         time.sleep(3)
 
 
-# 🔥 SOLO ACTIVOS REALES (FIX ERROR)
-def obtener_pares_validos(iq):
-
-    try:
-        open_time = iq.get_all_open_time()
-        profit = iq.get_all_profit()
-    except:
-        return []
-
-    pares = []
-
-    for tipo in ["binary", "turbo"]:
-
-        if tipo not in open_time:
-            continue
-
-        for par, data in open_time[tipo].items():
-
-            if not data.get("open"):
-                continue
-
-            if "-OTC" not in par:
-                continue
-
-            try:
-                payout = int(profit[par]["turbo"] * 100)
-            except:
-                continue
-
-            if payout < PAYOUT_MINIMO:
-                continue
-
-            pares.append(par)
-
-    return list(set(pares))
-
-
 def esperar_cierre():
     while int(time.time()) % 60 != 59:
         time.sleep(0.05)
-    time.sleep(1.1)
+    time.sleep(1)
 
 
 def esperar_apertura():
@@ -99,24 +71,20 @@ def resultado(iq, trade_id):
         if r > 0:
             print("WIN")
             send_message("✅ WIN")
-            send_image("https://i.imgur.com/2QZ7Z6G.png", "WIN 🟢")
         else:
             print("LOSS")
             send_message("❌ LOSS")
-            send_image("https://i.imgur.com/Z6X7XwL.png", "LOSS 🔴")
 
         return
 
 
 def ejecutar(iq, par, accion):
 
-    if accion == "call":
-        accion = "put"
-    else:
-        accion = "call"
+    # 🔥 INVERTIDO
+    accion = "put" if accion == "call" else "call"
 
     print(f"ENTRADA: {accion.upper()} {par}")
-    send_message(f"🚨 ENTRADA {accion.upper()} {par}")
+    send_message(f"🚨 {accion.upper()} {par}")
 
     status, trade_id = silent(
         iq.buy, MONTO, par, accion, EXPIRACION
@@ -134,23 +102,13 @@ def run():
 
         esperar_cierre()
 
-        pares = obtener_pares_validos(iq)
+        for par in PARES_VALIDOS:
 
-        if not pares:
-            print("Sin pares válidos")
-            time.sleep(2)
-            continue
-
-        for par in pares:
-
-            try:
-                señal = detectar_trampa(iq, par)
-            except:
-                continue
+            señal = detectar_trampa(iq, par)
 
             if señal:
-                print(f"SEÑAL DETECTADA: {par} {señal['action']}")
-                send_message(f"🎯 SEÑAL {par} {señal['action']}")
+                print(f"SEÑAL: {par} {señal['action']}")
+                send_message(f"🎯 SEÑAL {par}")
 
                 esperar_apertura()
                 ejecutar(iq, par, señal["action"])
