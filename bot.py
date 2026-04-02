@@ -8,7 +8,6 @@ import logging
 # ==========================
 class CleanConsole:
     def write(self, msg):
-        # SOLO permite estos textos
         if any(x in msg for x in ["BOT ACTIVADO", "SEÑAL:", "ENTRADA:", "WIN", "LOSS"]):
             sys.__stdout__.write(msg)
 
@@ -30,7 +29,7 @@ from telegram_bot import send_message
 IQ_EMAIL = os.getenv("IQ_EMAIL")
 IQ_PASSWORD = os.getenv("IQ_PASSWORD")
 
-MONTO = 7500
+MONTO = 20000
 EXPIRACION = 1
 
 
@@ -61,7 +60,7 @@ def connect():
 
 
 # ==========================
-# 🔥 PARES ACTIVOS REALES
+# 🔥 PARES ACTIVOS
 # ==========================
 def get_pares_activos(iq):
     try:
@@ -79,19 +78,6 @@ def get_pares_activos(iq):
         return []
 
     return pares
-
-
-# ==========================
-# ⏱️ TIMING SNIPER
-# ==========================
-def esperar_cierre():
-    while int(time.time()) % 60 != 59:
-        time.sleep(0.005)
-
-
-def esperar_apertura():
-    while int(time.time()) % 60 != 0:
-        pass
 
 
 # ==========================
@@ -123,7 +109,7 @@ def resultado(iq, trade_id):
 
 
 # ==========================
-# 🚀 EJECUCIÓN
+# 🚀 EJECUCIÓN INMEDIATA
 # ==========================
 def ejecutar(iq, par, accion):
 
@@ -156,8 +142,6 @@ def run():
             time.sleep(1)
             continue
 
-        esperar_cierre()
-
         for par in pares:
 
             señal = None
@@ -171,7 +155,7 @@ def run():
                 print(f"SEÑAL: {par} {señal['action']}")
                 send_message(f"🚨 SEÑAL {par} {señal['action']}")
 
-                esperar_apertura()
+                # 🔥 ENTRA INMEDIATO (SIN ESPERAR)
                 ejecutar(iq, par, señal["action"])
                 break
 
