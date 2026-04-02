@@ -5,59 +5,70 @@ def detectar_trampa(iq, par):
 
     velas = iq.get_candles(par, 60, 50, time.time())
 
-    if not velas or len(velas) < 15:
+    if not velas or len(velas) < 10:
         return None
 
-    # 🔥 VELA DE TRAMPA (cerrada)
-    vela = velas[-2]
-
-    historial = velas[:-2]
-
-    max_prev = max(v["max"] for v in historial)
-    min_prev = min(v["min"] for v in historial)
-
     # ==========================
-    # 🔥 CUERPO Y MECHAS
+    # 🔥 VELAS CLAVE
     # ==========================
-    cuerpo = abs(vela["close"] - vela["open"])
-    rango = vela["max"] - vela["min"]
+    vela_trampa = velas[-2]
+    vela_anterior = velas[-3]
+
+    cuerpo = abs(vela_trampa["close"] - vela_trampa["open"])
+    rango = vela_trampa["max"] - vela_trampa["min"]
 
     if rango == 0:
         return None
 
-    mecha_sup = vela["max"] - max(vela["close"], vela["open"])
-    mecha_inf = min(vela["close"], vela["open"]) - vela["min"]
+    mecha_superior = vela_trampa["max"] - max(vela_trampa["close"], vela_trampa["open"])
+    mecha_inferior = min(vela_trampa["close"], vela_trampa["open"]) - vela_trampa["min"]
 
     # ==========================
-    # 🔥 FILTRO DOJI (FUERTE)
+    # 🔥 NIVELES (LIQUIDEZ)
     # ==========================
-    if cuerpo < rango * 0.35:
-        return None
+    maximo = max(v["max"] for v in velas[:-2])
+    minimo = min(v["min"] for v in velas[:-2])
 
     # ==========================
-    # 🔥 FILTRO FUERZA (EVITA VELAS DÉBILES)
+    # 🔥 CONDICIÓN TRAMPA VENTA (PUT)
+    # Rompe arriba y cierra bajista
     # ==========================
-    if cuerpo < (rango * 0.5):
-        return None
+    trampa_venta = (
+        vela_trampa["max"] > maximo and
+        vela_trampa["close"] < vela_trampa["open"] and
+        mecha_superior > cuerpo * 1.5
+    )
 
     # ==========================
-    # 🔻 TRAMPA BAJISTA → CALL
+    # 🔥 CONDICIÓN TRAMPA COMPRA (CALL)
+    # Rompe abajo y cierra alcista
     # ==========================
-    if (
-        vela["min"] < min_prev and           # rompe soporte
-        vela["close"] > vela["open"] and     # cierra verde
-        mecha_inf > cuerpo * 1.8             # rechazo fuerte real
-    ):
-        return {"action": "call"}
+    trampa_compra = (
+        vela_trampa["min"] < minimo and
+        vela_trampa["close"] > vela_trampa["open"] and
+        mecha_inferior > cuerpo * 1.5
+    )
 
     # ==========================
-    # 🔺 TRAMPA ALCISTA → PUT
+    # 🔥 FILTRO EXTRA (CONFIRMACIÓN REAL)
     # ==========================
-    if (
-        vela["max"] > max_prev and           # rompe resistencia
-        vela["close"] < vela["open"] and     # cierra roja
-        mecha_sup > cuerpo * 1.8             # rechazo fuerte real
-    ):
+    confirmacion_put = (
+        trampa_venta and
+        vela_anterior["close"] > vela_anterior["open"]  # venía subiendo
+    )
+
+    confirmacion_call = (
+        trampa_compra and
+        vela_anterior["close"] < vela_anterior["open"]  # venía bajando
+    )
+
+    # ==========================
+    # 🔥 RESULTADO FINAL
+    # ==========================
+    if confirmacion_put:
         return {"action": "put"}
+
+    if confirmacion_call:
+        return {"action": "call"}
 
     return None
