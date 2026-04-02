@@ -19,28 +19,41 @@ def silent(func, *args, **kwargs):
 
 
 # ==========================
-# 🔥 OBTENER PARES OTC ACTIVOS
+# 🔥 PARES BINARIOS REALES
 # ==========================
-def obtener_pares_otc(iq):
+def obtener_pares_binarios(iq):
 
-    activos = iq.get_all_open_time()
-
-    pares = []
+    pares_validos = []
 
     try:
+        activos = iq.get_all_open_time()
+        profit = iq.get_all_profit()
+
         for par, data in activos["binary"].items():
 
-            if "OTC" in par and data["open"]:
-                pares.append(par)
+            if not data["open"]:
+                continue
+
+            # 🔥 SOLO OTC FOREX REALES
+            if "OTC" not in par:
+                continue
+
+            # 🔒 FILTRO PARA EVITAR CRYPTO/STOCKS
+            if "/" in par:
+                continue
+
+            # 🔥 VALIDAR QUE EXISTA PROFIT
+            if par not in profit:
+                continue
+
+            pares_validos.append(par)
 
     except:
         pass
 
-    return pares
+    return pares_validos
 
 
-# ==========================
-# 🔥 CONEXIÓN
 # ==========================
 def connect():
     while True:
@@ -48,13 +61,12 @@ def connect():
         silent(iq.connect)
 
         if iq.check_connect():
-            send_message("🔥 BOT AUTO OTC ACTIVO")
+            send_message("🔥 BOT BINARIAS REALES ACTIVO")
             return iq
 
         time.sleep(3)
 
 
-# ==========================
 def esperar_cierre():
     while int(time.time()) % 60 != 59:
         time.sleep(0.05)
@@ -67,8 +79,6 @@ def esperar_apertura():
     time.sleep(0.2)
 
 
-# ==========================
-# 🔥 RESULTADO
 # ==========================
 def resultado(iq, trade_id):
 
@@ -104,8 +114,6 @@ def resultado(iq, trade_id):
 
 
 # ==========================
-# 🔥 EJECUCIÓN
-# ==========================
 def ejecutar(iq, par, accion):
 
     status, trade_id = silent(
@@ -118,8 +126,6 @@ def ejecutar(iq, par, accion):
 
 
 # ==========================
-# 🔥 BOT PRINCIPAL
-# ==========================
 def run():
 
     iq = connect()
@@ -128,17 +134,17 @@ def run():
 
         esperar_cierre()
 
-        pares = obtener_pares_otc(iq)
+        pares = obtener_pares_binarios(iq)
 
         if not pares:
-            send_message("⚠️ No hay pares OTC activos")
+            send_message("⚠️ No hay pares binarios disponibles")
             time.sleep(5)
             continue
 
         señal = None
         par_elegido = None
 
-        # 🔥 ANALIZA TODOS LOS DISPONIBLES
+        # 🔥 ANALIZA SOLO PARES REALES
         for par in pares:
 
             señal_data = detectar_trampa(iq, par)
