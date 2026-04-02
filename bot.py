@@ -1,27 +1,5 @@
 import os
 import time
-import sys
-import logging
-
-# ==========================
-# 🔥 BLOQUEO TOTAL CONSOLA
-# ==========================
-class CleanConsole:
-    def write(self, msg):
-        if any(x in msg for x in ["BOT ACTIVADO", "SEÑAL:", "ENTRADA:", "WIN", "LOSS"]):
-            sys.__stdout__.write(msg)
-
-    def flush(self):
-        pass
-
-
-sys.stdout = CleanConsole()
-sys.stderr = CleanConsole()
-logging.getLogger().setLevel(logging.CRITICAL)
-
-# ==========================
-# IMPORTS
-# ==========================
 from iqoptionapi.stable_api import IQ_Option
 from strategy import detectar_trampa
 from telegram_bot import send_message
@@ -32,9 +10,11 @@ IQ_PASSWORD = os.getenv("IQ_PASSWORD")
 MONTO = 20000
 EXPIRACION = 1
 
+BOT_ACTIVO = True
+
 
 # ==========================
-# 🔒 SILENCIADOR
+# 🔇 BLOQUEADOR TOTAL ERRORES
 # ==========================
 def silent(func, *args, **kwargs):
     try:
@@ -44,7 +24,7 @@ def silent(func, *args, **kwargs):
 
 
 # ==========================
-# 🔥 CONEXIÓN
+# 🔌 CONEXIÓN
 # ==========================
 def connect():
     while True:
@@ -60,28 +40,21 @@ def connect():
 
 
 # ==========================
-# 🔥 PARES ACTIVOS
+# ⏱️ SNIPER (APERTURA EXACTA)
 # ==========================
-def get_pares_activos(iq):
-    try:
-        open_time = iq.get_all_open_time()
-    except:
-        return []
+def esperar_cierre():
+    while int(time.time()) % 60 != 59:
+        time.sleep(0.01)
+    time.sleep(0.8)
 
-    pares = []
 
-    try:
-        for par, data in open_time["binary"].items():
-            if "-OTC" in par and data["open"]:
-                pares.append(par)
-    except:
-        return []
-
-    return pares
+def esperar_apertura():
+    while int(time.time()) % 60 != 0:
+        time.sleep(0.001)
 
 
 # ==========================
-# 🔥 RESULTADO
+# 📊 RESULTADO
 # ==========================
 def resultado(iq, trade_id):
     while True:
@@ -109,26 +82,49 @@ def resultado(iq, trade_id):
 
 
 # ==========================
-# 🚀 EJECUCIÓN INMEDIATA
+# 🚀 EJECUTAR OPERACIÓN
 # ==========================
 def ejecutar(iq, par, accion):
 
-    # 🔥 INVERTIDO
-    accion = "put" if accion == "call" else "call"
-
-    print(f"ENTRADA: {accion.upper()} {par}")
-    send_message(f"🎯 {accion.upper()} {par}")
+    # 🔥 INVERTIDO (como tú lo quieres)
+    if accion == "call":
+        accion = "put"
+    else:
+        accion = "call"
 
     status, trade_id = silent(
         iq.buy, MONTO, par, accion, EXPIRACION
     )
 
     if status:
+        print(f"ENTRADA: {accion.upper()} {par}")
+        send_message(f"🎯 ENTRADA: {accion.upper()} {par}")
         resultado(iq, trade_id)
 
 
 # ==========================
-# 🔥 MAIN
+# 🔥 OBTENER SOLO PARES ACTIVOS
+# ==========================
+def get_activos(iq):
+    activos = []
+
+    all_open = silent(iq.get_all_open_time)
+
+    if not all_open:
+        return activos
+
+    try:
+        for par, data in all_open["digital"].items():
+            if data["open"]:
+                activos.append(par)
+    except:
+        pass
+
+    return activos
+
+
+# ==========================
+# 🧠 LOOP PRINCIPAL
 # ==========================
 def run():
 
@@ -136,29 +132,43 @@ def run():
 
     while True:
 
-        pares = get_pares_activos(iq)
-
-        if not pares:
+        if not BOT_ACTIVO:
             time.sleep(1)
             continue
 
+        esperar_cierre()
+
+        pares = get_activos(iq)
+
+        if not pares:
+            continue
+
+        señal = None
+        par_elegido = None
+
+        # 🔥 ANALIZA SOLO PARES ACTIVOS
         for par in pares:
 
-            señal = None
+            data = detectar_trampa(iq, par)
 
-            try:
-                señal = detectar_trampa(iq, par)
-            except:
-                continue
-
-            if señal:
-                print(f"SEÑAL: {par} {señal['action']}")
-                send_message(f"🚨 SEÑAL {par} {señal['action']}")
-
-                # 🔥 ENTRA INMEDIATO (SIN ESPERAR)
-                ejecutar(iq, par, señal["action"])
+            if data:
+                señal = data["action"]
+                par_elegido = par
                 break
 
+        if not señal:
+            continue
 
+        print(f"SEÑAL: {par_elegido} {señal}")
+        send_message(f"🚨 SEÑAL: {par_elegido} {señal}")
+
+        esperar_apertura()
+
+        ejecutar(iq, par_elegido, señal)
+
+
+# ==========================
+# ▶️ START
+# ==========================
 if __name__ == "__main__":
     run()
