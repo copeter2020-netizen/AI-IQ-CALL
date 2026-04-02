@@ -25,7 +25,7 @@ def connect():
 
         if iq.check_connect():
             print("BOT ACTIVADO")
-            send_message("🔥 BOT ACTIVO PRICE ACTION")
+            send_message("🔥 BOT OPERANDO")
             return iq
 
         time.sleep(3)
@@ -33,35 +33,39 @@ def connect():
 
 def esperar_cierre():
     while int(time.time()) % 60 != 59:
-        time.sleep(0.05)
+        time.sleep(0.03)
 
 
 def esperar_apertura():
     while int(time.time()) % 60 != 0:
-        time.sleep(0.01)
+        time.sleep(0.005)
 
 
+# 🔥 SOLO PARES REALES OPERABLES
 def obtener_pares(iq):
-    activos = safe(iq.get_all_ACTIVES_OPCODE)
-
-    if not activos:
+    try:
+        activos = iq.get_all_ACTIVES_OPCODE()
+        return [par for par in activos.keys() if "-OTC" in par]
+    except:
         return []
 
-    return list(activos.keys())
 
-
+# 🔥 EJECUCIÓN REAL
 def ejecutar(iq, par, accion):
 
-    result = safe(iq.buy, MONTO, par, accion, EXPIRACION)
-
-    if not result:
+    try:
+        status, trade_id = iq.buy_digital_spot(
+            par,
+            MONTO,
+            accion,
+            EXPIRACION
+        )
+    except:
         return
-
-    status, trade_id = result
 
     if status:
         print(f"ENTRADA: {accion.upper()} {par}")
-        send_message(f"🎯 {accion.upper()} {par}")
+        send_message(f"🎯 ENTRADA {accion.upper()} {par}")
 
 
 def run():
@@ -77,8 +81,6 @@ def run():
         if not pares:
             continue
 
-        señal_encontrada = False
-
         for par in pares:
 
             señal = detectar_entrada(iq, par)
@@ -88,19 +90,13 @@ def run():
                 accion = señal["action"]
 
                 print(f"SEÑAL: {par} {accion}")
-                send_message(f"🚨 SEÑAL {par} {accion}")
+                send_message(f"🚨 {par} {accion}")
 
                 esperar_apertura()
-
                 ejecutar(iq, par, accion)
 
-                señal_encontrada = True
                 break
-
-        # 🔥 si no encuentra señal sigue buscando sin parar
-        if not señal_encontrada:
-            continue
 
 
 if __name__ == "__main__":
-    run() 
+    run()
