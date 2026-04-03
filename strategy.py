@@ -29,7 +29,7 @@ def mercado_valido(velas):
 
 
 # ==========================
-# 🔥 DETECTAR ZONAS PROHIBIDAS
+# 🔥 ZONA PROHIBIDA
 # ==========================
 def zona_prohibida(highs, lows, precio):
 
@@ -43,11 +43,9 @@ def zona_prohibida(highs, lows, precio):
 
     posicion = (precio - minimo) / rango
 
-    # ❌ cerca de resistencia
     if posicion > 0.85:
         return True
 
-    # ❌ cerca de soporte
     if posicion < 0.15:
         return True
 
@@ -55,7 +53,7 @@ def zona_prohibida(highs, lows, precio):
 
 
 # ==========================
-# 🔥 CALIDAD DEL PAR
+# 🔥 SCORE PAR
 # ==========================
 def score_par(velas):
     try:
@@ -73,7 +71,7 @@ def score_par(velas):
 
 
 # ==========================
-# 🔥 ESTRATEGIA FINAL TOTAL
+# 🔥 ESTRATEGIA FINAL
 # ==========================
 def detectar_mejor_entrada(data_por_par):
     global ultima_operacion
@@ -85,9 +83,6 @@ def detectar_mejor_entrada(data_por_par):
 
     candidatos = []
 
-    # ==========================
-    # 🔥 FILTRAR PARES
-    # ==========================
     for par, velas in data_por_par.items():
 
         if par not in ["EURUSD", "EURJPY", "EURGBP", "GBPUSD", "USDCHF"]:
@@ -106,14 +101,8 @@ def detectar_mejor_entrada(data_por_par):
     if not candidatos:
         return None
 
-    # ==========================
-    # 🔥 ORDENAR POR MEJOR PAR
-    # ==========================
     candidatos.sort(key=lambda x: x[2], reverse=True)
 
-    # ==========================
-    # 🔥 ANALIZAR SOLO EL MEJOR
-    # ==========================
     par, velas, _ = candidatos[0]
 
     closes = np.array([float(v["close"]) for v in velas])
@@ -134,13 +123,13 @@ def detectar_mejor_entrada(data_por_par):
     l2 = float(v2["min"])
 
     # ==========================
-    # 🔥 NO OPERAR EN ZONAS PROHIBIDAS
+    # ❌ NO OPERAR EN ZONA
     # ==========================
     if zona_prohibida(highs, lows, c1):
         return None
 
     # ==========================
-    # 🔥 DETECTAR TRAMPA
+    # 🔥 TRAMPA
     # ==========================
     max_prev = max(highs[-20:-2])
     min_prev = min(lows[-20:-2])
@@ -164,7 +153,7 @@ def detectar_mejor_entrada(data_por_par):
         return None
 
     # ==========================
-    # 🔥 CONTINUIDAD REAL
+    # 🔥 CONTINUIDAD
     # ==========================
     if direccion == "put" and c1 > o1:
         return None
@@ -172,7 +161,14 @@ def detectar_mejor_entrada(data_por_par):
         return None
 
     # ==========================
-    # 🔥 ENTRADA FINAL
+    # 🔥 ESPERAR SIGUIENTE VELA
     # ==========================
-    ultima_operacion = ahora
+    segundos = int(time.time()) % 60
+    esperar = 60 - segundos
+
+    if esperar > 0:
+        time.sleep(esperar)
+
+    ultima_operacion = time.time()
+
     return (par, direccion, 100)
