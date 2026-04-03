@@ -28,6 +28,10 @@ def conectar():
     while True:
         try:
             iq = IQ_Option(IQ_EMAIL, IQ_PASSWORD)
+
+            # 🔥 BLOQUEA DIGITAL (CLAVE)
+            iq.api.digital_option = None
+
             iq.connect()
 
             if iq.check_connect():
@@ -52,7 +56,7 @@ def activo_abierto(iq, par):
         return False
 
 
-# ⏱️ Espera nueva vela exacta
+# ⏱️ SINCRONIZA VELA
 def esperar_siguiente_vela():
     while True:
         if int(time.time()) % 60 == 0:
@@ -60,11 +64,11 @@ def esperar_siguiente_vela():
         time.sleep(0.2)
 
 
-# 🔥 EJECUCIÓN SOLO BINARIA (SIN DIGITAL)
+# 🔥 EJECUCIÓN BINARIA SEGURA
 def ejecutar(iq, accion, expiracion):
 
     print(f"⚡ ENTRANDO: {accion} | {expiracion}m")
-    telegram(f"⚡ ENTRANDO: {accion} | {expiracion}m")
+    telegram(f"⚡ ENTRANDO: {accion}")
 
     for i in range(5):
 
@@ -83,10 +87,9 @@ def ejecutar(iq, accion, expiracion):
 
         if status:
             print(f"🔥 ORDEN ABIERTA: {order_id}")
-            telegram(f"✅ OPERACIÓN: {accion}")
+            telegram(f"✅ OPERACIÓN {accion}")
             return True
 
-        print(f"⚠️ Reintento {i+1}")
         time.sleep(1)
 
     print("❌ FALLÓ ENTRADA")
@@ -103,14 +106,14 @@ def run():
         try:
 
             if not activo_abierto(iq, PAR):
-                print("⏳ Activo cerrado")
+                print("⏳ Mercado cerrado")
                 time.sleep(5)
                 continue
 
             accion, expiracion = detectar_entrada(iq, PAR)
 
             if accion:
-                print(f"📊 SEÑAL: {accion} | {expiracion}m")
+                print(f"📊 SEÑAL: {accion}")
                 telegram(f"📊 SEÑAL: {accion}")
 
                 esperar_siguiente_vela()
