@@ -4,77 +4,72 @@ import time
 def detectar_entrada(iq, par):
 
     try:
-        velas = iq.get_candles(par, 60, 60, time.time())
+        velas = iq.get_candles(par, 60, 50, time.time())
     except:
         return None
 
-    if not velas or len(velas) < 30:
+    if not velas or len(velas) < 20:
         return None
 
-    vela_1 = velas[-3]  # zona
-    vela_2 = velas[-2]  # confirmación
+    vela_actual = velas[-1]
+    vela_anterior = velas[-2]
 
+    # ==========================
+    # 🔥 FUNCIONES
+    # ==========================
     def cuerpo(v):
         return abs(v["close"] - v["open"])
 
     def rango(v):
         return v["max"] - v["min"]
 
-    # evitar errores
-    if rango(vela_1) == 0 or rango(vela_2) == 0:
+    # ==========================
+    # 🔥 FILTRO VELA FUERTE
+    # ==========================
+    if rango(vela_anterior) == 0:
         return None
+
+    fuerza = cuerpo(vela_anterior) / rango(vela_anterior)
+
+    if fuerza < 0.6:
+        return None
+
+    # ==========================
+    # 🔥 TENDENCIA
+    # ==========================
+    ultimas = velas[-10:]
+
+    alcistas = sum(1 for v in ultimas if v["close"] > v["open"])
+    bajistas = sum(1 for v in ultimas if v["close"] < v["open"])
+
+    tendencia_alcista = alcistas >= 6
+    tendencia_bajista = bajistas >= 6
 
     # ==========================
     # 🔥 SOPORTE / RESISTENCIA
     # ==========================
-    zona = velas[-30:-3]
+    maximo = max(v["max"] for v in velas[-15:])
+    minimo = min(v["min"] for v in velas[-15:])
 
-    resistencia = max(v["max"] for v in zona)
-    soporte = min(v["min"] for v in zona)
-
-    margen = (resistencia - soporte) * 0.03
-
-    # ==========================
-    # 🔥 TENDENCIA SIMPLE
-    # ==========================
-    estructura = velas[-15:-3]
-
-    alcistas = sum(1 for v in estructura if v["close"] > v["open"])
-    bajistas = sum(1 for v in estructura if v["close"] < v["open"])
-
-    tendencia_alcista = alcistas >= 8
-    tendencia_bajista = bajistas >= 8
+    cerca_resistencia = vela_anterior["close"] >= maximo * 0.999
+    cerca_soporte = vela_anterior["close"] <= minimo * 1.001
 
     # ==========================
-    # 🔥 CONFIRMACIÓN FUERTE
+    # 🚀 CONTINUIDAD (FUERTE)
     # ==========================
-    if cuerpo(vela_2) < rango(vela_2) * 0.4:
-        return None
+    if tendencia_alcista and vela_anterior["close"] > vela_anterior["open"]:
+        return {"action": "call"}
 
-    # ==========================
-    # 🔥 REVERSIÓN
-    # ==========================
-    if vela_1["max"] >= (resistencia - margen):
-
-        if vela_2["close"] < vela_2["open"]:
-            return {"action": "put"}
-
-    if vela_1["min"] <= (soporte + margen):
-
-        if vela_2["close"] > vela_2["open"]:
-            return {"action": "call"}
+    if tendencia_bajista and vela_anterior["close"] < vela_anterior["open"]:
+        return {"action": "put"}
 
     # ==========================
-    # 🔥 CONTINUIDAD
+    # 🔄 REVERSIÓN (PRECISA)
     # ==========================
-    if tendencia_alcista:
-        if vela_1["close"] > resistencia:
-            if vela_2["close"] > vela_2["open"]:
-                return {"action": "call"}
+    if cerca_resistencia and vela_anterior["close"] < vela_anterior["open"]:
+        return {"action": "put"}
 
-    if tendencia_bajista:
-        if vela_1["close"] < soporte:
-            if vela_2["close"] < vela_2["open"]:
-                return {"action": "put"}
+    if cerca_soporte and vela_anterior["close"] > vela_anterior["open"]:
+        return {"action": "call"}
 
     return None
