@@ -1,9 +1,5 @@
 import numpy as np
 
-# ==============================
-# INDICADORES
-# ==============================
-
 def ema(data, period=20):
     ema_values = []
     k = 2 / (period + 1)
@@ -36,10 +32,6 @@ def fuerza_vela(candle):
     return cuerpo / rango
 
 
-# ==============================
-# ESTRATEGIA INTELIGENTE
-# ==============================
-
 def detectar_entrada(candles):
     if len(candles) < 30:
         return None
@@ -57,21 +49,17 @@ def detectar_entrada(candles):
     precio = ultima['close']
     tendencia = "alcista" if precio > ema20[-1] else "bajista"
 
-    # ==========================
-    # LÓGICA DE ENTRADA
-    # ==========================
-
-    # 🟢 REBOTE EN SOPORTE → CALL
+    # REBOTE EN SOPORTE → CALL
     if precio <= soporte + 0.0002:
         if fuerza > 0.5 and ultima['close'] > ultima['open']:
             return "call", 1
 
-    # 🔴 RECHAZO EN RESISTENCIA → PUT
+    # RECHAZO EN RESISTENCIA → PUT
     if precio >= resistencia - 0.0002:
         if fuerza > 0.5 and ultima['close'] < ultima['open']:
             return "put", 1
 
-    # 🔵 CONTINUACIÓN DE TENDENCIA
+    # CONTINUACIÓN
     if tendencia == "alcista":
         if ultima['close'] > anterior['close'] and fuerza > 0.6:
             return "call", 1
