@@ -1,114 +1,100 @@
 import time
-import requests
+import os
 from iqoptionapi.stable_api import IQ_Option
 from strategy import detectar_entrada
+import requests
 
-EMAIL = "TU_EMAIL"
-PASSWORD = "TU_PASSWORD"
+# ================= CONFIG =================
+EMAIL = os.getenv("IQ_EMAIL")
+PASSWORD = os.getenv("IQ_PASSWORD")
+
+TELEGRAM_TOKEN = os.getenv("TG_TOKEN")
+TELEGRAM_CHAT_ID = os.getenv("TG_CHAT_ID")
 
 PAR = "EURUSD-OTC"
 MONTO = 2
-TIMEFRAME = 60
+TIEMPO = 1  # 1 minuto
 
-TOKEN = "TU_TOKEN"
-CHAT_ID = "TU_CHAT_ID"
-
+# ==========================================
 
 def enviar_telegram(msg):
     try:
-        url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
-        requests.post(url, data={"chat_id": CHAT_ID, "text": msg}, timeout=5)
+        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+        requests.post(url, data={"chat_id": TELEGRAM_CHAT_ID, "text": msg})
     except:
         pass
-
 
 def conectar():
     while True:
         try:
-            print("🔄 Intentando conectar...")
-            iq = IQ_Option(EMAIL, PASSWORD)
-
+            print("🔄 Conectando...")
+            iq = IQ_Option(EMAIL.strip(), PASSWORD.strip())
             status, reason = iq.connect()
 
             if status:
-                print("✅ Conectado correctamente")
-                enviar_telegram("✅ Conectado a IQ Option")
-
+                print("✅ Conectado a IQ Option")
                 iq.change_balance("PRACTICE")
                 return iq
-
             else:
-                print(f"❌ Fallo conexión: {reason}")
-                enviar_telegram(f"❌ Fallo conexión: {reason}")
+                print(f"❌ Error: {reason}")
+
+                if "invalid_credentials" in str(reason):
+                    print("🚨 Credenciales incorrectas")
+                    exit()
+
                 time.sleep(10)
 
         except Exception as e:
-            print("⚠️ Error:", e)
+            print("⚠️ Error conexión:", e)
             time.sleep(10)
-
-
-Iq = conectar()
-
 
 def esperar_cierre_vela():
     while True:
-        try:
-            t = Iq.get_server_timestamp()
-            if int(t) % 60 == 0:
-                return True
-            time.sleep(0.3)
-        except:
-            return False
+        segundos = int(time.time()) % 60
+        if segundos == 59:
+            time.sleep(1)
+            break
+        time.sleep(0.2)
 
+def obtener_velas(iq):
+    return iq.get_candles(PAR, 60, 100, time.time())
 
-def obtener_candles():
-    try:
-        return Iq.get_candles(PAR, TIMEFRAME, 100, time.time())
-    except:
-        return None
+def ejecutar_operacion(iq, direccion):
+    print(f"⚡ Ejecutando {direccion.upper()}")
 
+    check, id = iq.buy(MONTO, PAR, direccion, TIEMPO)
+
+    if check:
+        print("✅ Operación abierta")
+        enviar_telegram(f"📊 {direccion.upper()} ejecutado")
+
+        while True:
+            resultado = iq.check_win_v4(id)
+            if resultado is not None:
+                if resultado > 0:
+                    enviar_telegram(f"✅ WIN {resultado}")
+                else:
+                    enviar_telegram(f"❌ LOSS {resultado}")
+                break
+            time.sleep(1)
+    else:
+        print("❌ Error al ejecutar")
+
+# ================= MAIN =================
+
+iq = conectar()
 
 while True:
     try:
+        esperar_cierre_vela()
 
-        if not Iq.check_connect():
-            print("🔌 Conexión perdida")
-            enviar_telegram("🔌 Reconectando...")
-            Iq = conectar()
-            continue
+        velas = obtener_velas(iq)
 
-        if not esperar_cierre_vela():
-            continue
-
-        candles = obtener_candles()
-
-        if not candles:
-            print("❌ Error velas")
-            continue
-
-        señal = detectar_entrada(candles)
+        señal = detectar_entrada(velas)
 
         if señal:
-            direccion, expiracion = señal
-
-            print(f"📊 {direccion}")
-            enviar_telegram(f"📊 {direccion}")
-
-            status, trade_id = Iq.buy(MONTO, PAR, direccion, expiracion)
-
-            if status:
-                print("🔥 EJECUTADA")
-                enviar_telegram("🔥 OPERACIÓN EJECUTADA")
-            else:
-                print("❌ Fallo operación")
-                enviar_telegram("❌ Fallo operación")
-
-        else:
-            print("⏳ Sin señal")
-
-        time.sleep(1)
+            ejecutar_operacion(iq, señal)
 
     except Exception as e:
-        print("⚠️ ERROR:", e)
-        enviar_telegram(f"⚠️ ERROR: {e}")
-        time.sleep(5)
+        print("⚠️ ERROR LOOP:", e)
+        iq = conectar()
