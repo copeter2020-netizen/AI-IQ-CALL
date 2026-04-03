@@ -1,36 +1,14 @@
-import os
 import requests
 
-TOKEN = os.getenv("TELEGRAM_TOKEN")
-CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+TELEGRAM_TOKEN = "TU_TOKEN"
+CHAT_ID = "TU_CHAT_ID"
 
-URL = f"https://api.telegram.org/bot{TOKEN}"
-
-
-def send_message(text):
+def enviar_mensaje(texto):
     try:
-        requests.post(
-            f"{URL}/sendMessage",
-            data={
-                "chat_id": CHAT_ID,
-                "text": text
-            },
-            timeout=5
-        )
-    except:
-        pass
-
-
-def send_image(url, caption=""):
-    try:
-        requests.post(
-            f"{URL}/sendPhoto",
-            data={
-                "chat_id": CHAT_ID,
-                "caption": caption,
-                "photo": url
-            },
-            timeout=10
-        )
-    except:
-        pass
+        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+        requests.post(url, data={
+            "chat_id": CHAT_ID,
+            "text": texto
+        }, timeout=5)
+    except Exception as e:
+        print("⚠️ Error Telegram:", e)
