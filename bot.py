@@ -24,7 +24,7 @@ def telegram(msg):
         pass
 
 
-# 🔥 CONEXIÓN LIMPIA (EVITA BUG DIGITAL)
+# 🔥 CONEXIÓN TOTALMENTE LIMPIA (ELIMINA DIGITAL BUG)
 def conectar():
     while True:
         try:
@@ -34,8 +34,12 @@ def conectar():
             if iq.check_connect():
                 iq.change_balance("PRACTICE")
 
-                # 🔥 IMPORTANTE → limpia subscripciones internas
-                iq.api.digital_option = None
+                # 🔥 BLOQUEO TOTAL DE DIGITAL (SOLUCIÓN ERROR underlying)
+                try:
+                    iq.api.digital_option = None
+                    iq.api.get_digital_underlying_list_data = None
+                except:
+                    pass
 
                 print("✅ BOT ACTIVADO")
                 telegram("🤖 BOT ACTIVADO")
@@ -56,6 +60,7 @@ def activo_abierto(iq, par):
         return False
 
 
+# 🔥 ESPERA NUEVA VELA EXACTA
 def esperar_siguiente_vela():
     while True:
         if int(time.time() % 60) == 0:
@@ -63,13 +68,18 @@ def esperar_siguiente_vela():
         time.sleep(0.2)
 
 
-# 🔥 EJECUCIÓN SOLO BINARY (SIN DIGITAL)
+# 🔥 EJECUCIÓN REAL (SOLO BINARIAS)
 def ejecutar(iq, accion, expiracion):
 
     print(f"⚡ ENTRANDO: {accion} | {expiracion}m")
     telegram(f"⚡ ENTRANDO: {accion} | {expiracion}m")
 
     for intento in range(5):
+
+        # 🔁 reconexión automática
+        if not iq.check_connect():
+            print("🔁 Reconectando...")
+            iq = conectar()
 
         try:
             status, order_id = iq.buy(
@@ -86,7 +96,7 @@ def ejecutar(iq, accion, expiracion):
 
         if status:
             print(f"🔥 ORDEN ABIERTA: {order_id}")
-            telegram(f"✅ OPERACIÓN ABIERTA: {accion} ({expiracion}m)")
+            telegram(f"✅ OPERACIÓN: {accion} ({expiracion}m)")
             return True
 
         print(f"⚠️ Reintento {intento+1}")
@@ -104,7 +114,7 @@ def run():
     while True:
 
         try:
-            # 🔒 validar activo
+            # 🔒 validar activo abierto
             if not activo_abierto(iq, PAR):
                 print("⏳ Activo cerrado...")
                 time.sleep(5)
@@ -113,7 +123,6 @@ def run():
             accion, expiracion = detectar_entrada(iq, PAR)
 
             if accion:
-
                 print(f"📊 SEÑAL: {accion} | {expiracion}m")
                 telegram(f"📊 SEÑAL: {accion} | {expiracion}m")
 
@@ -121,13 +130,14 @@ def run():
 
                 ejecutar(iq, accion, expiracion)
 
+                # evita sobreoperar
                 time.sleep(60)
 
         except Exception as e:
             print(f"❌ ERROR LOOP: {e}")
             telegram(f"❌ ERROR: {e}")
 
-            # 🔥 RECONEXIÓN AUTOMÁTICA
+            # 🔁 reconexión total
             iq = conectar()
 
             time.sleep(2)
