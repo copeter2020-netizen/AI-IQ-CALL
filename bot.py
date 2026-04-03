@@ -159,7 +159,7 @@ def operar(iq, par, direccion):
 
 Par: {par}
 Dirección: {direccion.upper()}
-Expiración: 2 MIN
+Expiración: 1MIN
 Monto: ${MONTO}
 """)
         else:
@@ -197,7 +197,7 @@ def run():
 
                     # ⏱️ ENTRADA SEGUNDO 59
                     segundos = int(time.time()) % 60
-                    esperar = 59 - segundos
+                    esperar = 59.8 - segundos
 
                     if esperar > 0:
                         time.sleep(esperar)
