@@ -11,8 +11,7 @@ TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 PAR = "EURUSD-OTC"
-MONTO = 10000
-EXPIRACION = 1
+MONTO = 5000
 
 
 def telegram(msg):
@@ -40,47 +39,43 @@ def conectar():
         time.sleep(3)
 
 
-# 🔥 ESPERA EXACTA A LA SIGUIENTE VELA
+# 🔥 ESPERA SIGUIENTE VELA
 def esperar_siguiente_vela():
     while True:
-        segundos = int(time.time() % 60)
-
-        # entra justo cuando empieza la nueva vela
-        if segundos == 0:
+        if int(time.time() % 60) == 0:
             break
-
         time.sleep(0.2)
 
 
-# 🔥 EJECUCIÓN REAL
-def ejecutar(iq, accion):
+# 🔥 EJECUCIÓN DINÁMICA
+def ejecutar(iq, accion, expiracion):
 
-    print(f"⚡ ENTRANDO: {accion}")
-    telegram(f"⚡ ENTRANDO: {accion}")
+    print(f"⚡ ENTRANDO: {accion} | {expiracion} min")
+    telegram(f"⚡ ENTRANDO: {accion} | {expiracion} min")
 
-    for intento in range(5):
+    for i in range(5):
         try:
             status, order_id = iq.buy(
                 MONTO,
                 PAR,
                 accion,
-                EXPIRACION
+                expiracion
             )
         except Exception as e:
-            print(f"❌ ERROR API: {e}")
+            print(f"❌ ERROR: {e}")
             time.sleep(1)
             continue
 
         if status:
             print(f"🔥 ORDEN ABIERTA: {order_id}")
-            telegram(f"✅ OPERACIÓN ABIERTA: {accion}")
+            telegram(f"✅ OPERACIÓN: {accion} ({expiracion}m)")
             return True
 
-        print(f"⚠️ Reintento {intento+1}")
+        print(f"⚠️ Reintento {i+1}")
         time.sleep(1)
 
-    print("❌ NO SE EJECUTÓ")
-    telegram("❌ FALLÓ ENTRADA")
+    print("❌ FALLÓ ENTRADA")
+    telegram("❌ NO SE EJECUTÓ")
     return False
 
 
@@ -88,23 +83,21 @@ def run():
 
     iq = conectar()
 
-    iq.start_candles_stream(PAR, 5, 100)
+    iq.start_candles_stream(PAR, 4, 500)
 
     while True:
 
         try:
-            señal = detectar_entrada(iq, PAR)
+            accion, expiracion = detectar_entrada(iq, PAR)
 
-            if señal:
-                print(f"📊 SEÑAL DETECTADA: {señal}")
-                telegram(f"📊 SEÑAL: {señal}")
+            if accion:
+                print(f"📊 SEÑAL: {accion} | {expiracion}m")
+                telegram(f"📊 SEÑAL: {accion} | {expiracion}m")
 
-                # 🔥 ENTRA EN LA SIGUIENTE VELA
                 esperar_siguiente_vela()
 
-                ejecutar(iq, señal)
+                ejecutar(iq, accion, expiracion)
 
-                # evita duplicar entradas
                 time.sleep(60)
 
         except Exception as e:
