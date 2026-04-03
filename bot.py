@@ -15,59 +15,82 @@ MONTO = 1
 EXPIRACION = 1
 
 
+# 🔔 TELEGRAM SEGURO
 def telegram(msg):
+    if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
+        return
     try:
         requests.post(
             f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
-            data={"chat_id": TELEGRAM_CHAT_ID, "text": msg}
+            data={"chat_id": TELEGRAM_CHAT_ID, "text": msg},
+            timeout=5
         )
-    except:
-        pass
+    except Exception as e:
+        print(f"⚠️ Telegram error: {e}")
 
 
+# 🔌 CONEXIÓN ESTABLE
 def conectar():
     while True:
-        iq = IQ_Option(IQ_EMAIL, IQ_PASSWORD)
-        iq.connect()
+        try:
+            iq = IQ_Option(IQ_EMAIL, IQ_PASSWORD)
+            iq.connect()
 
-        if iq.check_connect():
-            iq.change_balance("PRACTICE")
-            print("✅ BOT ACTIVADO")
-            telegram("🤖 BOT ACTIVADO")
-            return iq
+            if iq.check_connect():
+                iq.change_balance("PRACTICE")
+                print("✅ BOT ACTIVADO")
+                telegram("🤖 BOT ACTIVADO")
+                return iq
 
-        print("❌ Error conexión...")
+            print("❌ Error conexión...")
+        except Exception as e:
+            print(f"❌ Error conexión: {e}")
+
         time.sleep(3)
 
 
-# 🔥 ESPERA SIGUIENTE VELA REAL (NO SNIPER)
+# ⏱️ ESPERA SIGUIENTE VELA
 def esperar_siguiente_vela():
-    actual = int(time.time())
-    restante = 60 - (actual % 60)
-    time.sleep(restante + 0.2)
+    while True:
+        now = int(time.time())
+        if now % 60 == 0:
+            break
+        time.sleep(0.2)
 
 
-# 🔥 EJECUCIÓN REAL
+# 🚀 EJECUCIÓN REAL ROBUSTA
 def ejecutar(iq, accion):
 
     print(f"⚡ EJECUTANDO: {accion}")
     telegram(f"⚡ EJECUTANDO: {accion}")
 
-    iq.subscribe_strike_list(PAR, 1)
+    try:
+        iq.subscribe_strike_list(PAR, 1)
+    except:
+        pass
 
-    for i in range(5):
+    for intento in range(5):
+
         try:
-            status, id = iq.buy_digital_spot(PAR, MONTO, accion, EXPIRACION)
+            result = iq.buy_digital_spot(PAR, MONTO, accion, EXPIRACION)
         except Exception as e:
             print(f"❌ ERROR API: {e}")
+            time.sleep(1)
             continue
 
-        if status:
-            print(f"🔥 ORDEN ABIERTA: {id}")
-            telegram(f"✅ ORDEN EJECUTADA: {accion}")
-            return True
+        # 🔥 VALIDACIÓN REAL
+        if result:
+            if isinstance(result, tuple):
+                status, order_id = result
+            else:
+                status, order_id = True, result
 
-        print(f"⚠️ Reintento {i+1}")
+            if status:
+                print(f"🔥 ORDEN ABIERTA: {order_id}")
+                telegram(f"✅ ORDEN EJECUTADA: {accion}")
+                return True
+
+        print(f"⚠️ Reintento {intento + 1}")
         time.sleep(1)
 
     print("❌ FALLÓ TOTAL")
@@ -75,11 +98,15 @@ def ejecutar(iq, accion):
     return False
 
 
+# 🔁 LOOP PRINCIPAL
 def run():
 
     iq = conectar()
 
-    iq.start_candles_stream(PAR, 5, 100)
+    try:
+        iq.start_candles_stream(PAR, 5, 100)
+    except Exception as e:
+        print(f"⚠️ Error iniciando velas: {e}")
 
     while True:
 
@@ -90,9 +117,19 @@ def run():
                 print(f"📊 SEÑAL DETECTADA: {señal}")
                 telegram(f"📊 SEÑAL: {señal}")
 
-                # 🔥 ESPERA LA SIGUIENTE VELA
                 esperar_siguiente_vela()
 
                 ejecutar(iq, señal)
 
-        except Exception as
+        except Exception as e:
+            print(f"❌ ERROR GENERAL: {e}")
+            telegram(f"❌ ERROR: {e}")
+
+            # 🔥 RECONEXIÓN AUTOMÁTICA
+            iq = conectar()
+
+        time.sleep(0.5)
+
+
+if __name__ == "__main__":
+    run()
