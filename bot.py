@@ -1,133 +1,127 @@
+import os
 import time
-import pandas as pd
+import requests
+from iqoptionapi.stable_api import IQ_Option
+from strategy import detectar_entrada
 
-# 🔥 MODELO IA (PESOS)
-modelo = {
-    "tendencia": 1.0,
-    "momento": 1.0,
-    "rsi": 1.0,
-    "volatilidad": 1.0
-}
+IQ_EMAIL = os.getenv("IQ_EMAIL")
+IQ_PASSWORD = os.getenv("IQ_PASSWORD")
 
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-def EMA(series, period):
-    return series.ewm(span=period, adjust=False).mean()
-
-
-def RSI(series, period=14):
-    delta = series.diff()
-    gain = (delta.where(delta > 0, 0)).rolling(period).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(period).mean()
-    rs = gain / loss
-    return 100 - (100 / (1 + rs))
+PAR = "EURUSD-OTC"
+MONTO = 3
+EXPIRACION = 1
 
 
-def detectar_entrada(iq, par):
+# =========================
+# 📲 TELEGRAM
+# =========================
+def telegram(msg):
     try:
-        velas = iq.get_candles(par, 60, 60, time.time())
-
-        if not velas or len(velas) < 40:
-            return None, None
-
-        df = pd.DataFrame(velas)
-        df = df.rename(columns={"max": "high", "min": "low"})
-
-        close = df["close"]
-        open_ = df["open"]
-        high = df["high"]
-        low = df["low"]
-
-        ema20 = EMA(close, 20)
-        ema50 = EMA(close, 50)
-        rsi = RSI(close)
-
-        precio = close.iloc[-1]
-        apertura = open_.iloc[-1]
-
-        vela_verde = precio > apertura
-        vela_roja = precio < apertura
-
-        # =========================
-        # 🔥 FEATURES IA
-        # =========================
-
-        tendencia = 1 if ema20.iloc[-1] > ema50.iloc[-1] else -1
-        momento = 1 if vela_verde else -1
-        fuerza_rsi = 1 if rsi.iloc[-1] > 50 else -1
-
-        volatilidad = high.iloc[-5:].max() - low.iloc[-5:].min()
-
-        # filtro lateral
-        if volatilidad < 0.00005:
-            return None, None
-
-        # =========================
-        # 🧠 SISTEMA DE PUNTUACIÓN
-        # =========================
-
-        score_call = 0
-        score_put = 0
-
-        if tendencia == 1:
-            score_call += modelo["tendencia"]
-        else:
-            score_put += modelo["tendencia"]
-
-        if momento == 1:
-            score_call += modelo["momento"]
-        else:
-            score_put += modelo["momento"]
-
-        if fuerza_rsi == 1:
-            score_call += modelo["rsi"]
-        else:
-            score_put += modelo["rsi"]
-
-        if volatilidad > 0.0001:
-            score_call += modelo["volatilidad"]
-            score_put += modelo["volatilidad"]
-
-        # =========================
-        # 🎯 DECISIÓN FINAL
-        # =========================
-
-        if score_call > score_put and score_call >= 2:
-            return "call", {
-                "score": score_call,
-                "tipo": "call"
-            }
-
-        if score_put > score_call and score_put >= 2:
-            return "put", {
-                "score": score_put,
-                "tipo": "put"
-            }
-
-        return None, None
-
-    except Exception as e:
-        print(f"❌ ERROR IA: {e}")
-        return None, None
+        requests.post(
+            f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
+            data={"chat_id": TELEGRAM_CHAT_ID, "text": msg}
+        )
+    except:
+        pass
 
 
-def actualizar_modelo(features, resultado):
-    global modelo
+# =========================
+# 🔌 CONEXIÓN SEGURA
+# =========================
+def conectar():
+    while True:
+        try:
+            iq = IQ_Option(IQ_EMAIL, IQ_PASSWORD)
+            iq.connect()
 
-    if not features:
-        return
+            if iq.check_connect():
+                iq.change_balance("PRACTICE")
+                print("✅ BOT CONECTADO")
+                telegram("🤖 BOT CONECTADO")
+                return iq
 
-    # 🔥 APRENDIZAJE POR REFUERZO REAL
-    if resultado > 0:
-        modelo["tendencia"] += 0.02
-        modelo["momento"] += 0.02
-        modelo["rsi"] += 0.02
-    else:
-        modelo["tendencia"] -= 0.02
-        modelo["momento"] -= 0.02
-        modelo["rsi"] -= 0.02
+        except Exception as e:
+            print(f"❌ ERROR CONEXIÓN: {e}")
 
-    # 🔒 LIMITES ESTABLES
-    for key in modelo:
-        modelo[key] = max(0.5, min(2.0, modelo[key]))
+        time.sleep(3)
 
-    print(f"🧠 MODELO IA: {modelo}")
+
+# =========================
+# 🔥 ESPERAR APERTURA EXACTA
+# =========================
+def esperar_apertura_vela():
+    while True:
+        now = time.time()
+        segundos = int(now) % 60
+
+        # 🔥 entra EXACTO en segundo 0
+        if segundos == 0:
+            break
+
+        time.sleep(0.2)
+
+
+# =========================
+# 🚀 EJECUTAR OPERACIÓN
+# =========================
+def ejecutar(iq, accion):
+
+    print(f"⚡ ENTRANDO: {accion}")
+    telegram(f"⚡ ENTRANDO: {accion}")
+
+    for i in range(3):
+        try:
+            status, order_id = iq.buy(MONTO, PAR, accion, EXPIRACION)
+
+            if status:
+                print(f"🔥 ORDEN ABIERTA: {order_id}")
+                telegram(f"✅ ORDEN: {accion}")
+                return True
+
+        except Exception as e:
+            print(f"❌ ERROR ORDEN: {e}")
+
+        time.sleep(1)
+
+    print("❌ NO EJECUTÓ")
+    telegram("❌ FALLÓ OPERACIÓN")
+    return False
+
+
+# =========================
+# 🧠 LOOP PRINCIPAL
+# =========================
+def run():
+
+    iq = conectar()
+
+    while True:
+        try:
+            señal, _ = detectar_entrada(iq, PAR)
+
+            if señal:
+                print(f"📊 SEÑAL: {señal}")
+                telegram(f"📊 SEÑAL: {señal}")
+
+                # 🔥 ESPERA APERTURA EXACTA
+                esperar_apertura_vela()
+
+                # 🔥 EJECUTA EN EL SEGUNDO 0
+                ejecutar(iq, señal)
+
+                # 🔒 EVITA MULTIENTRADAS MISMA VELA
+                time.sleep(2)
+
+        except Exception as e:
+            print(f"❌ ERROR LOOP: {e}")
+            time.sleep(2)
+
+
+# =========================
+# ▶️ START
+# =========================
+if __name__ == "__main__":
+    run()
