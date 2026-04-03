@@ -4,7 +4,6 @@ import requests
 from iqoptionapi.stable_api import IQ_Option
 from strategy import detectar_entrada
 
-# ========= CONFIG =========
 EMAIL = os.getenv("IQ_EMAIL")
 PASSWORD = os.getenv("IQ_PASSWORD")
 
@@ -20,8 +19,7 @@ PARES = [
 ]
 
 MONTO = 2
-TIEMPO = 1  # 1 minuto
-# ==========================
+TIEMPO = 1
 
 
 def enviar_telegram(msg):
@@ -77,7 +75,6 @@ def obtener_velas(iq, par):
 
 def ejecutar_operacion(iq, par, direccion):
     print(f"⚡ {par} → {direccion.upper()}")
-
     enviar_telegram(f"📊 {par} → {direccion.upper()}")
 
     check, id = iq.buy(MONTO, par, direccion, TIEMPO)
@@ -96,12 +93,11 @@ def ejecutar_operacion(iq, par, direccion):
                 break
 
             time.sleep(1)
-
     else:
         print("❌ Error ejecutando operación")
 
 
-# ========= MAIN =========
+# ================= MAIN =================
 
 iq = conectar()
 
@@ -118,10 +114,14 @@ while True:
 
             señal = detectar_entrada(velas)
 
-            if señal:
-                ejecutar_operacion(iq, par, señal)
+            # 🔥 FIX AQUÍ
+            if isinstance(señal, tuple):
+                direccion = señal[0]
+            else:
+                direccion = señal
 
-                # SOLO 1 operación por vela
+            if direccion in ["call", "put"]:
+                ejecutar_operacion(iq, par, direccion)
                 break
 
     except Exception as e:
