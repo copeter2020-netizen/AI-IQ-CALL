@@ -18,25 +18,40 @@ def connect():
 
         if iq.check_connect():
             iq.change_balance("PRACTICE")
-            print("BOT ACTIVADO")
+            print("✅ BOT ACTIVADO")
             return iq
 
+        print("❌ Error conectando...")
         time.sleep(3)
 
 
+# 🔥 SNIPER REAL (SIN DESFASE)
 def esperar_sniper():
-    while int(time.time()) % 60 != 59:
+    while True:
+        now = time.time()
+        segundos = int(now) % 60
+
+        if segundos == 59:
+            break
+
         time.sleep(0.001)
 
 
+# 🔥 EJECUCIÓN REAL FORZADA
 def ejecutar(iq, accion):
+
+    print(f"⚡ INTENTANDO ENTRADA: {accion}")
+
     try:
-        status, _ = iq.buy(MONTO, PAR, accion, EXPIRACION)
-    except:
+        status, id = iq.buy(MONTO, PAR, accion, EXPIRACION)
+    except Exception as e:
+        print(f"❌ ERROR BUY: {e}")
         return
 
     if status:
-        print(f"ENTRADA REAL: {accion.upper()}")
+        print(f"🔥 ENTRADA EJECUTADA: {accion.upper()} ID: {id}")
+    else:
+        print("❌ FALLÓ LA ENTRADA")
 
 
 def run():
@@ -45,15 +60,21 @@ def run():
 
     while True:
 
-        señal = detectar_entrada(iq, PAR)
+        try:
+            señal = detectar_entrada(iq, PAR)
 
-        if señal:
-            print(f"SEÑAL DETECTADA: {señal}")
+            if señal:
 
-            esperar_sniper()
-            ejecutar(iq, señal)
+                print(f"📊 SEÑAL DETECTADA: {señal}")
 
-        time.sleep(1)
+                esperar_sniper()
+                ejecutar(iq, señal)
+
+        except Exception as e:
+            print(f"❌ ERROR GENERAL: {e}")
+            iq = connect()
+
+        time.sleep(0.5)
 
 
 if __name__ == "__main__":
