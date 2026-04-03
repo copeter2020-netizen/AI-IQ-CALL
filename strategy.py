@@ -5,7 +5,7 @@ ultima_operacion = 0
 
 
 # ==========================
-# 🔥 FILTRO NO OPERAR
+# 🔥 MERCADO VÁLIDO
 # ==========================
 def mercado_valido(velas):
     try:
@@ -17,11 +17,9 @@ def mercado_valido(velas):
 
         rango = max(highs[-20:]) - min(lows[-20:])
 
-        # ❌ mercado muerto
         if vol_actual < vol_pasada * 0.9:
             return False
 
-        # ❌ rango comprimido
         if rango < vol_actual * 2:
             return False
 
@@ -31,20 +29,65 @@ def mercado_valido(velas):
 
 
 # ==========================
-# 🔥 ESTRATEGIA FINAL ABSOLUTA
+# 🔥 DETECTAR ZONAS PROHIBIDAS
+# ==========================
+def zona_prohibida(highs, lows, precio):
+
+    maximo = max(highs[-30:])
+    minimo = min(lows[-30:])
+
+    rango = maximo - minimo
+
+    if rango == 0:
+        return True
+
+    posicion = (precio - minimo) / rango
+
+    # ❌ cerca de resistencia
+    if posicion > 0.85:
+        return True
+
+    # ❌ cerca de soporte
+    if posicion < 0.15:
+        return True
+
+    return False
+
+
+# ==========================
+# 🔥 CALIDAD DEL PAR
+# ==========================
+def score_par(velas):
+    try:
+        highs = np.array([float(v["max"]) for v in velas])
+        lows  = np.array([float(v["min"]) for v in velas])
+        closes = np.array([float(v["close"]) for v in velas])
+
+        volatilidad = np.mean(highs[-10:] - lows[-10:])
+        tendencia = abs(np.polyfit(range(10), closes[-10:], 1)[0])
+        ruido = np.std(closes[-10:])
+
+        return (volatilidad * 2) + (tendencia * 5) - ruido
+    except:
+        return 0
+
+
+# ==========================
+# 🔥 ESTRATEGIA FINAL TOTAL
 # ==========================
 def detectar_mejor_entrada(data_por_par):
     global ultima_operacion
 
     ahora = time.time()
 
-    # 🔒 ULTRA SELECTIVO
     if ahora - ultima_operacion < 900:
         return None
 
-    mejor = None
-    mejor_score = 0
+    candidatos = []
 
+    # ==========================
+    # 🔥 FILTRAR PARES
+    # ==========================
     for par, velas in data_por_par.items():
 
         if par not in ["EURUSD", "EURJPY", "EURGBP", "GBPUSD", "USDCHF"]:
@@ -56,100 +99,80 @@ def detectar_mejor_entrada(data_por_par):
         if not mercado_valido(velas):
             continue
 
-        closes = np.array([float(v["close"]) for v in velas])
-        highs  = np.array([float(v["max"]) for v in velas])
-        lows   = np.array([float(v["min"]) for v in velas])
+        calidad = score_par(velas)
 
-        v1 = velas[-1]  # confirmación
-        v2 = velas[-2]  # trampa
-        v3 = velas[-3]
+        candidatos.append((par, velas, calidad))
 
-        def d(v):
-            return float(v["open"]), float(v["close"]), float(v["max"]), float(v["min"])
+    if not candidatos:
+        return None
 
-        o1,c1,h1,l1 = d(v1)
-        o2,c2,h2,l2 = d(v2)
+    # ==========================
+    # 🔥 ORDENAR POR MEJOR PAR
+    # ==========================
+    candidatos.sort(key=lambda x: x[2], reverse=True)
 
-        rango2 = h2 - l2
-        if rango2 == 0:
-            continue
+    # ==========================
+    # 🔥 ANALIZAR SOLO EL MEJOR
+    # ==========================
+    par, velas, _ = candidatos[0]
 
-        cuerpo2 = abs(c2 - o2)
+    closes = np.array([float(v["close"]) for v in velas])
+    highs  = np.array([float(v["max"]) for v in velas])
+    lows   = np.array([float(v["min"]) for v in velas])
 
-        score = 0
+    v1 = velas[-1]
+    v2 = velas[-2]
 
-        # ==========================
-        # 🔥 1. DETECTAR TRAMPA
-        # ==========================
-        max_prev = max(highs[-20:-2])
-        min_prev = min(lows[-20:-2])
+    o1 = float(v1["open"])
+    c1 = float(v1["close"])
+    h1 = float(v1["max"])
+    l1 = float(v1["min"])
 
-        fake_up = h2 > max_prev and c2 < max_prev
-        fake_down = l2 < min_prev and c2 > min_prev
+    o2 = float(v2["open"])
+    c2 = float(v2["close"])
+    h2 = float(v2["max"])
+    l2 = float(v2["min"])
 
-        if fake_up:
-            direccion = "put"
-        elif fake_down:
-            direccion = "call"
-        else:
-            continue
+    # ==========================
+    # 🔥 NO OPERAR EN ZONAS PROHIBIDAS
+    # ==========================
+    if zona_prohibida(highs, lows, c1):
+        return None
 
-        score += 30
+    # ==========================
+    # 🔥 DETECTAR TRAMPA
+    # ==========================
+    max_prev = max(highs[-20:-2])
+    min_prev = min(lows[-20:-2])
 
-        # ==========================
-        # 🔥 2. RECHAZO REAL
-        # ==========================
-        if direccion == "put":
-            if (h2 - max(o2, c2)) < cuerpo2 * 1.2:
-                continue
-        else:
-            if (min(o2, c2) - l2) < cuerpo2 * 1.2:
-                continue
+    fake_up = h2 > max_prev and c2 < max_prev
+    fake_down = l2 < min_prev and c2 > min_prev
 
-        score += 20
+    if fake_up:
+        direccion = "put"
+    elif fake_down:
+        direccion = "call"
+    else:
+        return None
 
-        # ==========================
-        # 🔥 3. CONFIRMACIÓN (CLAVE)
-        # ==========================
-        if direccion == "put" and c1 >= c2:
-            continue
-        if direccion == "call" and c1 <= c2:
-            continue
+    # ==========================
+    # 🔥 CONFIRMACIÓN
+    # ==========================
+    if direccion == "put" and c1 >= c2:
+        return None
+    if direccion == "call" and c1 <= c2:
+        return None
 
-        score += 25
+    # ==========================
+    # 🔥 CONTINUIDAD REAL
+    # ==========================
+    if direccion == "put" and c1 > o1:
+        return None
+    if direccion == "call" and c1 < o1:
+        return None
 
-        # ==========================
-        # 🔥 4. CONTINUACIÓN
-        # ==========================
-        if direccion == "put" and c1 > o1:
-            continue
-        if direccion == "call" and c1 < o1:
-            continue
-
-        score += 15
-
-        # ==========================
-        # 🔥 5. ESPACIO LIBRE
-        # ==========================
-        maximo = max(highs[-30:])
-        minimo = min(lows[-30:])
-
-        if direccion == "put" and (c1 - minimo) < rango2:
-            continue
-        if direccion == "call" and (maximo - c1) < rango2:
-            continue
-
-        score += 10
-
-        # ==========================
-        # 🔥 SELECCIÓN FINAL
-        # ==========================
-        if score > mejor_score:
-            mejor_score = score
-            mejor = (par, direccion, score)
-
-    if mejor and mejor_score >= 90:
-        ultima_operacion = ahora
-        return mejor
-
-    return None
+    # ==========================
+    # 🔥 ENTRADA FINAL
+    # ==========================
+    ultima_operacion = ahora
+    return (par, direccion, 100)
