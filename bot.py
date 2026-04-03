@@ -83,7 +83,7 @@ def esperar_cierre():
     while True:
         segundos = int(time.time()) % 60
 
-        if segundos >= 59.050:
+        if segundos >= 59:
             return
 
         time.sleep(0.2)
