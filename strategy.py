@@ -1,94 +1,45 @@
 import time
-import numpy as np
+import pandas as pd
+import ta
 
 
-def calcular_sar(velas, step=0.02, max_step=0.2):
-
-    high = [v["max"] for v in velas]
-    low = [v["min"] for v in velas]
-
-    sar = [low[0]]
-    ep = high[0]
-    af = step
-    uptrend = True
-
-    for i in range(1, len(velas)):
-
-        prev = sar[-1]
-
-        if uptrend:
-            new = prev + af * (ep - prev)
-
-            if low[i] < new:
-                uptrend = False
-                new = ep
-                ep = low[i]
-                af = step
-            else:
-                if high[i] > ep:
-                    ep = high[i]
-                    af = min(af + step, max_step)
-
-        else:
-            new = prev + af * (ep - prev)
-
-            if high[i] > new:
-                uptrend = True
-                new = ep
-                ep = high[i]
-                af = step
-            else:
-                if low[i] < ep:
-                    ep = low[i]
-                    af = min(af + step, max_step)
-
-        sar.append(new)
-
-    return sar
-
-
-def bollinger(velas, period=20):
-
-    closes = [v["close"] for v in velas]
-
-    if len(closes) < period:
-        return None, None
-
-    sma = np.mean(closes[-period:])
-    std = np.std(closes[-period:])
-
-    return sma + 2 * std, sma - 2 * std
-
-
-# 🔥 AJUSTE CLAVE → SIEMPRE GENERA ENTRADAS VÁLIDAS
 def detectar_entrada(iq, par):
 
-    try:
-        velas5 = iq.get_candles(par, 5, 60, time.time())
-    except:
-        return None
+    velas = iq.get_candles(par, 5, 60, time.time())
+    df = pd.DataFrame(velas)
 
-    if len(velas5) < 30:
-        return None
+    close = df["close"]
+    high = df["max"]
+    low = df["min"]
+    open_ = df["open"]
 
-    sar = calcular_sar(velas5)
-    upper, lower = bollinger(velas5)
+    # INDICADORES DEFAULT
+    bb = ta.volatility.BollingerBands(close)
+    upper = bb.bollinger_hband()
+    lower = bb.bollinger_lband()
 
-    if upper is None:
-        return None
+    sar = ta.trend.PSARIndicator(high, low, close).psar()
 
-    vela = velas5[-2]
-    sar_actual = sar[-2]
+    last = -1
+    prev = -2
 
-    # 👉 SAR dentro de bandas
-    if not (lower <= sar_actual <= upper):
-        return None
+    precio = close.iloc[last]
+    apertura = open_.iloc[last]
 
-    # 👉 DIRECCIÓN
-    if sar_actual > vela["close"]:
-        return "put"
+    # 🔻 PUT
+    if sar.iloc[last] > precio and lower.iloc[last] < precio < upper.iloc[last]:
 
-    if sar_actual < vela["close"]:
-        return "call"
+        if close.iloc[prev] > open_.iloc[prev]:  # vela verde
+
+            if precio > apertura:
+                return "put"
+
+    # 🔺 CALL
+    if sar.iloc[last] < precio and lower.iloc[last] < precio < upper.iloc[last]:
+
+        if close.iloc[prev] < open_.iloc[prev]:  # vela roja
+
+            if precio < apertura:
+                return "call"
 
     return None
