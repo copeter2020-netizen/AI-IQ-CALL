@@ -28,7 +28,7 @@ ultima_operacion = 0
 
 
 # =========================
-# TELEGRAM
+# 🔥 TELEGRAM (FIX + DEBUG)
 # =========================
 def enviar_mensaje(texto):
     try:
@@ -38,13 +38,16 @@ def enviar_mensaje(texto):
 
         url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
 
-        requests.post(url, data={
+        response = requests.post(url, data={
             "chat_id": CHAT_ID,
             "text": texto
         }, timeout=5)
 
+        print("📩 Telegram status:", response.status_code)
+        print("📩 Telegram response:", response.text)
+
     except Exception as e:
-        print("Error Telegram:", e)
+        print("❌ Error Telegram:", e)
 
 
 # =========================
@@ -94,7 +97,7 @@ def obtener_velas(iq, par):
 
 
 # =========================
-# 🔥 NUEVO: FILTRO MERCADO ACTIVO
+# 🔥 FILTRO MERCADO ACTIVO
 # =========================
 def mercado_activo(velas):
     try:
@@ -119,18 +122,16 @@ def mercado_activo(velas):
 
 
 # =========================
-# ESTRATEGIA (MEJORADA)
+# ESTRATEGIA
 # =========================
 def detectar_mejor_entrada(data_por_par):
     global ultima_operacion
 
     ahora = time.time()
 
-    # 🔒 CONTROL
     if ahora - ultima_operacion < 10800:
         return None
 
-    # ⏱️ SOLO AL CIERRE
     if int(ahora) % 60 < 58:
         return None
 
@@ -142,7 +143,6 @@ def detectar_mejor_entrada(data_por_par):
         if len(velas) < 120:
             continue
 
-        # 🔥 NUEVO FILTRO CLAVE
         if not mercado_activo(velas):
             continue
 
@@ -154,12 +154,9 @@ def detectar_mejor_entrada(data_por_par):
         v2 = velas[-2]
         v3 = velas[-3]
 
-        def d(v):
-            return float(v["open"]), float(v["close"]), float(v["max"]), float(v["min"])
-
-        o1,c1,h1,l1 = d(v1)
-        o2,c2,h2,l2 = d(v2)
-        o3,c3,h3,l3 = d(v3)
+        o1,c1,h1,l1 = float(v1["open"]), float(v1["close"]), float(v1["max"]), float(v1["min"])
+        o2,c2,h2,l2 = float(v2["open"]), float(v2["close"]), float(v2["max"]), float(v2["min"])
+        o3,c3,_,_   = float(v3["open"]), float(v3["close"]), float(v3["max"]), float(v3["min"])
 
         rango = h1 - l1
         if rango == 0:
@@ -173,7 +170,6 @@ def detectar_mejor_entrada(data_por_par):
 
         score = 0
 
-        # 🔥 ESTRUCTURA
         hh = highs[-1] > highs[-5] > highs[-10]
         hl = lows[-1] > lows[-5] > lows[-10]
 
@@ -189,7 +185,6 @@ def detectar_mejor_entrada(data_por_par):
         else:
             continue
 
-        # 🔥 PRESIÓN
         if direccion == "call" and not (c1 > c2 > c3):
             continue
         if direccion == "put" and not (c1 < c2 < c3):
@@ -197,7 +192,6 @@ def detectar_mejor_entrada(data_por_par):
 
         score += 15
 
-        # 🔥 CIERRE FINAL
         if direccion == "call":
             if posicion < 0.85 or mecha_sup > cuerpo * 0.3:
                 continue
@@ -207,13 +201,11 @@ def detectar_mejor_entrada(data_por_par):
 
         score += 25
 
-        # 🔥 CUERPO
         if cuerpo < rango * 0.7:
             continue
 
         score += 10
 
-        # 🔥 MOMENTUM
         p1 = np.polyfit(range(20), closes[-20:], 1)[0]
         p2 = np.polyfit(range(5), closes[-5:], 1)[0]
 
@@ -224,7 +216,6 @@ def detectar_mejor_entrada(data_por_par):
 
         score += 10
 
-        # 🔥 RUPTURA
         if direccion == "call" and c1 <= h2:
             continue
         if direccion == "put" and c1 >= l2:
@@ -232,7 +223,6 @@ def detectar_mejor_entrada(data_por_par):
 
         score += 10
 
-        # 🔥 VOLATILIDAD
         vol_now = np.mean(highs[-10:] - lows[-10:])
         vol_old = np.mean(highs[-40:] - lows[-40:])
 
@@ -257,15 +247,14 @@ def detectar_mejor_entrada(data_por_par):
 # =========================
 def operar(iq, par, direccion):
 
-    try:
-        print(f"🔥 {par} → {direccion}")
+    print(f"🔥 {par} → {direccion}")
 
-        check, _ = iq.buy(MONTO, par, direccion, 1)
+    check, _ = iq.buy(MONTO, par, direccion, 1)
 
-        if check:
-            print("✅ OPERACIÓN ABIERTA")
+    if check:
+        print("✅ OPERACIÓN ABIERTA")
 
-            enviar_mensaje(f"""
+        enviar_mensaje(f"""
 🚀 ENTRADA PRO
 
 Par: {par}
@@ -273,11 +262,8 @@ Dirección: {direccion.upper()}
 Expiración: 1 MIN
 Monto: ${MONTO}
 """)
-        else:
-            print("❌ No ejecutada")
-
-    except Exception as e:
-        print("Error operación:", e)
+    else:
+        print("❌ No ejecutada")
 
 
 # =========================
@@ -286,6 +272,9 @@ Monto: ${MONTO}
 def run():
 
     iq = conectar()
+
+    # 🔥 MENSAJE DE PRUEBA
+    enviar_mensaje("✅ BOT INICIADO CORRECTAMENTE")
 
     while True:
         try:
@@ -327,4 +316,4 @@ def run():
 # START
 # =========================
 if __name__ == "__main__":
-    run()
+    run() 
