@@ -20,7 +20,7 @@ PARES = [
     "GBPJPY-OTC"
 ]
 
-MONTO = 5
+MONTO = 7
 TIEMPO = 1
 
 # ==========================================
@@ -83,7 +83,7 @@ def esperar_cierre():
     while True:
         segundos = int(time.time()) % 60
 
-        if segundos >= 59.8:
+        if segundos >= 58:
             return
 
         time.sleep(0.2)
