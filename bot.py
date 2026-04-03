@@ -11,7 +11,7 @@ TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 PAR = "EURUSD-OTC"
-MONTO = 5000
+MONTO = 10000
 
 
 def telegram(msg):
@@ -39,7 +39,7 @@ def conectar():
         time.sleep(3)
 
 
-# 🔥 ESPERA SIGUIENTE VELA
+# 🔥 ESPERA SIGUIENTE VELA REAL
 def esperar_siguiente_vela():
     while True:
         if int(time.time() % 60) == 0:
@@ -47,11 +47,11 @@ def esperar_siguiente_vela():
         time.sleep(0.2)
 
 
-# 🔥 EJECUCIÓN DINÁMICA
+# 🔥 EJECUCIÓN REAL
 def ejecutar(iq, accion, expiracion):
 
-    print(f"⚡ ENTRANDO: {accion} | {expiracion} min")
-    telegram(f"⚡ ENTRANDO: {accion} | {expiracion} min")
+    print(f"⚡ ENTRANDO: {accion} | {expiracion}m")
+    telegram(f"⚡ ENTRANDO: {accion} | {expiracion}m")
 
     for i in range(5):
         try:
@@ -83,7 +83,7 @@ def run():
 
     iq = conectar()
 
-    iq.start_candles_stream(PAR, 4, 500)
+    # ❌ ELIMINADO → start_candles_stream (causaba el error)
 
     while True:
 
