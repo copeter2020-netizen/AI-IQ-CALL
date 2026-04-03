@@ -5,9 +5,9 @@ ultima_operacion = 0
 
 
 # ==========================
-# 🔥 MERCADO ACTIVO
+# 🔥 FILTRO NO OPERAR
 # ==========================
-def mercado_activo(velas):
+def mercado_valido(velas):
     try:
         highs = np.array([float(v["max"]) for v in velas])
         lows  = np.array([float(v["min"]) for v in velas])
@@ -15,7 +15,14 @@ def mercado_activo(velas):
         vol_actual = np.mean(highs[-5:] - lows[-5:])
         vol_pasada = np.mean(highs[-30:] - lows[-30:])
 
+        rango = max(highs[-20:]) - min(lows[-20:])
+
+        # ❌ mercado muerto
         if vol_actual < vol_pasada * 0.9:
+            return False
+
+        # ❌ rango comprimido
+        if rango < vol_actual * 2:
             return False
 
         return True
@@ -24,14 +31,15 @@ def mercado_activo(velas):
 
 
 # ==========================
-# 🔥 ESTRATEGIA SMART MONEY
+# 🔥 ESTRATEGIA FINAL ABSOLUTA
 # ==========================
 def detectar_mejor_entrada(data_por_par):
     global ultima_operacion
 
     ahora = time.time()
 
-    if ahora - ultima_operacion < 600:
+    # 🔒 ULTRA SELECTIVO
+    if ahora - ultima_operacion < 900:
         return None
 
     mejor = None
@@ -45,15 +53,15 @@ def detectar_mejor_entrada(data_por_par):
         if len(velas) < 80:
             continue
 
-        if not mercado_activo(velas):
+        if not mercado_valido(velas):
             continue
 
         closes = np.array([float(v["close"]) for v in velas])
         highs  = np.array([float(v["max"]) for v in velas])
         lows   = np.array([float(v["min"]) for v in velas])
 
-        v1 = velas[-1]
-        v2 = velas[-2]
+        v1 = velas[-1]  # confirmación
+        v2 = velas[-2]  # trampa
         v3 = velas[-3]
 
         def d(v):
@@ -61,97 +69,77 @@ def detectar_mejor_entrada(data_por_par):
 
         o1,c1,h1,l1 = d(v1)
         o2,c2,h2,l2 = d(v2)
-        o3,c3,h3,l3 = d(v3)
 
-        rango1 = h1 - l1
-        if rango1 == 0:
+        rango2 = h2 - l2
+        if rango2 == 0:
             continue
 
-        cuerpo1 = abs(c1 - o1)
-
-        mecha_sup1 = h1 - max(o1, c1)
-        mecha_inf1 = min(o1, c1) - l1
+        cuerpo2 = abs(c2 - o2)
 
         score = 0
 
         # ==========================
-        # 🔥 1. TENDENCIA PREVIA
+        # 🔥 1. DETECTAR TRAMPA
         # ==========================
-        pendiente = np.polyfit(range(15), closes[-15:], 1)[0]
+        max_prev = max(highs[-20:-2])
+        min_prev = min(lows[-20:-2])
 
-        if pendiente > 0:
+        fake_up = h2 > max_prev and c2 < max_prev
+        fake_down = l2 < min_prev and c2 > min_prev
+
+        if fake_up:
             direccion = "put"
-        elif pendiente < 0:
+        elif fake_down:
             direccion = "call"
         else:
-            continue
-
-        score += 15
-
-        # ==========================
-        # 🔥 2. LIQUIDITY GRAB (CLAVE)
-        # ==========================
-        max_prev = max(highs[-20:-1])
-        min_prev = min(lows[-20:-1])
-
-        fake_break_up = h1 > max_prev and c1 < max_prev
-        fake_break_down = l1 < min_prev and c1 > min_prev
-
-        if direccion == "put" and not fake_break_up:
-            continue
-        if direccion == "call" and not fake_break_down:
             continue
 
         score += 30
 
         # ==========================
-        # 🔥 3. RECHAZO FUERTE
+        # 🔥 2. RECHAZO REAL
         # ==========================
         if direccion == "put":
-            if mecha_sup1 < cuerpo1 * 1.5:
+            if (h2 - max(o2, c2)) < cuerpo2 * 1.2:
                 continue
         else:
-            if mecha_inf1 < cuerpo1 * 1.5:
+            if (min(o2, c2) - l2) < cuerpo2 * 1.2:
                 continue
 
         score += 20
 
         # ==========================
-        # 🔥 4. CIERRE DÉBIL (CLAVE)
+        # 🔥 3. CONFIRMACIÓN (CLAVE)
+        # ==========================
+        if direccion == "put" and c1 >= c2:
+            continue
+        if direccion == "call" and c1 <= c2:
+            continue
+
+        score += 25
+
+        # ==========================
+        # 🔥 4. CONTINUACIÓN
         # ==========================
         if direccion == "put" and c1 > o1:
             continue
         if direccion == "call" and c1 < o1:
             continue
 
-        score += 10
+        score += 15
 
         # ==========================
-        # 🔥 5. CONTEXTO EXTREMO
+        # 🔥 5. ESPACIO LIBRE
         # ==========================
         maximo = max(highs[-30:])
         minimo = min(lows[-30:])
 
-        posicion = (c1 - minimo) / (maximo - minimo)
-
-        if direccion == "put" and posicion < 0.85:
+        if direccion == "put" and (c1 - minimo) < rango2:
             continue
-        if direccion == "call" and posicion > 0.15:
+        if direccion == "call" and (maximo - c1) < rango2:
             continue
 
-        score += 15
-
-        # ==========================
-        # 🔥 6. PÉRDIDA DE FUERZA
-        # ==========================
-        p_corto = np.polyfit(range(5), closes[-5:], 1)[0]
-
-        if direccion == "put" and p_corto > 0:
-            score += 10
-        elif direccion == "call" and p_corto < 0:
-            score += 10
-        else:
-            continue
+        score += 10
 
         # ==========================
         # 🔥 SELECCIÓN FINAL
