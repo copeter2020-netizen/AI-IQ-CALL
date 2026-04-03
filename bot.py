@@ -22,48 +22,76 @@ def enviar_telegram(msg):
         pass
 
 
-Iq = IQ_Option(EMAIL, PASSWORD)
-Iq.connect()
+def conectar():
+    while True:
+        try:
+            iq = IQ_Option(EMAIL, PASSWORD)
+            iq.connect()
 
-if not Iq.check_connect():
-    print("❌ Error conectando")
-    enviar_telegram("❌ Error conectando a IQ Option")
-    exit()
+            if iq.check_connect():
+                print("✅ Conectado a IQ Option")
+                enviar_telegram("✅ Conectado a IQ Option")
+                iq.change_balance("PRACTICE")
+                return iq
+            else:
+                print("❌ Error conectando, reintentando...")
+                time.sleep(5)
 
-print("✅ BOT ACTIVADO")
-enviar_telegram("✅ BOT ACTIVADO")
+        except Exception as e:
+            print("⚠️ Error conexión:", e)
+            time.sleep(5)
 
-Iq.change_balance("PRACTICE")
+
+Iq = conectar()
 
 
 def esperar_cierre_vela():
     while True:
-        server_time = Iq.get_server_timestamp()
-        if int(server_time) % 60 == 0:
-            break
-        time.sleep(0.3)
+        try:
+            server_time = Iq.get_server_timestamp()
+            if int(server_time) % 60 == 0:
+                break
+            time.sleep(0.3)
+        except:
+            return False
+    return True
 
 
 def obtener_candles():
-    return Iq.get_candles(PAR, TIMEFRAME, 100, time.time())
+    try:
+        return Iq.get_candles(PAR, TIMEFRAME, 100, time.time())
+    except:
+        return None
 
 
 while True:
     try:
-        esperar_cierre_vela()
+
+        if not Iq.check_connect():
+            print("🔄 Reconectando...")
+            enviar_telegram("🔄 Reconectando...")
+            Iq = conectar()
+            continue
+
+        if not esperar_cierre_vela():
+            continue
 
         candles = obtener_candles()
 
-        # ✅ AQUÍ ESTÁ EL FIX (solo 1 argumento)
+        if not candles:
+            print("❌ Error obteniendo velas")
+            continue
+
         señal = detectar_entrada(candles)
 
         if señal:
             direccion, expiracion = señal
 
-            print(f"📊 SEÑAL: {direccion}")
-            enviar_telegram(f"📊 SEÑAL: {direccion}")
+            msg = f"📊 SEÑAL: {direccion}"
+            print(msg)
+            enviar_telegram(msg)
 
-            status, id = Iq.buy(MONTO, PAR, direccion, expiracion)
+            status, trade_id = Iq.buy(MONTO, PAR, direccion, expiracion)
 
             if status:
                 print("🔥 OPERACIÓN EJECUTADA")
