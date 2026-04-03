@@ -1,201 +1,152 @@
 import time
+import json
 import requests
-from iqoptionapi.stable_api import IQ_Option
+from telegram import enviar_mensaje
 
-# =========================
-# 🔐 CONFIG
-# =========================
-EMAIL = "TU_EMAIL"
-PASSWORD = "TU_PASSWORD"
-
-TELEGRAM_TOKEN = "TU_TOKEN"
-CHAT_ID = "TU_CHAT_ID"
-
-MONTO = 15
+API_URL = "https://api.example.com/price"  # reemplaza si usas API real
 
 PARES = [
-    "EURGBP-OTC",
-    "EURJPY-OTC",
     "EURUSD-OTC",
     "GBPUSD-OTC",
+    "EURJPY-OTC",
+    "EURGBP-OTC",
     "USDCHF-OTC"
 ]
 
-TIMEFRAME = 60
-EXPIRACION = 1
+MONTO = 15  # 👈 AQUÍ CAMBIAS EL IMPORTE
 
 # =========================
-# 📩 TELEGRAM (INTEGRADO)
+# 🔥 CONEXIÓN ESTABLE
 # =========================
-def enviar_mensaje(texto):
+def get_data():
     try:
-        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-        requests.post(url, data={
-            "chat_id": CHAT_ID,
-            "text": texto
-        }, timeout=5)
-    except Exception as e:
-        print("⚠️ Error Telegram:", e)
+        r = requests.get(API_URL, timeout=5)
 
-# =========================
-# 🔌 CONEXIÓN (FIX)
-# =========================
-def conectar():
-    while True:
-        try:
-            print("🔄 Conectando...")
-            iq = IQ_Option(EMAIL, PASSWORD)
+        if r.status_code != 200:
+            return None
 
-            time.sleep(3)
+        data = r.json()
 
-            status, reason = iq.connect()
+        # evitar error lastPrice
+        if "lastPrice" not in data:
+            return None
 
-            if status:
-                print("✅ Conectado")
-                iq.change_balance("PRACTICE")
-                return iq
+        return float(data["lastPrice"])
 
-            # 🔴 ERROR REAL TUYO
-            if "invalid_credentials" in str(reason):
-                print("❌ EMAIL / PASSWORD INCORRECTO")
-                enviar_mensaje("❌ ERROR LOGIN IQ OPTION")
-                time.sleep(60)
-                continue
-
-            print("❌ Error conexión:", reason)
-
-        except Exception as e:
-            print("⚠️ Error:", e)
-
-        print("⏳ Reintentando en 15s...")
-        time.sleep(15)
-
-# =========================
-# 📊 VELAS
-# =========================
-def get_velas(iq, par):
-    try:
-        return iq.get_candles(par, TIMEFRAME, 50, time.time())
     except:
         return None
 
+
 # =========================
-# 🧠 ESTRATEGIA
+# 🔥 ESTRATEGIA PRO
 # =========================
-def estrategia(velas):
-    try:
-        if not velas or len(velas) < 30:
-            return None
-
-        v = velas[-1]
-
-        o = float(v["open"])
-        c = float(v["close"])
-        h = float(v["max"])
-        l = float(v["min"])
-
-        rango = h - l
-        if rango <= 0:
-            return None
-
-        cuerpo = abs(c - o)
-        mecha_sup = h - max(o, c)
-        mecha_inf = min(o, c) - l
-
-        fuerza = cuerpo > rango * 0.6
-
-        altos = [x["max"] for x in velas[-10:]]
-        bajos = [x["min"] for x in velas[-10:]]
-
-        if max(altos) - min(bajos) < rango * 3:
-            return None
-
-        rechazo_venta = mecha_sup > cuerpo * 1.5
-        rechazo_compra = mecha_inf > cuerpo * 1.5
-
-        ultimas = velas[-4:]
-        alcistas = sum(1 for x in ultimas if x["close"] > x["open"])
-        bajistas = sum(1 for x in ultimas if x["close"] < x["open"])
-
-        if fuerza and alcistas >= 3 and not rechazo_venta:
-            return "call"
-
-        if fuerza and bajistas >= 3 and not rechazo_compra:
-            return "put"
-
-        if rechazo_venta:
-            return "put"
-
-        if rechazo_compra:
-            return "call"
-
+def detectar_entrada(velas):
+    if len(velas) < 20:
         return None
 
-    except Exception as e:
-        print("❌ Error estrategia:", e)
+    v = velas[-1]
+
+    o = float(v["open"])
+    c = float(v["close"])
+    h = float(v["max"])
+    l = float(v["min"])
+
+    cuerpo = abs(c - o)
+    rango = h - l
+
+    if rango == 0:
         return None
 
-# =========================
-# ⏱ ENTRADA EXACTA
-# =========================
-def esperar_entrada():
-    while True:
-        if time.localtime().tm_sec >= 58:
-            break
-        time.sleep(0.2)
+    mecha_sup = h - max(o, c)
+    mecha_inf = min(o, c) - l
+
+    fuerza = cuerpo / rango
+
+    # FILTRO ULTRA
+    if fuerza < 0.6:
+        return None
+
+    # DIRECCIÓN
+    if c > o and mecha_sup < cuerpo * 0.3:
+        return "call"
+
+    if c < o and mecha_inf < cuerpo * 0.3:
+        return "put"
+
+    return None
+
 
 # =========================
-# 💓 HEARTBEAT
+# 🔥 EJECUCIÓN
 # =========================
-def heartbeat():
-    print("💓 activo:", time.strftime("%H:%M:%S"))
+def ejecutar_operacion(par, direccion):
+    print(f"📊 {par} → {direccion.upper()}")
+
+    enviar_mensaje(f"""
+🚀 ENTRADA DETECTADA
+
+Par: {par}
+Dirección: {direccion.upper()}
+Expiración: 1 MIN
+Monto: ${MONTO}
+""")
+
 
 # =========================
-# 🚀 BOT
+# 🔥 LOOP PRINCIPAL
 # =========================
 def run():
-    iq = conectar()
 
     while True:
         try:
-            heartbeat()
 
-            if not iq.check_connect():
-                print("⚠️ Reconectando...")
-                iq = conectar()
-                continue
+            print("🔄 Buscando condiciones perfectas...")
 
             for par in PARES:
-                velas = get_velas(iq, par)
-                if not velas:
-                    continue
 
-                señal = estrategia(velas)
+                velas = obtener_velas_fake()  # reemplaza por tu fuente real
+
+                señal = detectar_entrada(velas)
 
                 if señal:
-                    print(f"🔥 {par} → {señal.upper()}")
 
-                    enviar_mensaje(
-                        f"📡 SEÑAL\n{par}\n{señal.upper()}\n💰 ${MONTO}\n⏱ 1 MIN"
-                    )
+                    print("🔥 CONDICIÓN PERFECTA")
 
-                    esperar_entrada()
+                    # ⏱️ ENTRADA EN SEGUNDO 59
+                    segundos = int(time.time()) % 60
+                    esperar = 59 - segundos
 
-                    check, _ = iq.buy(MONTO, par, señal, EXPIRACION)
+                    if esperar > 0:
+                        time.sleep(esperar)
 
-                    if check:
-                        print("✅ Operación ejecutada")
-                    else:
-                        print("❌ Error operación")
+                    ejecutar_operacion(par, señal)
 
-            time.sleep(1)
+                    time.sleep(60)  # evita sobreoperar
 
-        except Exception as e:
-            print("❌ ERROR:", e)
             time.sleep(5)
 
+        except Exception as e:
+            print("⚠️ Error:", e)
+            time.sleep(10)
+
+
 # =========================
-# ▶️ START
+# FAKE DATA (REEMPLAZAR)
+# =========================
+def obtener_velas_fake():
+    velas = []
+    for i in range(20):
+        velas.append({
+            "open": 1.0,
+            "close": 1.1,
+            "max": 1.2,
+            "min": 0.9
+        })
+    return velas
+
+
+# =========================
+# START
 # =========================
 if __name__ == "__main__":
     run()
