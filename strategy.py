@@ -15,12 +15,7 @@ def mercado_activo(velas):
         vol_actual = np.mean(highs[-5:] - lows[-5:])
         vol_pasada = np.mean(highs[-30:] - lows[-30:])
 
-        rango = max(highs[-20:]) - min(lows[-20:])
-
         if vol_actual < vol_pasada * 0.8:
-            return False
-
-        if rango < vol_actual * 2:
             return False
 
         return True
@@ -30,19 +25,15 @@ def mercado_activo(velas):
 
 
 # ==========================
-# 🔥 ESTRATEGIA SNIPER
+# 🔥 ESTRATEGIA CONTINUIDAD
 # ==========================
 def detectar_mejor_entrada(data_por_par):
     global ultima_operacion
 
     ahora = time.time()
 
-    # 🔒 ULTRA SELECTIVO
-    if ahora - ultima_operacion < 1800:
-        return None
-
-    # ⏱️ SOLO AL FINAL
-    if int(ahora) % 60 < 58:
+    # 🔒 CONTROL (más flexible)
+    if ahora - ultima_operacion < 300:
         return None
 
     mejor = None
@@ -50,10 +41,9 @@ def detectar_mejor_entrada(data_por_par):
 
     for par, velas in data_por_par.items():
 
-        if len(velas) < 120:
+        if len(velas) < 50:
             continue
 
-        # 🔥 FILTRO MERCADO ACTIVO
         if not mercado_activo(velas):
             continue
 
@@ -64,13 +54,15 @@ def detectar_mejor_entrada(data_por_par):
         v1 = velas[-1]
         v2 = velas[-2]
         v3 = velas[-3]
+        v4 = velas[-4]
 
         def d(v):
             return float(v["open"]), float(v["close"]), float(v["max"]), float(v["min"])
 
         o1,c1,h1,l1 = d(v1)
-        o2,c2,h2,l2 = d(v2)
+        o2,c2,_,_   = d(v2)
         o3,c3,_,_   = d(v3)
+        o4,c4,_,_   = d(v4)
 
         rango = h1 - l1
         if rango == 0:
@@ -81,96 +73,72 @@ def detectar_mejor_entrada(data_por_par):
         mecha_sup = h1 - max(o1, c1)
         mecha_inf = min(o1, c1) - l1
 
-        posicion = (c1 - l1) / rango
-
         score = 0
 
         # ==========================
-        # 🔥 ESTRUCTURA
+        # 🔥 1. TENDENCIA CLARA
         # ==========================
-        hh = highs[-1] > highs[-5] > highs[-10]
-        hl = lows[-1] > lows[-5] > lows[-10]
+        p = np.polyfit(range(10), closes[-10:], 1)[0]
 
-        ll = highs[-1] < highs[-5] < highs[-10]
-        lh = lows[-1] < lows[-5] < lows[-10]
-
-        if hh and hl:
+        if p > 0:
             direccion = "call"
-            score += 20
-        elif ll and lh:
+            score += 25
+        elif p < 0:
             direccion = "put"
-            score += 20
+            score += 25
         else:
             continue
 
         # ==========================
-        # 🔥 COMPRESIÓN → EXPANSIÓN
-        # ==========================
-        vol_ant = np.mean(highs[-15:-5] - lows[-15:-5])
-        vol_act = np.mean(highs[-5:] - lows[-5:])
-
-        if vol_act <= vol_ant:
-            continue
-
-        score += 20
-
-        # ==========================
-        # 🔥 PRESIÓN
-        # ==========================
-        if direccion == "call" and not (c1 > c2 > c3):
-            continue
-        if direccion == "put" and not (c1 < c2 < c3):
-            continue
-
-        score += 20
-
-        # ==========================
-        # 🔥 VELA FINAL (CLAVE)
+        # 🔥 2. CONTINUIDAD REAL (CLAVE)
         # ==========================
         if direccion == "call":
-            if posicion < 0.9 or mecha_sup > cuerpo * 0.25:
+            if not (c1 > c2 > c3 > c4):
                 continue
         else:
-            if posicion > 0.1 or mecha_inf > cuerpo * 0.25:
+            if not (c1 < c2 < c3 < c4):
                 continue
 
-        score += 25
+        score += 30
 
         # ==========================
-        # 🔥 CUERPO
+        # 🔥 3. VELA ACTUAL FUERTE
         # ==========================
-        if cuerpo < rango * 0.75:
-            continue
-
-        score += 10
-
-        # ==========================
-        # 🔥 MOMENTUM
-        # ==========================
-        p = np.polyfit(range(5), closes[-5:], 1)[0]
-
-        if direccion == "call" and p <= 0:
-            continue
-        if direccion == "put" and p >= 0:
+        if cuerpo < rango * 0.6:
             continue
 
         score += 15
 
         # ==========================
-        # 🔥 RUPTURA
+        # 🔥 4. SIN RECHAZO
         # ==========================
-        if direccion == "call" and c1 <= h2:
+        if direccion == "call" and mecha_sup > cuerpo * 0.3:
             continue
-        if direccion == "put" and c1 >= l2:
+        if direccion == "put" and mecha_inf > cuerpo * 0.3:
             continue
 
-        score += 10
+        score += 15
 
+        # ==========================
+        # 🔥 5. ACELERACIÓN
+        # ==========================
+        p_corto = np.polyfit(range(5), closes[-5:], 1)[0]
+
+        if direccion == "call" and p_corto <= p:
+            continue
+        if direccion == "put" and p_corto >= p:
+            continue
+
+        score += 15
+
+        # ==========================
+        # 🔥 SELECCIÓN
+        # ==========================
         if score > mejor_score:
             mejor_score = score
             mejor = (par, direccion, score)
 
-    if mejor and mejor_score >= 100:
+    if mejor and mejor_score >= 80:
         ultima_operacion = ahora
         return mejor
 
