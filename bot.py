@@ -1,98 +1,157 @@
-import os
 import time
 import requests
 from iqoptionapi.stable_api import IQ_Option
-from strategy import detectar_entrada
-
-IQ_EMAIL = os.getenv("IQ_EMAIL")
-IQ_PASSWORD = os.getenv("IQ_PASSWORD")
-
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
-
-PAR = "EURUSD-OTC"
-MONTO = 3
-EXPIRACION = 1
-
 
 # =========================
-# 📲 TELEGRAM
+# CONFIG IQ OPTION
 # =========================
-def telegram(msg):
+EMAIL = "TU_EMAIL"
+PASSWORD = "TU_PASSWORD"
+
+MONTO = 2
+CUENTA = "PRACTICE"  # PRACTICE o REAL
+
+PARES = [
+    "EURUSD-OTC",
+    "GBPUSD-OTC",
+    "EURJPY-OTC",
+    "EURGBP-OTC",
+    "USDCHF-OTC"
+]
+
+# =========================
+# TELEGRAM (SIN ERROR)
+# =========================
+TOKEN = "TU_TOKEN"
+CHAT_ID = "TU_CHAT_ID"
+
+def enviar_mensaje(texto):
     try:
-        requests.post(
-            f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
-            data={"chat_id": TELEGRAM_CHAT_ID, "text": msg}
-        )
-    except:
-        pass
+        url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
+        requests.post(url, data={
+            "chat_id": CHAT_ID,
+            "text": texto
+        }, timeout=5)
+    except Exception as e:
+        print("Telegram error:", e)
 
 
 # =========================
-# 🔌 CONEXIÓN SEGURA
+# CONEXIÓN ESTABLE IQ
 # =========================
 def conectar():
     while True:
         try:
-            iq = IQ_Option(IQ_EMAIL, IQ_PASSWORD)
+            iq = IQ_Option(EMAIL, PASSWORD)
             iq.connect()
 
             if iq.check_connect():
-                iq.change_balance("PRACTICE")
-                print("✅ BOT CONECTADO")
-                telegram("🤖 BOT CONECTADO")
+                print("✅ CONECTADO A IQ OPTION")
+                iq.change_balance(CUENTA)
                 return iq
+            else:
+                print("❌ Error credenciales")
+                time.sleep(5)
 
         except Exception as e:
-            print(f"❌ ERROR CONEXIÓN: {e}")
-
-        time.sleep(3)
-
-
-# =========================
-# 🔥 ESPERAR APERTURA EXACTA
-# =========================
-def esperar_apertura_vela():
-    while True:
-        now = time.time()
-        segundos = int(now) % 60
-
-        # 🔥 entra EXACTO en segundo 0
-        if segundos == 0:
-            break
-
-        time.sleep(0.2)
+            print("Error conexión:", e)
+            time.sleep(5)
 
 
 # =========================
-# 🚀 EJECUTAR OPERACIÓN
+# OBTENER VELAS REALES
 # =========================
-def ejecutar(iq, accion):
+def obtener_velas(iq, par):
+    try:
+        velas = iq.get_candles(par, 60, 20, time.time())
 
-    print(f"⚡ ENTRANDO: {accion}")
-    telegram(f"⚡ ENTRANDO: {accion}")
+        resultado = []
+        for v in velas:
+            resultado.append({
+                "open": v["open"],
+                "close": v["close"],
+                "max": v["max"],
+                "min": v["min"]
+            })
 
-    for i in range(3):
-        try:
-            status, order_id = iq.buy(MONTO, PAR, accion, EXPIRACION)
+        return resultado
 
-            if status:
-                print(f"🔥 ORDEN ABIERTA: {order_id}")
-                telegram(f"✅ ORDEN: {accion}")
-                return True
-
-        except Exception as e:
-            print(f"❌ ERROR ORDEN: {e}")
-
-        time.sleep(1)
-
-    print("❌ NO EJECUTÓ")
-    telegram("❌ FALLÓ OPERACIÓN")
-    return False
+    except Exception as e:
+        print("Error velas:", e)
+        return []
 
 
 # =========================
-# 🧠 LOOP PRINCIPAL
+# ESTRATEGIA (MISMA TUYA)
+# =========================
+def detectar_entrada(velas):
+
+    if len(velas) < 20:
+        return None
+
+    v = velas[-1]
+
+    o = float(v["open"])
+    c = float(v["close"])
+    h = float(v["max"])
+    l = float(v["min"])
+
+    cuerpo = abs(c - o)
+    rango = h - l
+
+    if rango == 0:
+        return None
+
+    mecha_sup = h - max(o, c)
+    mecha_inf = min(o, c) - l
+
+    fuerza = cuerpo / rango
+
+    if fuerza < 0.65:
+        return None
+
+    if mecha_sup > cuerpo or mecha_inf > cuerpo:
+        return None
+
+    if c > o:
+        return "call"
+
+    if c < o:
+        return "put"
+
+    return None
+
+
+# =========================
+# EJECUTAR OPERACIÓN
+# =========================
+def operar(iq, par, direccion):
+
+    try:
+        print(f"🔥 OPERANDO {par} → {direccion}")
+
+        check, id = iq.buy(MONTO, par, direccion, 1)
+
+        if check:
+            print("✅ OPERACIÓN ABIERTA")
+
+            enviar_mensaje(f"""
+🚀 ENTRADA REAL
+
+Par: {par}
+Dirección: {direccion.upper()}
+Expiración: 1 MIN
+Monto: ${MONTO}
+""")
+        else:
+            print("❌ No se pudo abrir operación")
+
+    except Exception as e:
+        print("Error operación:", e)
+
+
+# =========================
+# LOOP PRINCIPAL
 # =========================
 def run():
 
@@ -100,28 +159,39 @@ def run():
 
     while True:
         try:
-            señal, _ = detectar_entrada(iq, PAR)
 
-            if señal:
-                print(f"📊 SEÑAL: {señal}")
-                telegram(f"📊 SEÑAL: {señal}")
+            print("🔎 Buscando condiciones PERFECTAS...")
 
-                # 🔥 ESPERA APERTURA EXACTA
-                esperar_apertura_vela()
+            for par in PARES:
 
-                # 🔥 EJECUTA EN EL SEGUNDO 0
-                ejecutar(iq, señal)
+                velas = obtener_velas(iq, par)
 
-                # 🔒 EVITA MULTIENTRADAS MISMA VELA
-                time.sleep(2)
+                señal = detectar_entrada(velas)  # ✅ CORREGIDO (solo 1 argumento)
+
+                if señal:
+
+                    print("✅ CONDICIÓN PERFECTA")
+
+                    # ⏱️ segundo 59
+                    segundos = int(time.time()) % 60
+                    esperar = 59 - segundos
+
+                    if esperar > 0:
+                        time.sleep(esperar)
+
+                    operar(iq, par, señal)
+
+                    time.sleep(60)
+
+            time.sleep(3)
 
         except Exception as e:
-            print(f"❌ ERROR LOOP: {e}")
-            time.sleep(2)
+            print("ERROR LOOP:", e)
+            time.sleep(5)
 
 
 # =========================
-# ▶️ START
+# START
 # =========================
 if __name__ == "__main__":
     run()
