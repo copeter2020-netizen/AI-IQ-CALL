@@ -1,15 +1,16 @@
 import time
+import os
 import requests
 from iqoptionapi.stable_api import IQ_Option
 from strategy import detectar_entrada
 
 # ================= CONFIG =================
 
-EMAIL = "TU_EMAIL"
-PASSWORD = "TU_PASSWORD"
+EMAIL = os.getenv("IQ_EMAIL")
+PASSWORD = os.getenv("IQ_PASSWORD")
 
-TELEGRAM_TOKEN = "TU_TOKEN"
-CHAT_ID = "TU_CHAT_ID"
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+CHAT_ID = os.getenv("CHAT_ID")
 
 PARES = [
     "EURUSD-OTC",
@@ -19,10 +20,10 @@ PARES = [
     "GBPJPY-OTC"
 ]
 
-MONTO = 2
+MONTO = 4
 TIEMPO = 1
 
-# =========================================
+# ==========================================
 
 
 # ===== TELEGRAM =====
@@ -30,32 +31,51 @@ def enviar_telegram(msg):
     try:
         url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
         requests.post(url, data={"chat_id": CHAT_ID, "text": msg})
-    except Exception as e:
-        print("Error Telegram:", e)
+    except:
+        pass
 
 
-# ===== CONEXIÓN =====
+# ===== CONEXIÓN ROBUSTA =====
 def conectar():
-    Iq = IQ_Option(EMAIL, PASSWORD)
-    Iq.connect()
+    while True:
+        try:
+            print("🔄 Intentando conectar...")
+            Iq = IQ_Option(EMAIL, PASSWORD)
+            Iq.connect()
 
-    if Iq.check_connect():
-        print("✅ Conectado")
-        enviar_telegram("🤖 BOT ACTIVO")
-        return Iq
-    else:
-        print("❌ Error conexión")
-        return None
+            if Iq.check_connect():
+                print("✅ Conectado")
+                enviar_telegram("🤖 BOT ACTIVO")
+                return Iq
+            else:
+                print("❌ Fallo conexión, reintentando...")
+
+        except Exception as e:
+            print("ERROR conexión:", e)
+
+        time.sleep(5)
+
+
+# ===== VERIFICAR CONEXIÓN =====
+def asegurar_conexion(Iq):
+    if not Iq.check_connect():
+        print("🔄 Reconectando...")
+        return conectar()
+    return Iq
 
 
 # ===== OBTENER VELAS =====
 def obtener_velas(Iq, par):
-    velas = Iq.get_candles(par, 60, 50, time.time())
+    try:
+        velas = Iq.get_candles(par, 60, 50, time.time())
 
-    if isinstance(velas, tuple):
-        velas = velas[1]  # FIX ERROR
+        if isinstance(velas, tuple):
+            velas = velas[1]
 
-    return velas
+        return velas
+
+    except:
+        return None
 
 
 # ===== ESPERA CIERRE =====
@@ -63,7 +83,7 @@ def esperar_cierre():
     while True:
         segundos = int(time.time()) % 60
 
-        if segundos >= 58:  # entrada exacta
+        if segundos >= 58:
             return
 
         time.sleep(0.2)
@@ -71,35 +91,35 @@ def esperar_cierre():
 
 # ===== OPERAR =====
 def operar(Iq, par, direccion):
-    direccion = direccion.lower()
+    try:
+        direccion = direccion.lower()
 
-    if direccion not in ["call", "put"]:
-        return
+        status, _ = Iq.buy(MONTO, par, direccion, TIEMPO)
 
-    status, _ = Iq.buy(MONTO, par, direccion, TIEMPO)
+        if status:
+            print(f"✅ {par} {direccion}")
 
-    if status:
-        print(f"✅ {par} {direccion.upper()}")
+            enviar_telegram(
+                f"📊 SEÑAL\n"
+                f"{par}\n"
+                f"{direccion.upper()} - 1 MIN"
+            )
 
-        enviar_telegram(
-            f"📊 SEÑAL\n"
-            f"Par: {par}\n"
-            f"Dirección: {direccion.upper()}\n"
-            f"Tiempo: 1 min"
-        )
-    else:
-        print("❌ Error al operar")
+        else:
+            print("❌ Error al operar")
+
+    except Exception as e:
+        print("Error trade:", e)
 
 
-# ===== LOOP =====
+# ===== LOOP PRINCIPAL =====
 def loop():
     Iq = conectar()
 
-    if Iq is None:
-        return
-
     while True:
         try:
+            Iq = asegurar_conexion(Iq)
+
             for par in PARES:
 
                 velas = obtener_velas(Iq, par)
@@ -113,11 +133,10 @@ def loop():
 
                     esperar_cierre()
 
-                    # confirmación con nueva vela
                     velas = obtener_velas(Iq, par)
-                    señal_final = detectar_entrada(velas)
+                    confirmacion = detectar_entrada(velas)
 
-                    if señal_final == señal:
+                    if confirmacion == señal:
                         operar(Iq, par, señal)
 
                 time.sleep(1)
