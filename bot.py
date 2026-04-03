@@ -11,7 +11,7 @@ TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 PAR = "EURUSD-OTC"
-MONTO = 10000
+MONTO = 1000
 
 
 def telegram(msg):
