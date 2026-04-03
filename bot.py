@@ -1,14 +1,13 @@
 import time
-import os
 import requests
 from iqoptionapi.stable_api import IQ_Option
-from strategy import detectar_entrada
 
-EMAIL = os.getenv("IQ_EMAIL")
-PASSWORD = os.getenv("IQ_PASSWORD")
+# ================= CONFIG =================
+EMAIL = "TU_EMAIL"
+PASSWORD = "TU_PASSWORD"
 
-TELEGRAM_TOKEN = os.getenv("TG_TOKEN")
-TELEGRAM_CHAT_ID = os.getenv("TG_CHAT_ID")
+TELEGRAM_TOKEN = "TU_TOKEN_BOT"
+TELEGRAM_CHAT_ID = "TU_CHAT_ID"
 
 PARES = [
     "EURUSD-OTC",
@@ -18,112 +17,167 @@ PARES = [
     "GBPJPY-OTC"
 ]
 
+TIEMPO = 60
 MONTO = 2
-TIEMPO = 1
+# ==========================================
 
 
-def enviar_telegram(msg):
+# ===== TELEGRAM =====
+def enviar_telegram(mensaje):
     try:
         url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-        requests.post(url, data={
+        data = {
             "chat_id": TELEGRAM_CHAT_ID,
-            "text": msg
-        })
-    except:
-        pass
+            "text": mensaje
+        }
+        requests.post(url, data=data)
+    except Exception as e:
+        print("Error Telegram:", e)
 
 
+# ===== CONEXIÓN =====
 def conectar():
-    while True:
-        try:
-            print("🔄 Conectando...")
-            iq = IQ_Option(EMAIL.strip(), PASSWORD.strip())
-            status, reason = iq.connect()
+    iq = IQ_Option(EMAIL, PASSWORD)
+    iq.connect()
 
-            if status:
-                print("✅ Conectado a IQ Option")
-                iq.change_balance("PRACTICE")
-                return iq
-            else:
-                print(f"❌ Error: {reason}")
-
-                if "invalid_credentials" in str(reason):
-                    print("🚨 Credenciales incorrectas")
-                    exit()
-
-                time.sleep(10)
-
-        except Exception as e:
-            print("⚠️ Error conexión:", e)
-            time.sleep(10)
-
-
-def esperar_cierre_vela():
-    while True:
-        if int(time.time()) % 60 == 59:
-            time.sleep(1)
-            break
-        time.sleep(0.2)
-
-
-def obtener_velas(iq, par):
-    try:
-        return iq.get_candles(par, 60, 100, time.time())
-    except:
+    if iq.check_connect():
+        print("✅ Conectado a IQ Option")
+        enviar_telegram("🤖 Bot conectado correctamente")
+        return iq
+    else:
+        print("❌ Error conexión")
+        enviar_telegram("❌ Error de conexión a IQ Option")
         return None
 
 
-def ejecutar_operacion(iq, par, direccion):
-    print(f"⚡ {par} → {direccion.upper()}")
-    enviar_telegram(f"📊 {par} → {direccion.upper()}")
-
-    check, id = iq.buy(MONTO, par, direccion, TIEMPO)
-
-    if check:
-        print("✅ Operación abierta")
-
-        while True:
-            resultado = iq.check_win_v4(id)
-
-            if resultado is not None:
-                if resultado > 0:
-                    enviar_telegram(f"✅ {par} WIN {resultado}")
-                else:
-                    enviar_telegram(f"❌ {par} LOSS {resultado}")
-                break
-
-            time.sleep(1)
-    else:
-        print("❌ Error ejecutando operación")
+# ===== OBTENER VELAS =====
+def obtener_velas(iq, par):
+    velas = iq.get_candles(par, 60, 50, time.time())
+    return velas
 
 
-# ================= MAIN =================
+# ===== SOPORTE / RESISTENCIA =====
+def zonas(velas):
+    maximo = max([v['max'] for v in velas])
+    minimo = min([v['min'] for v in velas])
+    return maximo, minimo
 
-iq = conectar()
 
-while True:
+# ===== DETECTAR ENTRADA =====
+def detectar_entrada(velas):
+    ultima = velas[-1]
+    anterior = velas[-2]
+
+    cierre = ultima['close']
+    apertura = ultima['open']
+
+    cuerpo = abs(cierre - apertura)
+
+    direccion = None
+
+    # tendencia simple
+    if cierre > apertura:
+        direccion = "CALL"
+    elif cierre < apertura:
+        direccion = "PUT"
+
+    # fuerza de vela
+    if cuerpo < 0.00005:
+        return None
+
+    return direccion
+
+
+# ===== FILTRO IA =====
+def filtro_ia(velas):
+    maximo, minimo = zonas(velas)
+    precio = velas[-1]['close']
+
+    rango = maximo - minimo
+
+    # evitar rango lateral
+    if rango < 0.0003:
+        return False
+
+    # evitar centro del rango
+    if minimo + (rango * 0.4) < precio < minimo + (rango * 0.6):
+        return False
+
+    return True
+
+
+# ===== ENTRADA EXACTA =====
+def esperar_cierre():
+    while True:
+        segundos = int(time.time()) % 60
+
+        # entrar 1 segundo antes del cierre
+        if segundos == 58:
+            return
+        time.sleep(0.5)
+
+
+# ===== EJECUTAR TRADE =====
+def ejecutar_trade(iq, par, direccion):
     try:
-        esperar_cierre_vela()
+        status, id = iq.buy(MONTO, par, direccion, 1)
 
-        for par in PARES:
+        if status:
+            print(f"✅ {par} -> {direccion}")
 
-            velas = obtener_velas(iq, par)
-
-            if not velas:
-                continue
-
-            señal = detectar_entrada(velas)
-
-            # 🔥 FIX AQUÍ
-            if isinstance(señal, tuple):
-                direccion = señal[0]
-            else:
-                direccion = señal
-
-            if direccion in ["call", "put"]:
-                ejecutar_operacion(iq, par, direccion)
-                break
+            enviar_telegram(
+                f"📊 SEÑAL\n"
+                f"Par: {par}\n"
+                f"Dirección: {direccion}\n"
+                f"Tiempo: 1 min\n"
+                f"Monto: ${MONTO}"
+            )
+        else:
+            print("❌ Error operación")
 
     except Exception as e:
-        print("⚠️ ERROR LOOP:", e)
-        iq = conectar()
+        print("Error trade:", e)
+
+
+# ===== LOOP PRINCIPAL =====
+def main():
+    iq = conectar()
+
+    if iq is None:
+        return
+
+    while True:
+        try:
+            for par in PARES:
+
+                velas = obtener_velas(iq, par)
+
+                if not velas:
+                    continue
+
+                # FILTRO IA
+                if not filtro_ia(velas):
+                    continue
+
+                # DETECCIÓN
+                direccion = detectar_entrada(velas)
+
+                if direccion is None:
+                    continue
+
+                # ESPERAR CIERRE
+                esperar_cierre()
+
+                # EJECUTAR
+                ejecutar_trade(iq, par, direccion)
+
+                time.sleep(2)
+
+        except Exception as e:
+            print("ERROR LOOP:", e)
+            time.sleep(5)
+
+
+# ===== RUN =====
+if __name__ == "__main__":
+    main()
