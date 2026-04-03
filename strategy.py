@@ -3,7 +3,7 @@ import numpy as np
 
 ultima_operacion = 0
 
-def evaluar_movimiento(velas):
+def evaluar_estructura(velas):
     try:
         if len(velas) < 120:
             return None
@@ -30,56 +30,66 @@ def evaluar_movimiento(velas):
         score = 0
 
         # ==========================
-        # 🔥 1. DIRECCIÓN GENERAL
+        # 🔥 1. ESTRUCTURA LIMPIA (HH / HL)
         # ==========================
-        pendiente = np.polyfit(range(40), closes[-40:], 1)[0]
+        hh = highs[-1] > highs[-5] > highs[-10]
+        hl = lows[-1] > lows[-5] > lows[-10]
 
-        if pendiente > 0:
+        ll = highs[-1] < highs[-5] < highs[-10]
+        lh = lows[-1] < lows[-5] < lows[-10]
+
+        if hh and hl:
             direccion = "call"
-            score += 10
-        elif pendiente < 0:
+            score += 25
+        elif ll and lh:
             direccion = "put"
-            score += 10
+            score += 25
         else:
             return None
 
         # ==========================
-        # 🔥 2. ACELERACIÓN REAL
+        # 🔥 2. ESTABILIDAD (NO ROTO)
         # ==========================
-        p1 = np.polyfit(range(20), closes[-20:], 1)[0]
+        ruptura_falsa = (
+            (direccion == "call" and lows[-1] < lows[-3]) or
+            (direccion == "put" and highs[-1] > highs[-3])
+        )
+
+        if ruptura_falsa:
+            return None
+        else:
+            score += 10
+
+        # ==========================
+        # 🔥 3. TENDENCIA + ACELERACIÓN
+        # ==========================
+        p1 = np.polyfit(range(30), closes[-30:], 1)[0]
         p2 = np.polyfit(range(10), closes[-10:], 1)[0]
 
-        if direccion == "call" and p2 > p1:
+        if direccion == "call" and p2 > p1 > 0:
             score += 15
-        elif direccion == "put" and p2 < p1:
+        elif direccion == "put" and p2 < p1 < 0:
             score += 15
         else:
             return None
 
         # ==========================
-        # 🔥 3. ENERGÍA DEL MOVIMIENTO
-        # ==========================
-        impulso = abs(closes[-1] - closes[-15])
-        rango_prom = np.mean(highs[-20:] - lows[-20:])
-
-        if impulso > rango_prom * 2:
-            score += 15
-
-        # ==========================
-        # 🔥 4. NO SOBREEXTENDIDO
-        # ==========================
-        extension = abs(closes[-1] - closes[-30])
-
-        if extension < rango_prom * 5:
-            score += 10
-        else:
-            return None
-
-        # ==========================
-        # 🔥 5. CONTINUACIÓN (VELA ACTUAL)
+        # 🔥 4. CONTINUIDAD REAL
         # ==========================
         if cuerpo > rango * 0.75:
             score += 15
+        else:
+            return None
+
+        # ==========================
+        # 🔥 5. RUPTURA CLARA
+        # ==========================
+        if direccion == "call" and c1 > h2:
+            score += 15
+        elif direccion == "put" and c1 < l2:
+            score += 15
+        else:
+            return None
 
         # ==========================
         # 🔥 6. PRESIÓN FINAL
@@ -92,12 +102,13 @@ def evaluar_movimiento(velas):
             return None
 
         # ==========================
-        # 🔥 7. RUPTURA
+        # 🔥 7. VOLATILIDAD CORRECTA
         # ==========================
-        if direccion == "call" and c1 > h2:
-            score += 15
-        elif direccion == "put" and c1 < l2:
-            score += 15
+        vol = np.mean(highs[-20:] - lows[-20:])
+        vol_base = np.mean(highs[-50:] - lows[-50:])
+
+        if vol > vol_base:
+            score += 10
         else:
             return None
 
@@ -123,7 +134,7 @@ def detectar_mejor_entrada(data_por_par):
 
     for par, velas in data_por_par.items():
 
-        resultado = evaluar_movimiento(velas)
+        resultado = evaluar_estructura(velas)
 
         if resultado:
             direccion, score = resultado
@@ -132,7 +143,7 @@ def detectar_mejor_entrada(data_por_par):
                 mejor_score = score
                 mejor = (par, direccion, score)
 
-    # 🔥 SOLO ENTRA SI ES CASI PERFECTO
+    # 🔥 SOLO SI ES CASI PERFECTO
     if mejor and mejor_score >= 90:
         ultima_operacion = ahora
         return mejor
