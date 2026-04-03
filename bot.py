@@ -1,37 +1,111 @@
-import requests
 import time
+import datetime
+import requests
 from iqoptionapi.stable_api import IQ_Option
 from strategy import detectar_entrada
 
+# ==========================
+# 🔐 CONFIG
+# ==========================
 EMAIL = "TU_EMAIL"
 PASSWORD = "TU_PASSWORD"
 
-def get_data():
-    # 🔥 ejemplo con Binance
-    r = requests.get("https://api.binance.com/api/v3/ticker/24hr?symbol=BTCUSDT")
-    d = r.json()
+TELEGRAM_TOKEN = "TU_TOKEN"
+CHAT_ID = "TU_CHAT_ID"
 
-    return {
-        "price": float(d["lastPrice"]),
-        "volume": float(d["volume"]),
-        "vol_prom": float(d["volume"]) * 0.8,
-        "delta": float(d["priceChangePercent"]),
-        "trend": "up" if float(d["priceChangePercent"]) > 0 else "down"
-    }
+PARES = [
+    "EURGBP-OTC",
+    "EURJPY-OTC",
+    "EURUSD-OTC",
+    "GBPUSD-OTC",
+    "USDCHF-OTC"
+]
 
+MONTO = 2
+EXPIRACION = 1
+
+# ==========================
+# 📩 TELEGRAM
+# ==========================
+def enviar_telegram(msg):
+    try:
+        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+        requests.post(url, data={"chat_id": CHAT_ID, "text": msg})
+    except:
+        pass
+
+# ==========================
+# ⏱️ ESPERA SEGUNDO 59
+# ==========================
+def esperar_entrada():
+    while True:
+        now = datetime.datetime.now()
+        if now.second >= 59:
+            break
+        time.sleep(0.2)
+
+# ==========================
+# 📊 OBTENER VELAS
+# ==========================
+def get_velas(iq, par):
+    velas = iq.get_candles(par, 60, 50, time.time())
+    return velas
+
+# ==========================
+# 🚀 EJECUCIÓN
+# ==========================
 def run():
     iq = IQ_Option(EMAIL, PASSWORD)
     iq.connect()
 
+    if not iq.check_connect():
+        print("❌ Error conectando")
+        return
+
+    print("✅ Conectado a IQ Option")
+
     while True:
-        data = get_data()
+        try:
+            mejor_par = None
+            mejor_senal = None
 
-        señal = detectar_entrada(data)
+            # ==========================
+            # 🔍 ANALISIS MULTIPAR
+            # ==========================
+            for par in PARES:
+                velas = get_velas(iq, par)
 
-        if señal:
-            iq.buy(2, "EURUSD-OTC", señal, 1)
-            print("🔥 ENTRADA REAL:", señal)
+                señal = detectar_entrada(velas)
 
-        time.sleep(5)
+                if señal:
+                    mejor_par = par
+                    mejor_senal = señal
+                    break  # 🔥 solo 1 operación perfecta
+
+            # ==========================
+            # 🎯 EJECUCIÓN SNIPER
+            # ==========================
+            if mejor_senal:
+                print(f"🎯 Señal detectada: {mejor_par} -> {mejor_senal}")
+
+                esperar_entrada()
+
+                check, id = iq.buy(MONTO, mejor_par, mejor_senal, EXPIRACION)
+
+                if check:
+                    msg = f"🔥 ENTRADA\n{mejor_par}\n{mejor_senal.upper()}\n⏱ M1"
+                    print(msg)
+                    enviar_telegram(msg)
+                else:
+                    print("❌ Error al ejecutar")
+
+            else:
+                print("⏳ Sin condiciones perfectas...")
+
+            time.sleep(2)
+
+        except Exception as e:
+            print("ERROR LOOP:", e)
+            time.sleep(5)
 
 run()
