@@ -35,33 +35,42 @@ def telegram(msg):
         pass
 
 # ==========================
-# CONEXIÓN ROBUSTA
+# CONEXIÓN ULTRA ESTABLE
 # ==========================
 def conectar():
+    intentos = 0
+
     while True:
         try:
-            iq = IQ_Option(EMAIL, PASSWORD)
+            print("🔄 Conectando...")
 
+            iq = IQ_Option(EMAIL, PASSWORD)
             iq.connect()
 
-            time.sleep(3)
+            time.sleep(5)
 
             if iq.check_connect():
-                print("✅ Conectado correctamente")
+                print("✅ Conectado OK")
 
                 iq.change_balance("PRACTICE")
 
                 return iq
+
             else:
-                print("❌ No conecta, retry...")
-                time.sleep(5)
+                print("❌ Fallo conexión")
 
         except Exception as e:
-            print("ERROR conexión:", e)
-            time.sleep(5)
+            print("⚠️ Error conexión:", e)
+
+        intentos += 1
+
+        # 🔥 evitar bloqueo IQ Option
+        espera = min(10 + intentos * 2, 60)
+        print(f"⏳ Reintentando en {espera}s...")
+        time.sleep(espera)
 
 # ==========================
-# KEEP ALIVE (ANTI RAILWAY KILL)
+# KEEP ALIVE
 # ==========================
 def keep_alive(iq):
     try:
@@ -79,31 +88,47 @@ def esperar_59():
         time.sleep(0.05)
 
 # ==========================
-# BOT
+# OBTENER VELAS SEGURO
+# ==========================
+def get_velas_seguro(iq, par):
+    try:
+        velas = iq.get_candles(par, 60, 60, time.time())
+
+        if not velas or len(velas) == 0:
+            return None
+
+        return velas
+
+    except:
+        return None
+
+# ==========================
+# BOT PRINCIPAL
 # ==========================
 def run():
     iq = conectar()
 
-    ultimo_keepalive = time.time()
+    last_keep = time.time()
 
     while True:
         try:
             # 🔥 mantener conexión viva
-            if time.time() - ultimo_keepalive > 30:
+            if time.time() - last_keep > 25:
                 keep_alive(iq)
-                ultimo_keepalive = time.time()
+                last_keep = time.time()
 
             # 🔥 reconectar si se cae
             if not iq.check_connect():
-                print("⚠️ Reconectando...")
+                print("⚠️ Reconectando sesión...")
                 iq = conectar()
+                continue
 
             operacion = None
 
             for par in PARES:
-                try:
-                    velas = iq.get_candles(par, 60, 60, time.time())
-                except:
+                velas = get_velas_seguro(iq, par)
+
+                if velas is None:
                     continue
 
                 señal = detectar_entrada(velas)
@@ -115,7 +140,7 @@ def run():
             if operacion:
                 par, señal = operacion
 
-                print(f"🎯 CONDICIÓN PERFECTA: {par} {señal}")
+                print(f"🎯 PERFECTO: {par} {señal}")
 
                 esperar_59()
 
@@ -131,10 +156,11 @@ def run():
             else:
                 print("⏳ Sin condiciones perfectas...")
 
-            time.sleep(2)
+            # 🔥 delay humano (clave)
+            time.sleep(3)
 
         except Exception as e:
             print("ERROR LOOP:", e)
-            time.sleep(5)
+            time.sleep(10)
 
 run()
