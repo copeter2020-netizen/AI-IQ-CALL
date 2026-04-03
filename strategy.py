@@ -32,7 +32,9 @@ def fuerza_vela(candle):
     return cuerpo / rango
 
 
+# ✅ SOLO RECIBE 1 PARÁMETRO (candles)
 def detectar_entrada(candles):
+
     if len(candles) < 30:
         return None
 
@@ -49,17 +51,18 @@ def detectar_entrada(candles):
     precio = ultima['close']
     tendencia = "alcista" if precio > ema20[-1] else "bajista"
 
-    # REBOTE EN SOPORTE → CALL
+    # ==========================
+    # LÓGICA
+    # ==========================
+
     if precio <= soporte + 0.0002:
         if fuerza > 0.5 and ultima['close'] > ultima['open']:
             return "call", 1
 
-    # RECHAZO EN RESISTENCIA → PUT
     if precio >= resistencia - 0.0002:
         if fuerza > 0.5 and ultima['close'] < ultima['open']:
             return "put", 1
 
-    # CONTINUACIÓN
     if tendencia == "alcista":
         if ultima['close'] > anterior['close'] and fuerza > 0.6:
             return "call", 1
