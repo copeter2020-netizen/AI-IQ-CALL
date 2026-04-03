@@ -12,7 +12,7 @@ PASSWORD = os.getenv("IQ_PASSWORD")
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-MONTO = 3
+MONTO = 5
 CUENTA = "PRACTICE"
 
 PARES = [
@@ -24,11 +24,12 @@ PARES = [
 ]
 
 # =========================
-# TELEGRAM
+# TELEGRAM (SIN LIBRERÍA)
 # =========================
 def enviar_mensaje(texto):
     try:
         if not TOKEN or not CHAT_ID:
+            print("⚠️ Telegram no configurado")
             return
 
         url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
@@ -39,15 +40,21 @@ def enviar_mensaje(texto):
         }, timeout=5)
 
     except Exception as e:
-        print("Telegram error:", e)
+        print("Error Telegram:", e)
 
 
 # =========================
-# CONEXIÓN
+# CONEXIÓN ESTABLE PRO
 # =========================
 def conectar():
+
     while True:
         try:
+            if not EMAIL or not PASSWORD:
+                print("❌ Faltan credenciales en Railway")
+                time.sleep(10)
+                continue
+
             iq = IQ_Option(EMAIL, PASSWORD)
             iq.connect()
 
@@ -65,101 +72,76 @@ def conectar():
 
 
 # =========================
-# VELAS
+# VELAS REALES
 # =========================
 def obtener_velas(iq, par):
     try:
-        velas = iq.get_candles(par, 60, 30, time.time())
+        velas = iq.get_candles(par, 60, 20, time.time())
 
-        return [{
-            "open": v["open"],
-            "close": v["close"],
-            "max": v["max"],
-            "min": v["min"]
-        } for v in velas]
+        if not velas:
+            return []
 
-    except:
+        resultado = []
+        for v in velas:
+            resultado.append({
+                "open": v.get("open", 0),
+                "close": v.get("close", 0),
+                "max": v.get("max", 0),
+                "min": v.get("min", 0)
+            })
+
+        return resultado
+
+    except Exception as e:
+        print("Error velas:", e)
         return []
 
 
 # =========================
-# 🔥 ESTRATEGIA ULTRA PRO
+# ESTRATEGIA (CORREGIDA)
 # =========================
-def detectar_entrada(velas, *_):
+def detectar_entrada(velas, *_):  # ✅ acepta extra argumentos (FIX ERROR)
 
-    if len(velas) < 30:
+    try:
+        if len(velas) < 20:
+            return None
+
+        v = velas[-1]
+
+        o = float(v["open"])
+        c = float(v["close"])
+        h = float(v["max"])
+        l = float(v["min"])
+
+        rango = h - l
+        if rango == 0:
+            return None
+
+        cuerpo = abs(c - o)
+        mecha_sup = h - max(o, c)
+        mecha_inf = min(o, c) - l
+
+        fuerza = cuerpo / rango
+
+        # 🔥 FILTRO ULTRA SELECTIVO
+        if fuerza < 0.65:
+            return None
+
+        # 🔥 EVITA LATERAL
+        if mecha_sup > cuerpo or mecha_inf > cuerpo:
+            return None
+
+        if c > o:
+            return "call"
+
+        if c < o:
+            return "put"
+
         return None
 
-    v1 = velas[-1]
-    v2 = velas[-2]
-    v3 = velas[-3]
-    v4 = velas[-4]
-
-    def datos(v):
-        return float(v["open"]), float(v["close"]), float(v["max"]), float(v["min"])
-
-    o1,c1,h1,l1 = datos(v1)
-    o2,c2,_,_ = datos(v2)
-    o3,c3,_,_ = datos(v3)
-    o4,c4,_,_ = datos(v4)
-
-    rango = h1 - l1
-    if rango == 0:
+    except Exception as e:
+        print("Error estrategia:", e)
         return None
-
-    cuerpo = abs(c1 - o1)
-    fuerza = cuerpo / rango
-
-    mecha_sup = h1 - max(o1, c1)
-    mecha_inf = min(o1, c1) - l1
-
-    # =========================
-    # 🔥 1. FUERZA EXTREMA
-    # =========================
-    if fuerza < 0.8:
-        return None
-
-    # =========================
-    # 🔥 2. SIN RECHAZO
-    # =========================
-    if mecha_sup > cuerpo * 0.6 or mecha_inf > cuerpo * 0.6:
-        return None
-
-    # =========================
-    # 🔥 3. 4 VELAS MISMA DIRECCIÓN
-    # =========================
-    alcista = c1>o1 and c2>o2 and c3>o3 and c4>o4
-    bajista = c1<o1 and c2<o2 and c3<o3 and c4<o4
-
-    if not alcista and not bajista:
-        return None
-
-    # =========================
-    # 🔥 4. IMPULSO REAL
-    # =========================
-    impulso = abs(c1 - o4)
-    if impulso < rango * 2:
-        return None
-
-    # =========================
-    # 🔥 5. EVITA LATERAL (estructura)
-    # =========================
-    maximos = [v["max"] for v in velas[-10:]]
-    minimos = [v["min"] for v in velas[-10:]]
-
-    if max(maximos) - min(minimos) < rango * 3:
-        return None
-
-    # =========================
-    # 🔥 DECISIÓN FINAL
-    # =========================
-    if alcista:
-        return "call"
-
-    if bajista:
-        return "put"
-
-    return None
 
 
 # =========================
@@ -176,7 +158,7 @@ def operar(iq, par, direccion):
             print("✅ OPERACIÓN ABIERTA")
 
             enviar_mensaje(f"""
-🚀 ENTRADA ULTRA PRO
+🚀 ENTRADA PRO
 
 Par: {par}
 Dirección: {direccion.upper()}
@@ -191,7 +173,7 @@ Monto: ${MONTO}
 
 
 # =========================
-# LOOP
+# LOOP PRINCIPAL
 # =========================
 def run():
 
@@ -201,6 +183,7 @@ def run():
         try:
 
             if not iq.check_connect():
+                print("🔄 Reconectando...")
                 iq = conectar()
 
             print("🔎 Buscando condiciones PERFECTAS...")
@@ -209,12 +192,13 @@ def run():
 
                 velas = obtener_velas(iq, par)
 
-                señal = detectar_entrada(velas)
+                señal = detectar_entrada(velas)  # ✅ YA NO FALLA
 
                 if señal:
 
                     print("✅ CONDICIÓN PERFECTA")
 
+                    # ⏱️ ENTRADA SEGUNDO 59
                     segundos = int(time.time()) % 60
                     esperar = 59 - segundos
 
@@ -225,11 +209,11 @@ def run():
 
                     time.sleep(60)
 
-            time.sleep(5)
+            time.sleep(3)
 
         except Exception as e:
-            print("ERROR:", e)
-            time.sleep(10)
+            print("ERROR LOOP:", e)
+            time.sleep(5)
 
 
 # =========================
