@@ -1,16 +1,10 @@
 import time
 import os
-import requests
 from iqoptionapi.stable_api import IQ_Option
 from strategy import detectar_entrada
 
-# ================= CONFIG =================
-
 EMAIL = os.getenv("IQ_EMAIL")
 PASSWORD = os.getenv("IQ_PASSWORD")
-
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-CHAT_ID = os.getenv("CHAT_ID")
 
 PARES = [
     "EURUSD-OTC",
@@ -20,132 +14,95 @@ PARES = [
     "GBPJPY-OTC"
 ]
 
-MONTO = 7
-TIEMPO = 1
+MONTO = 8
+EXPIRACION = 1
 
-# ==========================================
-
-
-# ===== TELEGRAM =====
-def enviar_telegram(msg):
-    try:
-        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-        requests.post(url, data={"chat_id": CHAT_ID, "text": msg})
-    except:
-        pass
+bloqueo_hasta = 0
 
 
-# ===== CONEXIÓN ROBUSTA =====
 def conectar():
+    iq = IQ_Option(EMAIL, PASSWORD)
+    iq.connect()
+
+    if iq.check_connect():
+        iq.change_balance("PRACTICE")
+        return iq
+    return None
+
+
+def esperar_sniper():
     while True:
-        try:
-            print("🔄 Intentando conectar...")
-            Iq = IQ_Option(EMAIL, PASSWORD)
-            Iq.connect()
-
-            if Iq.check_connect():
-                print("✅ Conectado")
-                enviar_telegram("🤖 BOT ACTIVO")
-                return Iq
-            else:
-                print("❌ Fallo conexión, reintentando...")
-
-        except Exception as e:
-            print("ERROR conexión:", e)
-
-        time.sleep(5)
+        seg = time.time() % 60
+        if 58.98 <= seg <= 59.2:
+            return
+        time.sleep(0.002)
 
 
-# ===== VERIFICAR CONEXIÓN =====
-def asegurar_conexion(Iq):
-    if not Iq.check_connect():
-        print("🔄 Reconectando...")
-        return conectar()
-    return Iq
+def validar_triple(iq, par):
+    señales = []
 
-
-# ===== OBTENER VELAS =====
-def obtener_velas(Iq, par):
-    try:
-        velas = Iq.get_candles(par, 60, 50, time.time())
+    for _ in range(3):
+        velas = iq.get_candles(par, 60, 150, time.time())
 
         if isinstance(velas, tuple):
             velas = velas[1]
 
-        return velas
+        señales.append(detectar_entrada(velas))
+        time.sleep(0.3)
 
-    except:
-        return None
+    if señales.count(señales[0]) == len(señales):
+        return señales[0]
 
-
-# ===== ESPERA CIERRE =====
-def esperar_cierre():
-    while True:
-        segundos = int(time.time()) % 60
-
-        if segundos >= 58:
-            return
-
-        time.sleep(0.2)
+    return None
 
 
-# ===== OPERAR =====
-def operar(Iq, par, direccion):
-    try:
-        direccion = direccion.lower()
+def run():
+    global bloqueo_hasta
 
-        status, _ = Iq.buy(MONTO, par, direccion, TIEMPO)
-
-        if status:
-            print(f"✅ {par} {direccion}")
-
-            enviar_telegram(
-                f"📊 SEÑAL\n"
-                f"{par}\n"
-                f"{direccion.upper()} - 1 MIN"
-            )
-
-        else:
-            print("❌ Error al operar")
-
-    except Exception as e:
-        print("Error trade:", e)
-
-
-# ===== LOOP PRINCIPAL =====
-def loop():
-    Iq = conectar()
+    iq = conectar()
+    if iq is None:
+        return
 
     while True:
         try:
-            Iq = asegurar_conexion(Iq)
+            if time.time() < bloqueo_hasta:
+                time.sleep(10)
+                continue
 
             for par in PARES:
 
-                velas = obtener_velas(Iq, par)
-
-                if not velas or len(velas) < 20:
-                    continue
-
-                señal = detectar_entrada(velas)
+                señal = validar_triple(iq, par)
 
                 if señal:
 
-                    esperar_cierre()
+                    print(f"🧠 SETUP REPETIBLE {par} → {señal}")
 
-                    velas = obtener_velas(Iq, par)
-                    confirmacion = detectar_entrada(velas)
+                    esperar_sniper()
 
-                    if confirmacion == señal:
-                        operar(Iq, par, señal)
+                    status, trade_id = iq.buy(MONTO, par, señal, EXPIRACION)
 
-                time.sleep(1)
+                    if status:
+                        while True:
+                            resultado = iq.check_win_v4(trade_id)
+
+                            if resultado is not None:
+                                if resultado <= 0:
+                                    print("❌ LOSS → BLOQUEO")
+                                    bloqueo_hasta = time.time() + 3600
+                                else:
+                                    print("✅ WIN")
+                                break
+
+                            time.sleep(1)
+
+                    break
+
+            time.sleep(1)
 
         except Exception as e:
-            print("ERROR LOOP:", e)
+            print("ERROR:", e)
             time.sleep(3)
 
 
-# ===== START =====
 if __name__ == "__main__":
-    loop()
+    run()
