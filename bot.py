@@ -26,20 +26,32 @@ def telegram(msg):
 
 def conectar():
     while True:
-        iq = IQ_Option(IQ_EMAIL, IQ_PASSWORD)
-        iq.connect()
+        try:
+            iq = IQ_Option(IQ_EMAIL, IQ_PASSWORD)
+            iq.connect()
 
-        if iq.check_connect():
-            iq.change_balance("PRACTICE")
-            print("✅ BOT ACTIVADO")
-            telegram("🤖 BOT ACTIVADO")
-            return iq
+            if iq.check_connect():
+                iq.change_balance("PRACTICE")
+                print("✅ BOT ACTIVADO")
+                telegram("🤖 BOT ACTIVADO")
+                return iq
 
-        print("❌ Error conexión...")
+        except Exception as e:
+            print(f"❌ ERROR CONEXIÓN: {e}")
+
+        print("🔁 Reintentando conexión...")
         time.sleep(3)
 
 
-# 🔥 ESPERA SIGUIENTE VELA REAL
+def activo_abierto(iq, par):
+    try:
+        all_assets = iq.get_all_open_time()
+        return all_assets["binary"][par]["open"]
+    except:
+        return False
+
+
+# 🔥 ENTRA EXACTO EN NUEVA VELA
 def esperar_siguiente_vela():
     while True:
         if int(time.time() % 60) == 0:
@@ -47,13 +59,17 @@ def esperar_siguiente_vela():
         time.sleep(0.2)
 
 
-# 🔥 EJECUCIÓN REAL
 def ejecutar(iq, accion, expiracion):
 
     print(f"⚡ ENTRANDO: {accion} | {expiracion}m")
     telegram(f"⚡ ENTRANDO: {accion} | {expiracion}m")
 
-    for i in range(5):
+    for intento in range(5):
+
+        if not iq.check_connect():
+            print("🔁 Reconectando...")
+            iq = conectar()
+
         try:
             status, order_id = iq.buy(
                 MONTO,
@@ -62,20 +78,20 @@ def ejecutar(iq, accion, expiracion):
                 expiracion
             )
         except Exception as e:
-            print(f"❌ ERROR: {e}")
+            print(f"❌ ERROR API: {e}")
             time.sleep(1)
             continue
 
         if status:
             print(f"🔥 ORDEN ABIERTA: {order_id}")
-            telegram(f"✅ OPERACIÓN: {accion} ({expiracion}m)")
+            telegram(f"✅ OPERACIÓN ABIERTA: {accion} ({expiracion}m)")
             return True
 
-        print(f"⚠️ Reintento {i+1}")
+        print(f"⚠️ Reintento {intento+1}")
         time.sleep(1)
 
-    print("❌ FALLÓ ENTRADA")
-    telegram("❌ NO SE EJECUTÓ")
+    print("❌ NO SE EJECUTÓ")
+    telegram("❌ FALLÓ ENTRADA")
     return False
 
 
@@ -83,14 +99,19 @@ def run():
 
     iq = conectar()
 
-    # ❌ ELIMINADO → start_candles_stream (causaba el error)
-
     while True:
 
         try:
+            # 🔒 validar activo
+            if not activo_abierto(iq, PAR):
+                print("⏳ Activo cerrado...")
+                time.sleep(5)
+                continue
+
             accion, expiracion = detectar_entrada(iq, PAR)
 
             if accion:
+
                 print(f"📊 SEÑAL: {accion} | {expiracion}m")
                 telegram(f"📊 SEÑAL: {accion} | {expiracion}m")
 
@@ -98,10 +119,12 @@ def run():
 
                 ejecutar(iq, accion, expiracion)
 
+                # evita múltiples entradas seguidas
                 time.sleep(60)
 
         except Exception as e:
             print(f"❌ ERROR LOOP: {e}")
+            telegram(f"❌ ERROR: {e}")
             time.sleep(2)
 
 
