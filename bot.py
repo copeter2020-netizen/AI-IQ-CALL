@@ -11,24 +11,15 @@ TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 PAR = "EURUSD-OTC"
-MONTO = 1000
+MONTO = 1200
 
 
 def telegram(msg):
     try:
-        if TELEGRAM_TOKEN and TELEGRAM_CHAT_ID:
-            requests.post(
-                f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
-                data={"chat_id": TELEGRAM_CHAT_ID, "text": msg}
-            )
-    except:
-        pass
-
-
-# 🔥 PARCHE GLOBAL ANTI-DIGITAL (ELIMINA 'underlying')
-def parche_anti_digital(iq):
-    try:
-        iq.get_digital_underlying_list_data = lambda: {"underlying": []}
+        requests.post(
+            f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
+            data={"chat_id": TELEGRAM_CHAT_ID, "text": msg}
+        )
     except:
         pass
 
@@ -41,13 +32,8 @@ def conectar():
 
             if iq.check_connect():
                 iq.change_balance("PRACTICE")
-
-                # 🔥 aplicar parche después de conectar
-                parche_anti_digital(iq)
-
                 print("✅ BOT ACTIVADO")
                 telegram("🤖 BOT ACTIVADO")
-
                 return iq
 
         except Exception as e:
@@ -56,81 +42,49 @@ def conectar():
         time.sleep(3)
 
 
-def activo_abierto(iq, par):
-    try:
-        data = iq.get_all_open_time()
-        return data["binary"][par]["open"]
-    except:
-        return False
-
-
-# ⏱️ sincroniza entrada a nueva vela
-def esperar_siguiente_vela():
-    while True:
-        if int(time.time()) % 60 == 0:
-            break
-        time.sleep(0.2)
-
-
-# 🔥 EJECUCIÓN BINARIA (SIN DIGITAL)
 def ejecutar(iq, accion, expiracion):
+    print(f"⚡ ENTRANDO: {accion} ({expiracion}m)")
+    telegram(f"⚡ ENTRANDO: {accion} ({expiracion}m)")
 
-    print(f"⚡ ENTRANDO: {accion}")
-    telegram(f"⚡ ENTRANDO: {accion}")
-
-    for _ in range(5):
-        try:
-            status, order_id = iq.buy(
-                MONTO,
-                PAR,
-                accion,
-                expiracion
-            )
-        except Exception as e:
-            print(f"❌ ERROR API: {e}")
-            time.sleep(1)
-            continue
+    try:
+        status, order_id = iq.buy(MONTO, PAR, accion, expiracion)
 
         if status:
             print(f"🔥 ORDEN ABIERTA: {order_id}")
-            telegram(f"✅ OPERACIÓN {accion}")
+            telegram(f"🔥 ORDEN ABIERTA: {accion}")
             return True
+        else:
+            print("❌ ERROR AL EJECUTAR")
+            telegram("❌ ERROR AL EJECUTAR")
+            return False
 
-        time.sleep(1)
-
-    print("❌ FALLÓ ENTRADA")
-    telegram("❌ NO SE EJECUTÓ")
-    return False
+    except Exception as e:
+        print(f"❌ ERROR: {e}")
+        return False
 
 
 def run():
-
     iq = conectar()
 
     while True:
         try:
-
-            if not activo_abierto(iq, PAR):
-                print("⏳ Mercado cerrado")
-                time.sleep(5)
-                continue
-
             accion, expiracion = detectar_entrada(iq, PAR)
 
             if accion:
                 print(f"📊 SEÑAL: {accion}")
                 telegram(f"📊 SEÑAL: {accion}")
 
-                esperar_siguiente_vela()
-
+                # 🔥 ENTRADA INMEDIATA (LO QUE PEDISTE)
                 ejecutar(iq, accion, expiracion)
 
-                time.sleep(60)
+                # evitar sobreoperar
+                time.sleep(5)
+
+            time.sleep(1)
 
         except Exception as e:
             print(f"❌ ERROR LOOP: {e}")
-            telegram(f"❌ ERROR: {e}")
-            iq = conectar()
+            time.sleep(3)
 
 
 if __name__ == "__main__":
