@@ -12,7 +12,7 @@ TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 PAR = "EURUSD-OTC"
-MONTO = 1000
+MONTO = 10000
 
 
 def telegram(msg):
@@ -25,8 +25,8 @@ def telegram(msg):
         pass
 
 
-# 🔥 PARCHE GLOBAL (ELIMINA ERROR UNDERLYING)
-def parche_anti_digital(iq):
+# 🔥 PARCHE REAL (EVITA ERROR UNDERLYING)
+def parche(iq):
     try:
         iq.get_digital_underlying_list_data = lambda: {"underlying": []}
     except:
@@ -40,10 +40,11 @@ def conectar():
             iq.connect()
 
             if iq.check_connect():
+
                 iq.change_balance("PRACTICE")
 
-                # 🔥 APLICAR PARCHE
-                parche_anti_digital(iq)
+                # 🔥 APLICAR PARCHE AQUÍ (CLAVE)
+                parche(iq)
 
                 print("✅ BOT ACTIVADO")
                 telegram("🤖 BOT ACTIVADO")
@@ -64,6 +65,7 @@ def activo_abierto(iq, par):
         return False
 
 
+# ⏱️ ESPERA NUEVA VELA
 def esperar_siguiente_vela():
     while True:
         if int(time.time()) % 60 == 0:
@@ -71,12 +73,13 @@ def esperar_siguiente_vela():
         time.sleep(0.2)
 
 
+# 🔥 ENTRADA REAL
 def ejecutar(iq, accion, expiracion):
 
     print(f"⚡ ENTRANDO: {accion}")
     telegram(f"⚡ ENTRANDO: {accion}")
 
-    for i in range(5):
+    for _ in range(5):
         try:
             status, order_id = iq.buy(
                 MONTO,
@@ -128,7 +131,6 @@ def run():
         except Exception as e:
             print(f"❌ ERROR LOOP: {e}")
             telegram(f"❌ ERROR: {e}")
-
             iq = conectar()
 
 
