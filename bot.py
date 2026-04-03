@@ -10,6 +10,8 @@ IQ_PASSWORD = os.getenv("IQ_PASSWORD")
 MONTO = 2000
 EXPIRACION = 1
 
+PAR = "EURUSD"   # 🔥 SOLO ESTE PAR
+
 
 # ==========================
 # 🔌 CONEXIÓN
@@ -22,53 +24,29 @@ def connect():
         if iq.check_connect():
             iq.change_balance("PRACTICE")
             print("BOT ACTIVADO")
-            send_message("🔥 BOT ACTIVO SIN ERRORES")
+            send_message("🔥 BOT SNIPER ACTIVO EURUSD")
             return iq
 
         time.sleep(3)
 
 
 # ==========================
-# ⏱️ TIEMPO
+# ⏱️ ESPERAR APERTURA VELA
 # ==========================
-def esperar_cierre():
-    while int(time.time()) % 60 != 59:
-        time.sleep(0.02)
-
-
 def esperar_apertura():
     while int(time.time()) % 60 != 0:
-        time.sleep(0.002)
+        time.sleep(0.001)
 
 
 # ==========================
-# 📊 PARES ACTIVOS
+# 💥 EJECUCIÓN
 # ==========================
-def obtener_pares(iq):
-
-    pares = []
-
-    open_time = iq.get_all_open_time()
-
-    for par in open_time.get("binary", {}):
-        try:
-            if open_time["binary"][par]["open"]:
-                pares.append(par)
-        except:
-            continue
-
-    return pares
-
-
-# ==========================
-# 💥 EJECUCIÓN (SIN ERRORES)
-# ==========================
-def ejecutar(iq, par, accion):
+def ejecutar(iq, accion):
 
     try:
-        status, trade_id = iq.buy(
+        status, _ = iq.buy(
             MONTO,
-            par,
+            PAR,
             accion,
             EXPIRACION
         )
@@ -76,12 +54,12 @@ def ejecutar(iq, par, accion):
         return
 
     if status:
-        print(f"ENTRADA: {accion.upper()} {par}")
-        send_message(f"🎯 ENTRADA {accion.upper()} {par}")
+        print(f"ENTRADA: {accion.upper()} {PAR}")
+        send_message(f"🎯 {PAR} {accion.upper()}")
 
 
 # ==========================
-# 🚀 LOOP
+# 🚀 LOOP PRINCIPAL
 # ==========================
 def run():
 
@@ -89,30 +67,21 @@ def run():
 
     while True:
 
-        esperar_cierre()
+        # 🔥 ANALIZA CADA SEGUNDO
+        señal = detectar_entrada(iq, PAR)
 
-        pares = obtener_pares(iq)
-
-        if not pares:
-            continue
-
-        for par in pares:
-
-            señal = detectar_entrada(iq, par)
-
-            if not señal:
-                continue
+        if señal:
 
             accion = señal["action"]
 
-            print(f"SEÑAL: {par} {accion}")
-            send_message(f"🚨 SEÑAL {par} {accion}")
+            print(f"SEÑAL DETECTADA: {accion}")
 
+            # ⏱️ ESPERA CIERRE EXACTO
             esperar_apertura()
 
-            ejecutar(iq, par, accion)
+            ejecutar(iq, accion)
 
-            break
+        time.sleep(1)  # 🔥 análisis cada segundo
 
 
 # ==========================
