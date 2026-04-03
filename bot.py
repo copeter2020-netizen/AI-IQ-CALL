@@ -18,7 +18,7 @@ PARES = [
     "USDCHF-OTC"
 ]
 
-MONTO = 8
+MONTO = 15
 EXP = 1
 
 # ==========================
@@ -28,34 +28,46 @@ def telegram(msg):
     try:
         requests.post(
             f"https://api.telegram.org/bot{TOKEN}/sendMessage",
-            data={"chat_id": CHAT_ID, "text": msg}
+            data={"chat_id": CHAT_ID, "text": msg},
+            timeout=5
         )
     except:
         pass
 
 # ==========================
-# CONEXIÓN SEGURA
+# CONEXIÓN ROBUSTA
 # ==========================
 def conectar():
     while True:
         try:
             iq = IQ_Option(EMAIL, PASSWORD)
+
             iq.connect()
 
-            if iq.check_connect():
-                print("✅ Conectado a IQ Option")
+            time.sleep(3)
 
-                # 🔥 IMPORTANTE
-                iq.change_balance("PRACTICE")  # o REAL
+            if iq.check_connect():
+                print("✅ Conectado correctamente")
+
+                iq.change_balance("PRACTICE")
 
                 return iq
             else:
-                print("❌ Fallo conexión, reintentando...")
+                print("❌ No conecta, retry...")
                 time.sleep(5)
 
         except Exception as e:
-            print("ERROR conectando:", e)
+            print("ERROR conexión:", e)
             time.sleep(5)
+
+# ==========================
+# KEEP ALIVE (ANTI RAILWAY KILL)
+# ==========================
+def keep_alive(iq):
+    try:
+        iq.get_balance()
+    except:
+        pass
 
 # ==========================
 # ESPERA 59
@@ -64,7 +76,7 @@ def esperar_59():
     while True:
         if datetime.datetime.now().second >= 59:
             break
-        time.sleep(0.1)
+        time.sleep(0.05)
 
 # ==========================
 # BOT
@@ -72,9 +84,16 @@ def esperar_59():
 def run():
     iq = conectar()
 
+    ultimo_keepalive = time.time()
+
     while True:
         try:
-            # 🔥 verificar conexión viva
+            # 🔥 mantener conexión viva
+            if time.time() - ultimo_keepalive > 30:
+                keep_alive(iq)
+                ultimo_keepalive = time.time()
+
+            # 🔥 reconectar si se cae
             if not iq.check_connect():
                 print("⚠️ Reconectando...")
                 iq = conectar()
@@ -96,7 +115,7 @@ def run():
             if operacion:
                 par, señal = operacion
 
-                print(f"🎯 PERFECTO: {par} {señal}")
+                print(f"🎯 CONDICIÓN PERFECTA: {par} {señal}")
 
                 esperar_59()
 
@@ -107,7 +126,7 @@ def run():
                     print(msg)
                     telegram(msg)
                 else:
-                    print("❌ Error ejecución")
+                    print("❌ Error al ejecutar")
 
             else:
                 print("⏳ Sin condiciones perfectas...")
