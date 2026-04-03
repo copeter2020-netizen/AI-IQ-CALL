@@ -18,7 +18,7 @@ PARES = [
     "USDCHF-OTC"
 ]
 
-MONTO = 15
+MONTO = 20
 EXP = 1
 
 # ==========================
