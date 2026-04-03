@@ -5,17 +5,19 @@ ultima_operacion = 0
 
 
 # ==========================
-# 🔥 MERCADO VÁLIDO
+# 🔥 MERCADO OPERABLE
 # ==========================
-def mercado_valido(velas):
+def mercado_operable(velas):
     try:
-        highs = np.array([float(v["max"]) for v in velas])
-        lows  = np.array([float(v["min"]) for v in velas])
+        highs = np.array([v["max"] for v in velas])
+        lows  = np.array([v["min"] for v in velas])
+        closes = np.array([v["close"] for v in velas])
 
         vol_actual = np.mean(highs[-5:] - lows[-5:])
         vol_pasada = np.mean(highs[-30:] - lows[-30:])
-
         rango = max(highs[-20:]) - min(lows[-20:])
+        pendiente = abs(np.polyfit(range(20), closes[-20:], 1)[0])
+        ruido = np.std(closes[-10:])
 
         if vol_actual < vol_pasada * 0.9:
             return False
@@ -23,7 +25,14 @@ def mercado_valido(velas):
         if rango < vol_actual * 2:
             return False
 
+        if pendiente < 0.00001:
+            return False
+
+        if ruido > vol_actual:
+            return False
+
         return True
+
     except:
         return False
 
@@ -32,57 +41,58 @@ def mercado_valido(velas):
 # 🔥 ZONA PROHIBIDA
 # ==========================
 def zona_prohibida(highs, lows, precio):
-
     maximo = max(highs[-30:])
     minimo = min(lows[-30:])
-
     rango = maximo - minimo
 
     if rango == 0:
         return True
 
-    posicion = (precio - minimo) / rango
+    pos = (precio - minimo) / rango
 
-    if posicion > 0.85:
-        return True
-
-    if posicion < 0.15:
+    # ❌ evitar extremos
+    if pos > 0.85 or pos < 0.15:
         return True
 
     return False
 
 
 # ==========================
-# 🔥 SCORE PAR
+# 🔥 SCORE PAR (SELECCIÓN)
 # ==========================
 def score_par(velas):
     try:
-        highs = np.array([float(v["max"]) for v in velas])
-        lows  = np.array([float(v["min"]) for v in velas])
-        closes = np.array([float(v["close"]) for v in velas])
+        highs = np.array([v["max"] for v in velas])
+        lows  = np.array([v["min"] for v in velas])
+        closes = np.array([v["close"] for v in velas])
 
         volatilidad = np.mean(highs[-10:] - lows[-10:])
         tendencia = abs(np.polyfit(range(10), closes[-10:], 1)[0])
         ruido = np.std(closes[-10:])
 
         return (volatilidad * 2) + (tendencia * 5) - ruido
+
     except:
         return 0
 
 
 # ==========================
-# 🔥 ESTRATEGIA FINAL
+# 🔥 ESTRATEGIA PRINCIPAL
 # ==========================
 def detectar_mejor_entrada(data_por_par):
     global ultima_operacion
 
     ahora = time.time()
 
+    # 🔒 control de frecuencia
     if ahora - ultima_operacion < 900:
         return None
 
     candidatos = []
 
+    # ==========================
+    # 🔥 FILTRAR PARES
+    # ==========================
     for par, velas in data_por_par.items():
 
         if par not in ["EURUSD", "EURJPY", "EURGBP", "GBPUSD", "USDCHF"]:
@@ -91,45 +101,41 @@ def detectar_mejor_entrada(data_por_par):
         if len(velas) < 80:
             continue
 
-        if not mercado_valido(velas):
+        if not mercado_operable(velas):
             continue
 
         calidad = score_par(velas)
-
         candidatos.append((par, velas, calidad))
 
+    # 🔥 mercado malo → no operar
     if not candidatos:
+        print("💤 Mercado no óptimo...")
         return None
 
+    # ==========================
+    # 🔥 ELEGIR MEJOR PAR
+    # ==========================
     candidatos.sort(key=lambda x: x[2], reverse=True)
 
     par, velas, _ = candidatos[0]
 
-    closes = np.array([float(v["close"]) for v in velas])
-    highs  = np.array([float(v["max"]) for v in velas])
-    lows   = np.array([float(v["min"]) for v in velas])
+    highs = [v["max"] for v in velas]
+    lows  = [v["min"] for v in velas]
 
-    v1 = velas[-1]
-    v2 = velas[-2]
+    v1 = velas[-1]  # confirmación
+    v2 = velas[-2]  # trampa
 
-    o1 = float(v1["open"])
-    c1 = float(v1["close"])
-    h1 = float(v1["max"])
-    l1 = float(v1["min"])
-
-    o2 = float(v2["open"])
-    c2 = float(v2["close"])
-    h2 = float(v2["max"])
-    l2 = float(v2["min"])
+    o1, c1, h1, l1 = v1["open"], v1["close"], v1["max"], v1["min"]
+    o2, c2, h2, l2 = v2["open"], v2["close"], v2["max"], v2["min"]
 
     # ==========================
-    # ❌ NO OPERAR EN ZONA
+    # ❌ ZONA PROHIBIDA
     # ==========================
     if zona_prohibida(highs, lows, c1):
         return None
 
     # ==========================
-    # 🔥 TRAMPA
+    # 🔥 DETECTAR TRAMPA
     # ==========================
     max_prev = max(highs[-20:-2])
     min_prev = min(lows[-20:-2])
@@ -145,10 +151,11 @@ def detectar_mejor_entrada(data_por_par):
         return None
 
     # ==========================
-    # 🔥 CONFIRMACIÓN
+    # 🔥 CONFIRMACIÓN REAL
     # ==========================
     if direccion == "put" and c1 >= c2:
         return None
+
     if direccion == "call" and c1 <= c2:
         return None
 
@@ -157,18 +164,13 @@ def detectar_mejor_entrada(data_por_par):
     # ==========================
     if direccion == "put" and c1 > o1:
         return None
+
     if direccion == "call" and c1 < o1:
         return None
 
     # ==========================
-    # 🔥 ESPERAR SIGUIENTE VELA
+    # 🔥 VALIDACIÓN FINAL
     # ==========================
-    segundos = int(time.time()) % 60
-    esperar = 60 - segundos
-
-    if esperar > 0:
-        time.sleep(esperar)
-
-    ultima_operacion = time.time()
+    ultima_operacion = ahora
 
     return (par, direccion, 100)
