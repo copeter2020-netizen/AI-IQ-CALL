@@ -1,6 +1,6 @@
 instrument {
-    name = "AGOTAMIENTO PRO",
-    short_name = "EXHAUSTION_PRO",
+    name = "AGOTAMIENTO INVERTIDO PRO",
+    short_name = "EXHAUSTION_INV",
     overlay = true
 }
 
@@ -22,7 +22,7 @@ c = close
 o = open
 
 -- ==========================
--- 🔥 ZONAS (LIQUIDEZ)
+-- 🔥 ZONAS
 -- ==========================
 lookback = 30
 
@@ -30,7 +30,6 @@ maximo = highest(high, lookback)
 minimo = lowest(low, lookback)
 
 rango_total = maximo - minimo
-
 zona = rango_total * 0.02
 
 zona_alta = maximo - zona
@@ -48,56 +47,71 @@ mecha_sup = h - math.max(o, c)
 mecha_inf = math.min(o, c) - l
 
 -- ==========================
--- 🔥 AGOTAMIENTO REAL
+-- 🔥 AGOTAMIENTO DETECTADO
 -- ==========================
-agotamiento_venta =
+agotamiento_arriba =
     h >= zona_alta and
-    mecha_sup > cuerpo * 1.5 and
-    c < o
+    mecha_sup > cuerpo * 1.5
 
-agotamiento_compra =
+agotamiento_abajo =
     l <= zona_baja and
-    mecha_inf > cuerpo * 1.5 and
-    c > o
+    mecha_inf > cuerpo * 1.5
 
 -- ==========================
--- 🔥 DIBUJAR ZONAS
+-- 🔥 CONFIRMACIÓN (CLAVE)
+-- ==========================
+confirmacion_alcista = c > o
+confirmacion_bajista = c < o
+
+-- ==========================
+-- 🎯 SEÑALES INVERTIDAS
+-- ==========================
+call_signal =
+    agotamiento_arriba and
+    confirmacion_alcista
+
+put_signal =
+    agotamiento_abajo and
+    confirmacion_bajista
+
+-- ==========================
+-- 🔥 ZONAS VISUALES
 -- ==========================
 bgcolor(
-    h >= zona_alta and rgba(255,0,0,0.08) or
-    l <= zona_baja and rgba(0,0,255,0.08)
+    agotamiento_arriba and rgba(255,0,0,0.08) or
+    agotamiento_abajo and rgba(0,0,255,0.08)
 )
 
 -- ==========================
--- 🔥 LÍMITES ZONA
+-- 🔥 LÍNEAS
 -- ==========================
-plot(zona_alta, "ZONA VENTA", "red", 1)
-plot(zona_baja, "ZONA COMPRA", "blue", 1)
+plot(zona_alta, "ZONA ALTA", "red", 1)
+plot(zona_baja, "ZONA BAJA", "blue", 1)
 
 -- ==========================
 -- 🔥 SEÑALES
 -- ==========================
 plot_shape(
-    agotamiento_venta,
-    "SELL",
-    shape_style.triangledown,
-    shape_size.large,
-    colorSell,
-    shape_location.abovebar,
-    0,
-    "SELL",
-    "white"
-)
-
-plot_shape(
-    agotamiento_compra,
-    "BUY",
+    call_signal,
+    "CALL",
     shape_style.triangleup,
     shape_size.large,
     colorBuy,
     shape_location.belowbar,
     0,
-    "BUY",
+    "CALL",
+    "white"
+)
+
+plot_shape(
+    put_signal,
+    "PUT",
+    shape_style.triangledown,
+    shape_size.large,
+    colorSell,
+    shape_location.abovebar,
+    0,
+    "PUT",
     "white"
 )
 
@@ -105,14 +119,14 @@ plot_shape(
 -- 🔥 MARCA PRECISA
 -- ==========================
 plot(
-    agotamiento_compra and low or na,
+    call_signal and low or na,
     "BUY DOT",
     colorBuy,
     2
 )
 
 plot(
-    agotamiento_venta and high or na,
+    put_signal and high or na,
     "SELL DOT",
     colorSell,
     2
