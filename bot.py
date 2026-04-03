@@ -1,18 +1,14 @@
 import time
-import requests
 from iqoptionapi.stable_api import IQ_Option
+from telegram import enviar_mensaje
 
 # =========================
-# 🔐 CONFIGURACIÓN
+# 🔐 CONFIG
 # =========================
 EMAIL = "TU_EMAIL"
 PASSWORD = "TU_PASSWORD"
 
-TELEGRAM_TOKEN = "TU_TOKEN"
-CHAT_ID = "TU_CHAT_ID"
-
-# 💰 IMPORTE
-MONTO = 10  # ← CAMBIA AQUÍ
+MONTO = 12
 
 PARES = [
     "EURGBP-OTC",
@@ -26,22 +22,12 @@ TIMEFRAME = 60
 EXPIRACION = 1
 
 # =========================
-# 📩 TELEGRAM
-# =========================
-def enviar_telegram(msg):
-    try:
-        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-        requests.post(url, data={"chat_id": CHAT_ID, "text": msg}, timeout=5)
-    except:
-        pass
-
-# =========================
-# 🔌 CONEXIÓN ESTABLE
+# 🔌 CONEXIÓN ROBUSTA
 # =========================
 def conectar():
     while True:
         try:
-            print("🔄 Conectando a IQ Option...")
+            print("🔄 Conectando...")
             iq = IQ_Option(EMAIL, PASSWORD)
 
             time.sleep(3)
@@ -49,21 +35,27 @@ def conectar():
             status, reason = iq.connect()
 
             if status:
-                print("✅ Conectado correctamente")
+                print("✅ Conectado")
                 iq.change_balance("PRACTICE")
-                time.sleep(2)
                 return iq
-            else:
-                print("❌ Error conexión:", reason)
+
+            # 🔴 ERROR CREDENCIALES
+            if "invalid_credentials" in str(reason):
+                print("❌ EMAIL O PASSWORD INCORRECTO")
+                enviar_mensaje("❌ ERROR LOGIN IQ OPTION")
+                time.sleep(60)
+                continue
+
+            print("❌ Error:", reason)
 
         except Exception as e:
-            print("⚠️ Excepción:", e)
+            print("⚠️ Error conexión:", e)
 
         print("⏳ Reintentando en 15s...")
         time.sleep(15)
 
 # =========================
-# 📊 OBTENER VELAS
+# 📊 VELAS
 # =========================
 def get_velas(iq, par):
     try:
@@ -81,10 +73,10 @@ def estrategia(velas):
 
         v = velas[-1]
 
-        o = float(v.get("open", 0))
-        c = float(v.get("close", 0))
-        h = float(v.get("max", 0))
-        l = float(v.get("min", 0))
+        o = float(v["open"])
+        c = float(v["close"])
+        h = float(v["max"])
+        l = float(v["min"])
 
         rango = h - l
         if rango <= 0:
@@ -94,26 +86,21 @@ def estrategia(velas):
         mecha_sup = h - max(o, c)
         mecha_inf = min(o, c) - l
 
-        # 🔥 fuerza real
         fuerza = cuerpo > rango * 0.6
 
-        # 🔥 evitar lateral
         altos = [x["max"] for x in velas[-10:]]
         bajos = [x["min"] for x in velas[-10:]]
 
         if max(altos) - min(bajos) < rango * 3:
             return None
 
-        # 🔥 rechazo
         rechazo_venta = mecha_sup > cuerpo * 1.5
         rechazo_compra = mecha_inf > cuerpo * 1.5
 
-        # 🔥 continuidad
         ultimas = velas[-4:]
         alcistas = sum(1 for x in ultimas if x["close"] > x["open"])
         bajistas = sum(1 for x in ultimas if x["close"] < x["open"])
 
-        # 🎯 decisión
         if fuerza and alcistas >= 3 and not rechazo_venta:
             return "call"
 
@@ -133,7 +120,7 @@ def estrategia(velas):
         return None
 
 # =========================
-# ⏱ ENTRADA EN SEGUNDO 59
+# ⏱ ENTRADA EXACTA
 # =========================
 def esperar_entrada():
     while True:
@@ -142,13 +129,13 @@ def esperar_entrada():
         time.sleep(0.2)
 
 # =========================
-# 💓 KEEP ALIVE
+# 💓 HEARTBEAT
 # =========================
 def heartbeat():
     print("💓 activo:", time.strftime("%H:%M:%S"))
 
 # =========================
-# 🚀 BOT PRINCIPAL
+# 🚀 BOT
 # =========================
 def run():
     iq = conectar()
@@ -158,7 +145,7 @@ def run():
             heartbeat()
 
             if not iq.check_connect():
-                print("⚠️ Reconectando sesión...")
+                print("⚠️ Reconectando...")
                 iq = conectar()
                 continue
 
@@ -172,7 +159,7 @@ def run():
                 if señal:
                     print(f"🔥 {par} → {señal.upper()}")
 
-                    enviar_telegram(
+                    enviar_mensaje(
                         f"📡 SEÑAL\n{par}\n{señal.upper()}\n💰 ${MONTO}\n⏱ 1 MIN"
                     )
 
@@ -183,12 +170,12 @@ def run():
                     if check:
                         print("✅ Operación ejecutada")
                     else:
-                        print("❌ Error al ejecutar operación")
+                        print("❌ Error operación")
 
             time.sleep(1)
 
         except Exception as e:
-            print("❌ ERROR GENERAL:", e)
+            print("❌ ERROR:", e)
             time.sleep(5)
 
 # =========================
