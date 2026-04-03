@@ -11,7 +11,7 @@ TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 PAR = "EURUSD-OTC"
-MONTO = 1000
+MONTO = 10000
 EXPIRACION = 1
 
 
@@ -40,42 +40,46 @@ def conectar():
         time.sleep(3)
 
 
+# 🔥 ESPERA EXACTA A LA SIGUIENTE VELA
 def esperar_siguiente_vela():
     while True:
-        segundos = time.time() % 60
-        if segundos >= 59:
+        segundos = int(time.time() % 60)
+
+        # entra justo cuando empieza la nueva vela
+        if segundos == 0:
             break
+
         time.sleep(0.2)
 
 
-# 🔥 ENTRADA REAL (SOLUCIÓN DEFINITIVA)
+# 🔥 EJECUCIÓN REAL
 def ejecutar(iq, accion):
 
     print(f"⚡ ENTRANDO: {accion}")
     telegram(f"⚡ ENTRANDO: {accion}")
 
-    for i in range(5):
+    for intento in range(5):
         try:
-            status, id = iq.buy(
+            status, order_id = iq.buy(
                 MONTO,
                 PAR,
                 accion,
                 EXPIRACION
             )
         except Exception as e:
-            print(f"❌ ERROR: {e}")
+            print(f"❌ ERROR API: {e}")
             time.sleep(1)
             continue
 
         if status:
-            print(f"🔥 ORDEN ABIERTA: {id}")
+            print(f"🔥 ORDEN ABIERTA: {order_id}")
             telegram(f"✅ OPERACIÓN ABIERTA: {accion}")
             return True
 
-        print(f"⚠️ Reintento {i+1}")
+        print(f"⚠️ Reintento {intento+1}")
         time.sleep(1)
 
-    print("❌ NO SE PUDO ENTRAR")
+    print("❌ NO SE EJECUTÓ")
     telegram("❌ FALLÓ ENTRADA")
     return False
 
@@ -92,14 +96,16 @@ def run():
             señal = detectar_entrada(iq, PAR)
 
             if señal:
-                print(f"📊 SEÑAL: {señal}")
+                print(f"📊 SEÑAL DETECTADA: {señal}")
                 telegram(f"📊 SEÑAL: {señal}")
 
+                # 🔥 ENTRA EN LA SIGUIENTE VELA
                 esperar_siguiente_vela()
 
                 ejecutar(iq, señal)
 
-                time.sleep(60)  # evita duplicar entradas
+                # evita duplicar entradas
+                time.sleep(60)
 
         except Exception as e:
             print(f"❌ ERROR LOOP: {e}")
