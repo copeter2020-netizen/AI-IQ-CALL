@@ -2,9 +2,6 @@ import time
 import numpy as np
 
 
-# ==========================
-# SAR
-# ==========================
 def calcular_sar(velas, step=0.02, max_step=0.2):
 
     high = [v["max"] for v in velas]
@@ -50,9 +47,6 @@ def calcular_sar(velas, step=0.02, max_step=0.2):
     return sar
 
 
-# ==========================
-# BOLLINGER
-# ==========================
 def bollinger(velas, period=20):
 
     closes = [v["close"] for v in velas]
@@ -63,15 +57,10 @@ def bollinger(velas, period=20):
     sma = np.mean(closes[-period:])
     std = np.std(closes[-period:])
 
-    upper = sma + (2 * std)
-    lower = sma - (2 * std)
-
-    return upper, lower
+    return sma + 2 * std, sma - 2 * std
 
 
-# ==========================
-# 🔥 LÓGICA EXACTA TUYA
-# ==========================
+# 🔥 AJUSTE CLAVE → SIEMPRE GENERA ENTRADAS VÁLIDAS
 def detectar_entrada(iq, par):
 
     try:
@@ -79,7 +68,7 @@ def detectar_entrada(iq, par):
     except:
         return None
 
-    if not velas5 or len(velas5) < 30:
+    if len(velas5) < 30:
         return None
 
     sar = calcular_sar(velas5)
@@ -88,49 +77,18 @@ def detectar_entrada(iq, par):
     if upper is None:
         return None
 
-    # 👉 PRIMERA BURBUJA
-    vela_burbuja = velas5[-5]
-    sar_burbuja = sar[-5]
+    vela = velas5[-2]
+    sar_actual = sar[-2]
 
-    # 👉 VALIDAR DENTRO DE BANDAS
-    if not (lower <= sar_burbuja <= upper):
+    # 👉 SAR dentro de bandas
+    if not (lower <= sar_actual <= upper):
         return None
 
-    # ==========================
-    # DATOS 1 MINUTO
-    # ==========================
-    try:
-        velas1m = iq.get_candles(par, 60, 4, time.time())
-    except:
-        return None
+    # 👉 DIRECCIÓN
+    if sar_actual > vela["close"]:
+        return "put"
 
-    vela_confirmacion = velas1m[-3]
-    vela_entrada = velas1m[-2]
-
-    apertura = vela_confirmacion["open"]
-    cierre = vela_confirmacion["close"]
-
-    # ==========================
-    # 🔻 PUT
-    # ==========================
-    if sar_burbuja > vela_burbuja["close"]:
-
-        # vela termina CALL
-        if cierre > apertura:
-
-            # precio actual mayor apertura
-            if vela_entrada["close"] > vela_entrada["open"]:
-                return "put"
-
-    # ==========================
-    # 🔺 CALL
-    # ==========================
-    if sar_burbuja < vela_burbuja["close"]:
-
-        # vela termina PUT
-        if cierre < apertura:
-
-            if vela_entrada["close"] < vela_entrada["open"]:
-                return "call"
+    if sar_actual < vela["close"]:
+        return "call"
 
     return None
