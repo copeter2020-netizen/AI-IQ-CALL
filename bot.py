@@ -18,9 +18,6 @@ CUENTA = "PRACTICE"
 PARES = [
     "EURUSD-OTC",
     "GBPUSD-OTC",
-    "EURJPY-OTC",
-    "EURGBP-OTC",
-    "USDCHF-OTC"
 ]
 
 # =========================
@@ -162,7 +159,7 @@ def operar(iq, par, direccion):
 
 Par: {par}
 Dirección: {direccion.upper()}
-Expiración: 1 MIN
+Expiración: 2 MIN
 Monto: ${MONTO}
 """)
         else:
