@@ -1,156 +1,127 @@
+import os
 import time
 import requests
-from telegram import enviar_mensaje
+from iqoptionapi.stable_api import IQ_Option
+from strategy import detectar_entrada
+
+IQ_EMAIL = os.getenv("IQ_EMAIL")
+IQ_PASSWORD = os.getenv("IQ_PASSWORD")
+
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+
+PAR = "EURUSD-OTC"
+MONTO = 3
+EXPIRACION = 1
+
 
 # =========================
-# CONFIG
+# 📲 TELEGRAM
 # =========================
-MONTO = 20
-
-PARES = [
-    "EURUSD-OTC",
-    "GBPUSD-OTC",
-    "EURJPY-OTC",
-    "EURGBP-OTC",
-    "USDCHF-OTC"
-]
-
-# =========================
-# DATOS SEGUROS (SIN ERROR)
-# =========================
-def get_price():
+def telegram(msg):
     try:
-        r = requests.get("https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT", timeout=5)
-        data = r.json()
-
-        if "price" not in data:
-            return None
-
-        return float(data["price"])
-
+        requests.post(
+            f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
+            data={"chat_id": TELEGRAM_CHAT_ID, "text": msg}
+        )
     except:
-        return None
+        pass
 
 
 # =========================
-# ESTRATEGIA MEJORADA
+# 🔌 CONEXIÓN SEGURA
 # =========================
-def detectar_entrada(velas):
+def conectar():
+    while True:
+        try:
+            iq = IQ_Option(IQ_EMAIL, IQ_PASSWORD)
+            iq.connect()
 
-    if len(velas) < 20:
-        return None
+            if iq.check_connect():
+                iq.change_balance("PRACTICE")
+                print("✅ BOT CONECTADO")
+                telegram("🤖 BOT CONECTADO")
+                return iq
 
-    v = velas[-1]
+        except Exception as e:
+            print(f"❌ ERROR CONEXIÓN: {e}")
 
-    o = float(v["open"])
-    c = float(v["close"])
-    h = float(v["max"])
-    l = float(v["min"])
-
-    cuerpo = abs(c - o)
-    rango = h - l
-
-    if rango == 0:
-        return None
-
-    mecha_sup = h - max(o, c)
-    mecha_inf = min(o, c) - l
-
-    fuerza = cuerpo / rango
-
-    # 🔥 FILTRO ULTRA SELECTIVO
-    if fuerza < 0.65:
-        return None
-
-    # 🔥 EVITA LATERAL
-    if mecha_sup > cuerpo or mecha_inf > cuerpo:
-        return None
-
-    # 🔥 DIRECCIÓN CLARA
-    if c > o:
-        return "call"
-
-    if c < o:
-        return "put"
-
-    return None
+        time.sleep(3)
 
 
 # =========================
-# EJECUCIÓN
+# 🔥 ESPERAR APERTURA EXACTA
 # =========================
-def ejecutar(par, direccion):
+def esperar_apertura_vela():
+    while True:
+        now = time.time()
+        segundos = int(now) % 60
 
-    print(f"🔥 {par} → {direccion}")
+        # 🔥 entra EXACTO en segundo 0
+        if segundos == 0:
+            break
 
-    enviar_mensaje(f"""
-🚀 ENTRADA PRO
-
-Par: {par}
-Dirección: {direccion.upper()}
-Expiración: 1 MIN
-Monto: ${MONTO}
-""")
+        time.sleep(0.2)
 
 
 # =========================
-# VELAS SIMULADAS (NO ERROR)
+# 🚀 EJECUTAR OPERACIÓN
 # =========================
-def obtener_velas():
+def ejecutar(iq, accion):
 
-    velas = []
+    print(f"⚡ ENTRANDO: {accion}")
+    telegram(f"⚡ ENTRANDO: {accion}")
 
-    for _ in range(20):
-        velas.append({
-            "open": 1.0,
-            "close": 1.1,
-            "max": 1.2,
-            "min": 0.9
-        })
+    for i in range(3):
+        try:
+            status, order_id = iq.buy(MONTO, PAR, accion, EXPIRACION)
 
-    return velas
+            if status:
+                print(f"🔥 ORDEN ABIERTA: {order_id}")
+                telegram(f"✅ ORDEN: {accion}")
+                return True
+
+        except Exception as e:
+            print(f"❌ ERROR ORDEN: {e}")
+
+        time.sleep(1)
+
+    print("❌ NO EJECUTÓ")
+    telegram("❌ FALLÓ OPERACIÓN")
+    return False
 
 
 # =========================
-# LOOP PRINCIPAL
+# 🧠 LOOP PRINCIPAL
 # =========================
 def run():
 
+    iq = conectar()
+
     while True:
         try:
+            señal, _ = detectar_entrada(iq, PAR)
 
-            print("🔎 Buscando condiciones PERFECTAS...")
+            if señal:
+                print(f"📊 SEÑAL: {señal}")
+                telegram(f"📊 SEÑAL: {señal}")
 
-            for par in PARES:
+                # 🔥 ESPERA APERTURA EXACTA
+                esperar_apertura_vela()
 
-                velas = obtener_velas()
+                # 🔥 EJECUTA EN EL SEGUNDO 0
+                ejecutar(iq, señal)
 
-                señal = detectar_entrada(velas)
-
-                if señal:
-
-                    print("✅ CONDICIÓN PERFECTA DETECTADA")
-
-                    # ⏱️ ENTRADA EN SEGUNDO 59
-                    segundos = int(time.time()) % 60
-                    esperar = 59 - segundos
-
-                    if esperar > 0:
-                        time.sleep(esperar)
-
-                    ejecutar(par, señal)
-
-                    time.sleep(60)
-
-            time.sleep(5)
+                # 🔒 EVITA MULTIENTRADAS MISMA VELA
+                time.sleep(2)
 
         except Exception as e:
-            print("Error:", e)
-            time.sleep(10)
+            print(f"❌ ERROR LOOP: {e}")
+            time.sleep(2)
 
 
 # =========================
-# START
+# ▶️ START
 # =========================
 if __name__ == "__main__":
     run()
