@@ -1,7 +1,6 @@
 import time
 import os
 import requests
-import numpy as np
 from iqoptionapi.stable_api import IQ_Option
 
 # =========================
@@ -13,7 +12,7 @@ PASSWORD = os.getenv("IQ_PASSWORD")
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-MONTO = 12
+MONTO = 20
 CUENTA = "PRACTICE"
 
 PARES = [
@@ -24,11 +23,8 @@ PARES = [
     "USDCHF-OTC"
 ]
 
-ultima_operacion = 0
-
-
 # =========================
-# 🔥 TELEGRAM (FIX + DEBUG)
+# TELEGRAM (SIN LIBRERÍA)
 # =========================
 def enviar_mensaje(texto):
     try:
@@ -38,22 +34,20 @@ def enviar_mensaje(texto):
 
         url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
 
-        response = requests.post(url, data={
+        requests.post(url, data={
             "chat_id": CHAT_ID,
             "text": texto
         }, timeout=5)
 
-        print("📩 Telegram status:", response.status_code)
-        print("📩 Telegram response:", response.text)
-
     except Exception as e:
-        print("❌ Error Telegram:", e)
+        print("Error Telegram:", e)
 
 
 # =========================
-# CONEXIÓN
+# CONEXIÓN ESTABLE PRO
 # =========================
 def conectar():
+
     while True:
         try:
             if not EMAIL or not PASSWORD:
@@ -78,18 +72,25 @@ def conectar():
 
 
 # =========================
-# VELAS
+# VELAS REALES
 # =========================
 def obtener_velas(iq, par):
     try:
-        velas = iq.get_candles(par, 60, 120, time.time())
+        velas = iq.get_candles(par, 60, 20, time.time())
 
-        return [{
-            "open": v.get("open", 0),
-            "close": v.get("close", 0),
-            "max": v.get("max", 0),
-            "min": v.get("min", 0)
-        } for v in velas]
+        if not velas:
+            return []
+
+        resultado = []
+        for v in velas:
+            resultado.append({
+                "open": v.get("open", 0),
+                "close": v.get("close", 0),
+                "max": v.get("max", 0),
+                "min": v.get("min", 0)
+            })
+
+        return resultado
 
     except Exception as e:
         print("Error velas:", e)
@@ -97,149 +98,50 @@ def obtener_velas(iq, par):
 
 
 # =========================
-# 🔥 FILTRO MERCADO ACTIVO
+# ESTRATEGIA (CORREGIDA)
 # =========================
-def mercado_activo(velas):
+def detectar_entrada(velas, *_):  # ✅ acepta extra argumentos (FIX ERROR)
+
     try:
-        highs = np.array([float(v["max"]) for v in velas])
-        lows  = np.array([float(v["min"]) for v in velas])
+        if len(velas) < 20:
+            return None
 
-        vol_actual = np.mean(highs[-5:] - lows[-5:])
-        vol_pasada = np.mean(highs[-30:] - lows[-30:])
+        v = velas[-1]
 
-        rango = max(highs[-20:]) - min(lows[-20:])
+        o = float(v["open"])
+        c = float(v["close"])
+        h = float(v["max"])
+        l = float(v["min"])
 
-        if vol_actual < vol_pasada * 0.8:
-            return False
-
-        if rango < vol_actual * 2:
-            return False
-
-        return True
-
-    except:
-        return False
-
-
-# =========================
-# ESTRATEGIA
-# =========================
-def detectar_mejor_entrada(data_por_par):
-    global ultima_operacion
-
-    ahora = time.time()
-
-    if ahora - ultima_operacion < 10800:
-        return None
-
-    if int(ahora) % 60 < 58:
-        return None
-
-    mejor = None
-    mejor_score = 0
-
-    for par, velas in data_por_par.items():
-
-        if len(velas) < 120:
-            continue
-
-        if not mercado_activo(velas):
-            continue
-
-        closes = np.array([float(v["close"]) for v in velas])
-        highs  = np.array([float(v["max"]) for v in velas])
-        lows   = np.array([float(v["min"]) for v in velas])
-
-        v1 = velas[-1]
-        v2 = velas[-2]
-        v3 = velas[-3]
-
-        o1,c1,h1,l1 = float(v1["open"]), float(v1["close"]), float(v1["max"]), float(v1["min"])
-        o2,c2,h2,l2 = float(v2["open"]), float(v2["close"]), float(v2["max"]), float(v2["min"])
-        o3,c3,_,_   = float(v3["open"]), float(v3["close"]), float(v3["max"]), float(v3["min"])
-
-        rango = h1 - l1
+        rango = h - l
         if rango == 0:
-            continue
+            return None
 
-        cuerpo = abs(c1 - o1)
-        mecha_sup = h1 - max(o1, c1)
-        mecha_inf = min(o1, c1) - l1
+        cuerpo = abs(c - o)
+        mecha_sup = h - max(o, c)
+        mecha_inf = min(o, c) - l
 
-        posicion = (c1 - l1) / rango
+        fuerza = cuerpo / rango
 
-        score = 0
+        # 🔥 FILTRO ULTRA SELECTIVO
+        if fuerza < 0.65:
+            return None
 
-        hh = highs[-1] > highs[-5] > highs[-10]
-        hl = lows[-1] > lows[-5] > lows[-10]
+        # 🔥 EVITA LATERAL
+        if mecha_sup > cuerpo or mecha_inf > cuerpo:
+            return None
 
-        ll = highs[-1] < highs[-5] < highs[-10]
-        lh = lows[-1] < lows[-5] < lows[-10]
+        if c > o:
+            return "call"
 
-        if hh and hl:
-            direccion = "call"
-            score += 20
-        elif ll and lh:
-            direccion = "put"
-            score += 20
-        else:
-            continue
+        if c < o:
+            return "put"
 
-        if direccion == "call" and not (c1 > c2 > c3):
-            continue
-        if direccion == "put" and not (c1 < c2 < c3):
-            continue
+        return None
 
-        score += 15
-
-        if direccion == "call":
-            if posicion < 0.85 or mecha_sup > cuerpo * 0.3:
-                continue
-        else:
-            if posicion > 0.15 or mecha_inf > cuerpo * 0.3:
-                continue
-
-        score += 25
-
-        if cuerpo < rango * 0.7:
-            continue
-
-        score += 10
-
-        p1 = np.polyfit(range(20), closes[-20:], 1)[0]
-        p2 = np.polyfit(range(5), closes[-5:], 1)[0]
-
-        if direccion == "call" and not (p2 > p1 > 0):
-            continue
-        if direccion == "put" and not (p2 < p1 < 0):
-            continue
-
-        score += 10
-
-        if direccion == "call" and c1 <= h2:
-            continue
-        if direccion == "put" and c1 >= l2:
-            continue
-
-        score += 10
-
-        vol_now = np.mean(highs[-10:] - lows[-10:])
-        vol_old = np.mean(highs[-40:] - lows[-40:])
-
-        if vol_now <= vol_old:
-            continue
-
-        score += 10
-
-        if score > mejor_score:
-            mejor_score = score
-            mejor = (par, direccion, score)
-
-    if mejor and mejor_score >= 95:
-        ultima_operacion = ahora
-        return mejor
-
-    return None
+    except Exception as e:
+        print("Error estrategia:", e)
+        return None
 
 
 # =========================
@@ -247,14 +149,15 @@ def detectar_mejor_entrada(data_por_par):
 # =========================
 def operar(iq, par, direccion):
 
-    print(f"🔥 {par} → {direccion}")
+    try:
+        print(f"🔥 {par} → {direccion}")
 
-    check, _ = iq.buy(MONTO, par, direccion, 1)
+        check, _ = iq.buy(MONTO, par, direccion, 1)
 
-    if check:
-        print("✅ OPERACIÓN ABIERTA")
+        if check:
+            print("✅ OPERACIÓN ABIERTA")
 
-        enviar_mensaje(f"""
+            enviar_mensaje(f"""
 🚀 ENTRADA PRO
 
 Par: {par}
@@ -262,19 +165,19 @@ Dirección: {direccion.upper()}
 Expiración: 1 MIN
 Monto: ${MONTO}
 """)
-    else:
-        print("❌ No ejecutada")
+        else:
+            print("❌ No ejecutada")
+
+    except Exception as e:
+        print("Error operación:", e)
 
 
 # =========================
-# LOOP
+# LOOP PRINCIPAL
 # =========================
 def run():
 
     iq = conectar()
-
-    # 🔥 MENSAJE DE PRUEBA
-    enviar_mensaje("✅ BOT INICIADO CORRECTAMENTE")
 
     while True:
         try:
@@ -283,29 +186,30 @@ def run():
                 print("🔄 Reconectando...")
                 iq = conectar()
 
-            data = {par: obtener_velas(iq, par) for par in PARES}
+            print("🔎 Buscando condiciones PERFECTAS...")
 
-            resultado = detectar_mejor_entrada(data)
+            for par in PARES:
 
-            if resultado:
-                par, direccion, score = resultado
+                velas = obtener_velas(iq, par)
 
-                print(f"✅ CONDICIÓN PERFECTA ({score})")
+                señal = detectar_entrada(velas)  # ✅ YA NO FALLA
 
-                segundos = int(time.time()) % 60
-                esperar = 60 - segundos
+                if señal:
 
-                if esperar > 0:
-                    time.sleep(esperar)
+                    print("✅ CONDICIÓN PERFECTA")
 
-                operar(iq, par, direccion)
+                    # ⏱️ ENTRADA SEGUNDO 59
+                    segundos = int(time.time()) % 60
+                    esperar = 59 - segundos
 
-                time.sleep(60)
+                    if esperar > 0:
+                        time.sleep(esperar)
 
-            else:
-                print("🔎 Buscando condiciones PERFECTAS...")
+                    operar(iq, par, señal)
 
-            time.sleep(2)
+                    time.sleep(60)
+
+            time.sleep(3)
 
         except Exception as e:
             print("ERROR LOOP:", e)
@@ -316,4 +220,4 @@ def run():
 # START
 # =========================
 if __name__ == "__main__":
-    run() 
+    run()
