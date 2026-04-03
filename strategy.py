@@ -1,126 +1,106 @@
-import numpy as np
+import statistics
 
-# ========================
-# DATOS
-# ========================
+# ========= UTIL =========
+def cuerpo(vela):
+    return abs(vela["close"] - vela["open"])
 
-def get_close(velas):
-    return [float(v["close"]) for v in velas]
+def rango(vela):
+    return vela["max"] - vela["min"]
 
-def get_open(velas):
-    return [float(v["open"]) for v in velas]
+def es_alcista(vela):
+    return vela["close"] > vela["open"]
 
-def get_high(velas):
-    return [float(v["max"]) for v in velas]
+def es_bajista(vela):
+    return vela["close"] < vela["open"]
 
-def get_low(velas):
-    return [float(v["min"]) for v in velas]
 
-# ========================
-# GRÁFICO DE LÍNEA (TENDENCIA)
-# ========================
+# ========= ANALISIS VELAS =========
+def analizar_vela(vela, velas):
+    c = cuerpo(vela)
+    r = rango(vela)
 
-def tendencia_linea(velas):
-    closes = get_close(velas)
+    promedio = statistics.mean([cuerpo(v) for v in velas[-10:]])
 
-    if len(closes) < 10:
-        return None
+    # FUERZA
+    if c > promedio * 1.5 and r > promedio * 1.5:
+        return "fuerza"
 
-    # regresión simple
-    x = np.arange(len(closes))
-    y = np.array(closes)
+    # DEBILIDAD
+    if c < promedio * 0.5:
+        return "debilidad"
 
-    pendiente = np.polyfit(x, y, 1)[0]
+    # AGOTAMIENTO (mecha grande)
+    mecha_sup = vela["max"] - max(vela["open"], vela["close"])
+    mecha_inf = min(vela["open"], vela["close"]) - vela["min"]
 
-    if pendiente > 0:
-        return "alcista"
-    elif pendiente < 0:
-        return "bajista"
-    else:
-        return None
+    if mecha_sup > c or mecha_inf > c:
+        return "agotamiento"
 
-# ========================
-# SOPORTE / RESISTENCIA
-# ========================
+    # CONTINUACIÓN
+    return "continuacion"
 
-def zonas(velas):
-    highs = get_high(velas[-30:])
-    lows = get_low(velas[-30:])
 
-    return min(lows), max(highs)
+# ========= ANALISIS LINEA =========
+def analizar_linea(velas):
+    cierres = [v["close"] for v in velas[-10:]]
 
-# ========================
-# FUERZA DE VELA
-# ========================
+    sube = sum(1 for i in range(1, len(cierres)) if cierres[i] > cierres[i-1])
+    baja = sum(1 for i in range(1, len(cierres)) if cierres[i] < cierres[i-1])
 
-def fuerza_vela(vela):
-    body = abs(vela["close"] - vela["open"])
-    rango = vela["max"] - vela["min"]
+    # FUERZA
+    if sube >= 7:
+        return "fuerza_alcista"
+    if baja >= 7:
+        return "fuerza_bajista"
 
-    if rango == 0:
-        return 0
+    # DEBILIDAD
+    if abs(sube - baja) <= 2:
+        return "debilidad"
 
-    return body / rango
+    # AGOTAMIENTO (pierde ritmo)
+    if cierres[-1] < cierres[-2] and cierres[-2] > cierres[-3]:
+        return "agotamiento_bajista"
 
-# ========================
-# DETECCIÓN FINAL
-# ========================
+    if cierres[-1] > cierres[-2] and cierres[-2] < cierres[-3]:
+        return "agotamiento_alcista"
 
+    return "continuacion"
+
+
+# ========= DECISION FINAL =========
 def detectar_entrada(velas):
-    try:
-        if isinstance(velas, tuple):
-            velas = velas[1]
-
-        if len(velas) < 20:
-            return None
-
-        ultima = velas[-1]
-        anterior = velas[-2]
-
-        soporte, resistencia = zonas(velas)
-
-        tendencia = tendencia_linea(velas)
-
-        fuerza = fuerza_vela(ultima)
-
-        cierre = float(ultima["close"])
-        apertura = float(ultima["open"])
-
-        # ========================
-        # FILTRO: EVITAR RANGO
-        # ========================
-        rango = resistencia - soporte
-
-        if rango < 0.0003:
-            return None
-
-        # ========================
-        # SOPORTE (REBOTE)
-        # ========================
-        if cierre <= soporte + 0.0002:
-            if cierre > apertura and fuerza > 0.5:
-                return "call"
-
-        # ========================
-        # RESISTENCIA (REBOTE)
-        # ========================
-        if cierre >= resistencia - 0.0002:
-            if cierre < apertura and fuerza > 0.5:
-                return "put"
-
-        # ========================
-        # CONTINUIDAD + TENDENCIA
-        # ========================
-        if tendencia == "alcista":
-            if cierre > apertura and fuerza > 0.6:
-                return "call"
-
-        if tendencia == "bajista":
-            if cierre < apertura and fuerza > 0.6:
-                return "put"
-
+    if len(velas) < 20:
         return None
 
-    except Exception as e:
-        print("ERROR estrategia:", e)
-        return None
+    ultima = velas[-1]
+
+    # análisis vela
+    tipo_vela = analizar_vela(ultima, velas)
+
+    # análisis línea
+    tipo_linea = analizar_linea(velas)
+
+    # ===== LOGICA =====
+
+    # VENTA (PUT)
+    if (
+        tipo_linea in ["fuerza_bajista", "continuacion"] and
+        tipo_vela in ["continuacion", "fuerza"]
+    ):
+        return "put"
+
+    # COMPRA (CALL)
+    if (
+        tipo_linea in ["fuerza_alcista", "continuacion"] and
+        tipo_vela in ["continuacion", "fuerza"]
+    ):
+        return "call"
+
+    # REBOTES (AGOTAMIENTO)
+    if tipo_vela == "agotamiento":
+        if es_bajista(ultima):
+            return "call"
+        if es_alcista(ultima):
+            return "put"
+
+    return None
