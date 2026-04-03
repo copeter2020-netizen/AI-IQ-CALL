@@ -1,4 +1,5 @@
 import time
+import numpy as np
 
 ultima_operacion = 0
 
@@ -6,18 +7,24 @@ def detectar_entrada(velas):
     global ultima_operacion
 
     try:
-        if len(velas) < 30:
+        if len(velas) < 50:
             return None
 
         ahora = time.time()
 
-        # 🔥 ultra filtro (1 operación cada 30 min)
-        if ahora - ultima_operacion < 1800:
+        # 🔒 1 operación cada 45–90 min (ultra selectivo)
+        if ahora - ultima_operacion < 2700:
             return None
 
-        v = velas[-1]
-        v_prev = velas[-2]
+        # ==========================
+        # 📊 DATOS
+        # ==========================
+        closes = np.array([float(v["close"]) for v in velas])
+        opens  = np.array([float(v["open"])  for v in velas])
+        highs  = np.array([float(v["max"])   for v in velas])
+        lows   = np.array([float(v["min"])   for v in velas])
 
+        v = velas[-1]
         o = float(v["open"])
         c = float(v["close"])
         h = float(v["max"])
@@ -25,7 +32,6 @@ def detectar_entrada(velas):
 
         cuerpo = abs(c - o)
         rango = h - l
-
         if rango == 0:
             return None
 
@@ -33,35 +39,65 @@ def detectar_entrada(velas):
         mecha_inf = min(o, c) - l
 
         # ==========================
-        # 🔥 FUERZA REAL
+        # 🔥 1) EVITAR RANGO (mercado muerto)
         # ==========================
-        fuerza_alcista = c > o and cuerpo > rango * 0.6
-        fuerza_bajista = c < o and cuerpo > rango * 0.6
+        rango_total = max(highs[-20:]) - min(lows[-20:])
+        volatilidad = np.mean(highs[-20:] - lows[-20:])
+
+        if rango_total < volatilidad * 1.2:
+            return None  # lateral
 
         # ==========================
-        # 🔄 AGOTAMIENTO
+        # 🔥 2) TENDENCIA REAL (línea)
         # ==========================
-        agotamiento_alcista = mecha_sup > cuerpo * 1.5
-        agotamiento_bajista = mecha_inf > cuerpo * 1.5
+        pendiente = np.polyfit(range(20), closes[-20:], 1)[0]
+
+        tendencia_alcista = pendiente > 0
+        tendencia_bajista = pendiente < 0
 
         # ==========================
-        # 📊 CONTEXTO
+        # 🔥 3) FUERZA (vela actual)
         # ==========================
-        tendencia = 0
+        fuerza_alcista = c > o and cuerpo > rango * 0.65
+        fuerza_bajista = c < o and cuerpo > rango * 0.65
+
+        # ==========================
+        # 🔥 4) AGOTAMIENTO / MANIPULACIÓN
+        # ==========================
+        fake_up = mecha_sup > cuerpo * 1.5
+        fake_down = mecha_inf > cuerpo * 1.5
+
+        # ==========================
+        # 🔥 5) CONTINUIDAD REAL (últimas velas)
+        # ==========================
+        secuencia = 0
         for i in range(-5, 0):
             if velas[i]["close"] > velas[i]["open"]:
-                tendencia += 1
+                secuencia += 1
             else:
-                tendencia -= 1
+                secuencia -= 1
+
+        continuidad_up = secuencia >= 4
+        continuidad_down = secuencia <= -4
 
         # ==========================
-        # 🎯 FILTRO EXTREMO
+        # 🔥 6) CONFIRMACIÓN DOBLE (línea + velas)
         # ==========================
-        if fuerza_alcista and tendencia > 3 and not agotamiento_alcista:
+        if (
+            tendencia_alcista and
+            continuidad_up and
+            fuerza_alcista and
+            not fake_up
+        ):
             ultima_operacion = ahora
             return "call"
 
-        if fuerza_bajista and tendencia < -3 and not agotamiento_bajista:
+        if (
+            tendencia_bajista and
+            continuidad_down and
+            fuerza_bajista and
+            not fake_down
+        ):
             ultima_operacion = ahora
             return "put"
 
