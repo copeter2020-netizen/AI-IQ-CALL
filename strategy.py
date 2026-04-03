@@ -2,106 +2,68 @@ import time
 import pandas as pd
 
 
-def calcular_bollinger(close, period=20):
-
-    ma = close.rolling(period).mean()
-    std = close.rolling(period).std()
-
-    upper = ma + (std * 2)
-    lower = ma - (std * 2)
-
-    return upper, lower
-
-
-def calcular_sar(high, low, step=0.02, max_step=0.2):
-
-    sar = low.copy()
-    trend_up = True
-    ep = high.iloc[0]
-    af = step
-
-    for i in range(1, len(high)):
-
-        prev_sar = sar.iloc[i - 1]
-
-        if trend_up:
-            sar.iloc[i] = prev_sar + af * (ep - prev_sar)
-
-            if low.iloc[i] < sar.iloc[i]:
-                trend_up = False
-                sar.iloc[i] = ep
-                ep = low.iloc[i]
-                af = step
-            else:
-                if high.iloc[i] > ep:
-                    ep = high.iloc[i]
-                    af = min(af + step, max_step)
-
-        else:
-            sar.iloc[i] = prev_sar + af * (ep - prev_sar)
-
-            if high.iloc[i] > sar.iloc[i]:
-                trend_up = True
-                sar.iloc[i] = ep
-                ep = high.iloc[i]
-                af = step
-            else:
-                if low.iloc[i] < ep:
-                    ep = low.iloc[i]
-                    af = min(af + step, max_step)
-
-    return sar
-
-
 def detectar_entrada(iq, par):
 
-    try:
-        velas = iq.get_candles(par, 5, 60, time.time())
-    except:
-        return None
-
-    if not velas or len(velas) < 30:
-        return None
-
+    # 🔥 30 MIN = 1800 segundos / 4s = 450 velas
+    velas = iq.get_candles(par, 4, 450, time.time())
     df = pd.DataFrame(velas)
-    df = df.sort_values(by="from").reset_index(drop=True)
 
-    close = df["close"].astype(float)
-    high = df["max"].astype(float)
-    low = df["min"].astype(float)
-    open_ = df["open"].astype(float)
+    if df.empty or len(df) < 50:
+        return None, None
 
-    upper, lower = calcular_bollinger(close)
-    sar = calcular_sar(high, low)
+    close = df["close"]
+    open_ = df["open"]
+    high = df["max"]
+    low = df["min"]
 
-    if upper.isna().iloc[-1] or lower.isna().iloc[-1]:
-        return None
+    # 🔥 ESTRUCTURA DEL MERCADO
+    maximo = high.rolling(50).max()
+    minimo = low.rolling(50).min()
 
-    last = -1
-    prev = -2
+    precio_actual = close.iloc[-1]
 
-    precio = close.iloc[last]
-    apertura = open_.iloc[last]
+    resistencia = maximo.iloc[-2]
+    soporte = minimo.iloc[-2]
 
-    vela_prev_cierre = close.iloc[prev]
-    vela_prev_apertura = open_.iloc[prev]
+    # 🔥 MOMENTUM
+    velas_verdes = sum(close.iloc[-10:] > open_.iloc[-10:])
+    velas_rojas = sum(close.iloc[-10:] < open_.iloc[-10:])
 
-    # 🔻 PUT
-    if (
-        sar.iloc[last] > precio and
-        lower.iloc[last] < precio < upper.iloc[last] and
-        vela_prev_cierre > vela_prev_apertura and
-        precio > apertura
-    ):
-        return "put"
+    # ==============================
+    # 🔻 VENTA (PUT)
+    # ==============================
+    if precio_actual >= resistencia:
 
-    # 🔺 CALL
-    if (
-        sar.iloc[last] < precio and
-        lower.iloc[last] < precio < upper.iloc[last] and
-        vela_prev_cierre < vela_prev_apertura and
-        precio < apertura
-    ):
-        return "call"
+        if velas_rojas > velas_verdes:
 
-    return None
+            distancia = precio_actual - soporte
+
+            # 🔥 tiempo dinámico
+            if distancia > 0.002:
+                expiracion = 3
+            elif distancia > 0.001:
+                expiracion = 2
+            else:
+                expiracion = 1
+
+            return "put", expiracion
+
+    # ==============================
+    # 🔺 COMPRA (CALL)
+    # ==============================
+    if precio_actual <= soporte:
+
+        if velas_verdes > velas_rojas:
+
+            distancia = resistencia - precio_actual
+
+            if distancia > 0.002:
+                expiracion = 3
+            elif distancia > 0.001:
+                expiracion = 2
+            else:
+                expiracion = 1
+
+            return "call", expiracion
+
+    return None, None
