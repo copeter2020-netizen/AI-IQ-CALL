@@ -52,10 +52,9 @@ def detectar_entrada(iq, par):
         soporte = low.iloc[-20:].min()
 
         # =========================
-        # 🚀 ENTRADAS RÁPIDAS (SCALPING 1M)
+        # 🚀 ENTRADAS PRINCIPALES
         # =========================
 
-        # CALL
         if (
             tendencia_alcista and
             vela_verde and
@@ -64,7 +63,6 @@ def detectar_entrada(iq, par):
         ):
             return "call", 1
 
-        # PUT
         if (
             tendencia_bajista and
             vela_roja and
