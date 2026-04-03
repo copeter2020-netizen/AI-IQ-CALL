@@ -1,74 +1,126 @@
 import numpy as np
 
-def ema(data, period=20):
-    ema_values = []
-    k = 2 / (period + 1)
+# ========================
+# DATOS
+# ========================
 
-    for i in range(len(data)):
-        if i < period:
-            ema_values.append(np.mean(data[:i+1]))
-        else:
-            ema_values.append(data[i] * k + ema_values[-1] * (1 - k))
+def get_close(velas):
+    return [float(v["close"]) for v in velas]
 
-    return ema_values
+def get_open(velas):
+    return [float(v["open"]) for v in velas]
 
+def get_high(velas):
+    return [float(v["max"]) for v in velas]
 
-def detectar_soporte_resistencia(candles):
-    closes = [c['close'] for c in candles]
+def get_low(velas):
+    return [float(v["min"]) for v in velas]
 
-    soporte = min(closes[-20:])
-    resistencia = max(closes[-20:])
+# ========================
+# GRÁFICO DE LÍNEA (TENDENCIA)
+# ========================
 
-    return soporte, resistencia
+def tendencia_linea(velas):
+    closes = get_close(velas)
 
+    if len(closes) < 10:
+        return None
 
-def fuerza_vela(candle):
-    cuerpo = abs(candle['close'] - candle['open'])
-    rango = candle['max'] - candle['min']
+    # regresión simple
+    x = np.arange(len(closes))
+    y = np.array(closes)
+
+    pendiente = np.polyfit(x, y, 1)[0]
+
+    if pendiente > 0:
+        return "alcista"
+    elif pendiente < 0:
+        return "bajista"
+    else:
+        return None
+
+# ========================
+# SOPORTE / RESISTENCIA
+# ========================
+
+def zonas(velas):
+    highs = get_high(velas[-30:])
+    lows = get_low(velas[-30:])
+
+    return min(lows), max(highs)
+
+# ========================
+# FUERZA DE VELA
+# ========================
+
+def fuerza_vela(vela):
+    body = abs(vela["close"] - vela["open"])
+    rango = vela["max"] - vela["min"]
 
     if rango == 0:
         return 0
 
-    return cuerpo / rango
+    return body / rango
 
+# ========================
+# DETECCIÓN FINAL
+# ========================
 
-# ✅ SOLO RECIBE 1 PARÁMETRO (candles)
-def detectar_entrada(candles):
+def detectar_entrada(velas):
+    try:
+        if isinstance(velas, tuple):
+            velas = velas[1]
 
-    if len(candles) < 30:
+        if len(velas) < 20:
+            return None
+
+        ultima = velas[-1]
+        anterior = velas[-2]
+
+        soporte, resistencia = zonas(velas)
+
+        tendencia = tendencia_linea(velas)
+
+        fuerza = fuerza_vela(ultima)
+
+        cierre = float(ultima["close"])
+        apertura = float(ultima["open"])
+
+        # ========================
+        # FILTRO: EVITAR RANGO
+        # ========================
+        rango = resistencia - soporte
+
+        if rango < 0.0003:
+            return None
+
+        # ========================
+        # SOPORTE (REBOTE)
+        # ========================
+        if cierre <= soporte + 0.0002:
+            if cierre > apertura and fuerza > 0.5:
+                return "call"
+
+        # ========================
+        # RESISTENCIA (REBOTE)
+        # ========================
+        if cierre >= resistencia - 0.0002:
+            if cierre < apertura and fuerza > 0.5:
+                return "put"
+
+        # ========================
+        # CONTINUIDAD + TENDENCIA
+        # ========================
+        if tendencia == "alcista":
+            if cierre > apertura and fuerza > 0.6:
+                return "call"
+
+        if tendencia == "bajista":
+            if cierre < apertura and fuerza > 0.6:
+                return "put"
+
         return None
 
-    closes = [c['close'] for c in candles]
-    ema20 = ema(closes, 20)
-
-    ultima = candles[-1]
-    anterior = candles[-2]
-
-    soporte, resistencia = detectar_soporte_resistencia(candles)
-
-    fuerza = fuerza_vela(ultima)
-
-    precio = ultima['close']
-    tendencia = "alcista" if precio > ema20[-1] else "bajista"
-
-    # ==========================
-    # LÓGICA
-    # ==========================
-
-    if precio <= soporte + 0.0002:
-        if fuerza > 0.5 and ultima['close'] > ultima['open']:
-            return "call", 1
-
-    if precio >= resistencia - 0.0002:
-        if fuerza > 0.5 and ultima['close'] < ultima['open']:
-            return "put", 1
-
-    if tendencia == "alcista":
-        if ultima['close'] > anterior['close'] and fuerza > 0.6:
-            return "call", 1
-
-    if tendencia == "bajista":
-        if ultima['close'] < anterior['close'] and fuerza > 0.6:
-            return "put", 1
-
-    return None
+    except Exception as e:
+        print("ERROR estrategia:", e)
+        return None
