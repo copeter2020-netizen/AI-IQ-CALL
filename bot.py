@@ -4,6 +4,7 @@ import requests
 from iqoptionapi.stable_api import IQ_Option
 from strategy import detectar_entrada
 
+
 IQ_EMAIL = os.getenv("IQ_EMAIL")
 IQ_PASSWORD = os.getenv("IQ_PASSWORD")
 
@@ -11,7 +12,7 @@ TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 PAR = "EURUSD-OTC"
-MONTO = 10000
+MONTO = 1000
 
 
 def telegram(msg):
@@ -24,18 +25,25 @@ def telegram(msg):
         pass
 
 
+# 🔥 PARCHE GLOBAL (ELIMINA ERROR UNDERLYING)
+def parche_anti_digital(iq):
+    try:
+        iq.get_digital_underlying_list_data = lambda: {"underlying": []}
+    except:
+        pass
+
+
 def conectar():
     while True:
         try:
             iq = IQ_Option(IQ_EMAIL, IQ_PASSWORD)
-
-            # 🔥 BLOQUEA DIGITAL (CLAVE)
-            iq.api.digital_option = None
-
             iq.connect()
 
             if iq.check_connect():
                 iq.change_balance("PRACTICE")
+
+                # 🔥 APLICAR PARCHE
+                parche_anti_digital(iq)
 
                 print("✅ BOT ACTIVADO")
                 telegram("🤖 BOT ACTIVADO")
@@ -56,7 +64,6 @@ def activo_abierto(iq, par):
         return False
 
 
-# ⏱️ SINCRONIZA VELA
 def esperar_siguiente_vela():
     while True:
         if int(time.time()) % 60 == 0:
@@ -64,14 +71,12 @@ def esperar_siguiente_vela():
         time.sleep(0.2)
 
 
-# 🔥 EJECUCIÓN BINARIA SEGURA
 def ejecutar(iq, accion, expiracion):
 
-    print(f"⚡ ENTRANDO: {accion} | {expiracion}m")
+    print(f"⚡ ENTRANDO: {accion}")
     telegram(f"⚡ ENTRANDO: {accion}")
 
     for i in range(5):
-
         try:
             status, order_id = iq.buy(
                 MONTO,
@@ -79,7 +84,6 @@ def ejecutar(iq, accion, expiracion):
                 accion,
                 expiracion
             )
-
         except Exception as e:
             print(f"❌ ERROR API: {e}")
             time.sleep(1)
@@ -102,7 +106,6 @@ def run():
     iq = conectar()
 
     while True:
-
         try:
 
             if not activo_abierto(iq, PAR):
