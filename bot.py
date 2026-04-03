@@ -1,110 +1,133 @@
-import os
 import time
-import requests
-from iqoptionapi.stable_api import IQ_Option
-from strategy import detectar_entrada, actualizar_modelo
+import pandas as pd
 
-IQ_EMAIL = os.getenv("IQ_EMAIL")
-IQ_PASSWORD = os.getenv("IQ_PASSWORD")
-
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
-
-PAR = "EURUSD-OTC"
-MONTO = 1
-EXPIRACION = 1
+# 🔥 MODELO IA (PESOS)
+modelo = {
+    "tendencia": 1.0,
+    "momento": 1.0,
+    "rsi": 1.0,
+    "volatilidad": 1.0
+}
 
 
-def telegram(msg):
+def EMA(series, period):
+    return series.ewm(span=period, adjust=False).mean()
+
+
+def RSI(series, period=14):
+    delta = series.diff()
+    gain = (delta.where(delta > 0, 0)).rolling(period).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(period).mean()
+    rs = gain / loss
+    return 100 - (100 / (1 + rs))
+
+
+def detectar_entrada(iq, par):
     try:
-        requests.post(
-            f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
-            data={"chat_id": TELEGRAM_CHAT_ID, "text": msg}
-        )
-    except:
-        pass
+        velas = iq.get_candles(par, 60, 60, time.time())
 
+        if not velas or len(velas) < 40:
+            return None, None
 
-def conectar():
-    while True:
-        try:
-            iq = IQ_Option(IQ_EMAIL, IQ_PASSWORD)
-            iq.connect()
+        df = pd.DataFrame(velas)
+        df = df.rename(columns={"max": "high", "min": "low"})
 
-            if iq.check_connect():
-                iq.change_balance("PRACTICE")
-                print("✅ BOT IA ACTIVADO")
-                telegram("🤖 BOT IA ACTIVADO")
-                return iq
+        close = df["close"]
+        open_ = df["open"]
+        high = df["high"]
+        low = df["low"]
 
-        except Exception as e:
-            print(f"❌ ERROR CONEXIÓN: {e}")
+        ema20 = EMA(close, 20)
+        ema50 = EMA(close, 50)
+        rsi = RSI(close)
 
-        time.sleep(3)
+        precio = close.iloc[-1]
+        apertura = open_.iloc[-1]
 
+        vela_verde = precio > apertura
+        vela_roja = precio < apertura
 
-def ejecutar(iq, accion):
-    print(f"⚡ IA ENTRANDO: {accion}")
-    telegram(f"⚡ IA ENTRANDO: {accion}")
+        # =========================
+        # 🔥 FEATURES IA
+        # =========================
 
-    try:
-        status, order_id = iq.buy(MONTO, PAR, accion, EXPIRACION)
+        tendencia = 1 if ema20.iloc[-1] > ema50.iloc[-1] else -1
+        momento = 1 if vela_verde else -1
+        fuerza_rsi = 1 if rsi.iloc[-1] > 50 else -1
 
-        if status:
-            print(f"🔥 ORDEN ABIERTA: {order_id}")
-            return order_id
+        volatilidad = high.iloc[-5:].max() - low.iloc[-5:].min()
+
+        # filtro lateral
+        if volatilidad < 0.00005:
+            return None, None
+
+        # =========================
+        # 🧠 SISTEMA DE PUNTUACIÓN
+        # =========================
+
+        score_call = 0
+        score_put = 0
+
+        if tendencia == 1:
+            score_call += modelo["tendencia"]
         else:
-            print("❌ ERROR AL EJECUTAR")
-            return None
+            score_put += modelo["tendencia"]
+
+        if momento == 1:
+            score_call += modelo["momento"]
+        else:
+            score_put += modelo["momento"]
+
+        if fuerza_rsi == 1:
+            score_call += modelo["rsi"]
+        else:
+            score_put += modelo["rsi"]
+
+        if volatilidad > 0.0001:
+            score_call += modelo["volatilidad"]
+            score_put += modelo["volatilidad"]
+
+        # =========================
+        # 🎯 DECISIÓN FINAL
+        # =========================
+
+        if score_call > score_put and score_call >= 2:
+            return "call", {
+                "score": score_call,
+                "tipo": "call"
+            }
+
+        if score_put > score_call and score_put >= 2:
+            return "put", {
+                "score": score_put,
+                "tipo": "put"
+            }
+
+        return None, None
 
     except Exception as e:
-        print(f"❌ ERROR: {e}")
-        return None
+        print(f"❌ ERROR IA: {e}")
+        return None, None
 
 
-def verificar_resultado(iq, order_id):
-    while True:
-        resultado = iq.check_win_v4(order_id)
+def actualizar_modelo(features, resultado):
+    global modelo
 
-        if resultado is not None:
-            return resultado
+    if not features:
+        return
 
-        time.sleep(1)
+    # 🔥 APRENDIZAJE POR REFUERZO REAL
+    if resultado > 0:
+        modelo["tendencia"] += 0.02
+        modelo["momento"] += 0.02
+        modelo["rsi"] += 0.02
+    else:
+        modelo["tendencia"] -= 0.02
+        modelo["momento"] -= 0.02
+        modelo["rsi"] -= 0.02
 
+    # 🔒 LIMITES ESTABLES
+    for key in modelo:
+        modelo[key] = max(0.5, min(2.0, modelo[key]))
 
-def run():
-    iq = conectar()
-
-    ultima_operacion = False
-
-    while True:
-        try:
-            accion, features = detectar_entrada(iq, PAR)
-
-            if accion and not ultima_operacion:
-                order_id = ejecutar(iq, accion)
-
-                if order_id:
-                    resultado = verificar_resultado(iq, order_id)
-
-                    print(f"💰 RESULTADO: {resultado}")
-                    telegram(f"💰 RESULTADO: {resultado}")
-
-                    # 🔥 IA APRENDE AQUÍ
-                    actualizar_modelo(features, resultado)
-
-                ultima_operacion = True
-                time.sleep(5)
-
-            if accion is None:
-                ultima_operacion = False
-
-            time.sleep(1)
-
-        except Exception as e:
-            print(f"❌ ERROR LOOP: {e}")
-            time.sleep(3)
-
-
-if __name__ == "__main__":
-    run()
+    print(f"🧠 MODELO IA: {modelo}")
