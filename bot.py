@@ -1,6 +1,6 @@
 import time
+import requests
 from iqoptionapi.stable_api import IQ_Option
-from telegram import enviar_mensaje
 
 # =========================
 # 🔐 CONFIG
@@ -8,7 +8,10 @@ from telegram import enviar_mensaje
 EMAIL = "TU_EMAIL"
 PASSWORD = "TU_PASSWORD"
 
-MONTO = 12
+TELEGRAM_TOKEN = "TU_TOKEN"
+CHAT_ID = "TU_CHAT_ID"
+
+MONTO = 15
 
 PARES = [
     "EURGBP-OTC",
@@ -22,7 +25,20 @@ TIMEFRAME = 60
 EXPIRACION = 1
 
 # =========================
-# 🔌 CONEXIÓN ROBUSTA
+# 📩 TELEGRAM (INTEGRADO)
+# =========================
+def enviar_mensaje(texto):
+    try:
+        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+        requests.post(url, data={
+            "chat_id": CHAT_ID,
+            "text": texto
+        }, timeout=5)
+    except Exception as e:
+        print("⚠️ Error Telegram:", e)
+
+# =========================
+# 🔌 CONEXIÓN (FIX)
 # =========================
 def conectar():
     while True:
@@ -39,17 +55,17 @@ def conectar():
                 iq.change_balance("PRACTICE")
                 return iq
 
-            # 🔴 ERROR CREDENCIALES
+            # 🔴 ERROR REAL TUYO
             if "invalid_credentials" in str(reason):
-                print("❌ EMAIL O PASSWORD INCORRECTO")
+                print("❌ EMAIL / PASSWORD INCORRECTO")
                 enviar_mensaje("❌ ERROR LOGIN IQ OPTION")
                 time.sleep(60)
                 continue
 
-            print("❌ Error:", reason)
+            print("❌ Error conexión:", reason)
 
         except Exception as e:
-            print("⚠️ Error conexión:", e)
+            print("⚠️ Error:", e)
 
         print("⏳ Reintentando en 15s...")
         time.sleep(15)
@@ -179,7 +195,7 @@ def run():
             time.sleep(5)
 
 # =========================
-# ▶️ INICIO
+# ▶️ START
 # =========================
 if __name__ == "__main__":
     run()
