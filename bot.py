@@ -2,7 +2,7 @@ import os
 import time
 import requests
 from iqoptionapi.stable_api import IQ_Option
-from strategy import detectar_entrada
+from strategy import detectar_entrada, actualizar_modelo
 
 IQ_EMAIL = os.getenv("IQ_EMAIL")
 IQ_PASSWORD = os.getenv("IQ_PASSWORD")
@@ -11,7 +11,7 @@ TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 PAR = "EURUSD-OTC"
-MONTO = 1300
+MONTO = 1
 EXPIRACION = 1
 
 
@@ -33,8 +33,8 @@ def conectar():
 
             if iq.check_connect():
                 iq.change_balance("PRACTICE")
-                print("✅ BOT ACTIVADO")
-                telegram("🤖 BOT ACTIVADO")
+                print("✅ BOT IA ACTIVADO")
+                telegram("🤖 BOT IA ACTIVADO")
                 return iq
 
         except Exception as e:
@@ -44,47 +44,60 @@ def conectar():
 
 
 def ejecutar(iq, accion):
-    print(f"⚡ ENTRANDO: {accion} (1m)")
-    telegram(f"⚡ ENTRANDO: {accion} (1m)")
+    print(f"⚡ IA ENTRANDO: {accion}")
+    telegram(f"⚡ IA ENTRANDO: {accion}")
 
     try:
         status, order_id = iq.buy(MONTO, PAR, accion, EXPIRACION)
 
         if status:
             print(f"🔥 ORDEN ABIERTA: {order_id}")
-            telegram(f"🔥 ORDEN ABIERTA: {accion}")
-            return True
+            return order_id
         else:
             print("❌ ERROR AL EJECUTAR")
-            return False
+            return None
 
     except Exception as e:
         print(f"❌ ERROR: {e}")
-        return False
+        return None
+
+
+def verificar_resultado(iq, order_id):
+    while True:
+        resultado = iq.check_win_v4(order_id)
+
+        if resultado is not None:
+            return resultado
+
+        time.sleep(1)
 
 
 def run():
     iq = conectar()
 
-    ultima_senal = None  # 🔥 evita repetir misma entrada
+    ultima_operacion = False
 
     while True:
         try:
-            accion, _ = detectar_entrada(iq, PAR)
+            accion, features = detectar_entrada(iq, PAR)
 
-            if accion and accion != ultima_senal:
-                print(f"📊 NUEVA SEÑAL: {accion}")
-                telegram(f"📊 SEÑAL: {accion}")
+            if accion and not ultima_operacion:
+                order_id = ejecutar(iq, accion)
 
-                ejecutar(iq, accion)
+                if order_id:
+                    resultado = verificar_resultado(iq, order_id)
 
-                ultima_senal = accion  # 🔥 guarda señal ejecutada
+                    print(f"💰 RESULTADO: {resultado}")
+                    telegram(f"💰 RESULTADO: {resultado}")
 
-                time.sleep(10)  # 🔥 evita duplicados inmediatos
+                    # 🔥 IA APRENDE AQUÍ
+                    actualizar_modelo(features, resultado)
 
-            # reset si ya no hay señal
+                ultima_operacion = True
+                time.sleep(5)
+
             if accion is None:
-                ultima_senal = None
+                ultima_operacion = False
 
             time.sleep(1)
 
