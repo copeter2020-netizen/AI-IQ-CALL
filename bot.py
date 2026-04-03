@@ -39,7 +39,7 @@ def conectar():
         except Exception as e:
             print(f"❌ ERROR CONEXIÓN: {e}")
 
-        time.sleep(1)
+        time.sleep(3)
 
 
 def ejecutar(iq, accion, expiracion):
