@@ -24,7 +24,6 @@ def telegram(msg):
         pass
 
 
-# 🔥 CONEXIÓN TOTALMENTE LIMPIA (ELIMINA DIGITAL BUG)
 def conectar():
     while True:
         try:
@@ -34,21 +33,14 @@ def conectar():
             if iq.check_connect():
                 iq.change_balance("PRACTICE")
 
-                # 🔥 BLOQUEO TOTAL DE DIGITAL (SOLUCIÓN ERROR underlying)
-                try:
-                    iq.api.digital_option = None
-                    iq.api.get_digital_underlying_list_data = None
-                except:
-                    pass
-
                 print("✅ BOT ACTIVADO")
                 telegram("🤖 BOT ACTIVADO")
+
                 return iq
 
         except Exception as e:
             print(f"❌ ERROR CONEXIÓN: {e}")
 
-        print("🔁 Reintentando conexión...")
         time.sleep(3)
 
 
@@ -60,26 +52,21 @@ def activo_abierto(iq, par):
         return False
 
 
-# 🔥 ESPERA NUEVA VELA EXACTA
+# ⏱️ Espera nueva vela exacta
 def esperar_siguiente_vela():
     while True:
-        if int(time.time() % 60) == 0:
+        if int(time.time()) % 60 == 0:
             break
         time.sleep(0.2)
 
 
-# 🔥 EJECUCIÓN REAL (SOLO BINARIAS)
+# 🔥 EJECUCIÓN SOLO BINARIA (SIN DIGITAL)
 def ejecutar(iq, accion, expiracion):
 
     print(f"⚡ ENTRANDO: {accion} | {expiracion}m")
     telegram(f"⚡ ENTRANDO: {accion} | {expiracion}m")
 
-    for intento in range(5):
-
-        # 🔁 reconexión automática
-        if not iq.check_connect():
-            print("🔁 Reconectando...")
-            iq = conectar()
+    for i in range(5):
 
         try:
             status, order_id = iq.buy(
@@ -96,10 +83,10 @@ def ejecutar(iq, accion, expiracion):
 
         if status:
             print(f"🔥 ORDEN ABIERTA: {order_id}")
-            telegram(f"✅ OPERACIÓN: {accion} ({expiracion}m)")
+            telegram(f"✅ OPERACIÓN: {accion}")
             return True
 
-        print(f"⚠️ Reintento {intento+1}")
+        print(f"⚠️ Reintento {i+1}")
         time.sleep(1)
 
     print("❌ FALLÓ ENTRADA")
@@ -114,9 +101,9 @@ def run():
     while True:
 
         try:
-            # 🔒 validar activo abierto
+
             if not activo_abierto(iq, PAR):
-                print("⏳ Activo cerrado...")
+                print("⏳ Activo cerrado")
                 time.sleep(5)
                 continue
 
@@ -124,23 +111,19 @@ def run():
 
             if accion:
                 print(f"📊 SEÑAL: {accion} | {expiracion}m")
-                telegram(f"📊 SEÑAL: {accion} | {expiracion}m")
+                telegram(f"📊 SEÑAL: {accion}")
 
                 esperar_siguiente_vela()
 
                 ejecutar(iq, accion, expiracion)
 
-                # evita sobreoperar
                 time.sleep(60)
 
         except Exception as e:
             print(f"❌ ERROR LOOP: {e}")
             telegram(f"❌ ERROR: {e}")
 
-            # 🔁 reconexión total
             iq = conectar()
-
-            time.sleep(2)
 
 
 if __name__ == "__main__":
