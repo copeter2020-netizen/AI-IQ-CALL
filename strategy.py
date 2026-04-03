@@ -1,103 +1,83 @@
-import time
-import pandas as pd
+import numpy as np
+
+# ==============================
+# INDICADORES
+# ==============================
+
+def ema(data, period=20):
+    ema_values = []
+    k = 2 / (period + 1)
+
+    for i in range(len(data)):
+        if i < period:
+            ema_values.append(np.mean(data[:i+1]))
+        else:
+            ema_values.append(data[i] * k + ema_values[-1] * (1 - k))
+
+    return ema_values
 
 
-def EMA(series, period):
-    return series.ewm(span=period, adjust=False).mean()
+def detectar_soporte_resistencia(candles):
+    closes = [c['close'] for c in candles]
+
+    soporte = min(closes[-20:])
+    resistencia = max(closes[-20:])
+
+    return soporte, resistencia
 
 
-def RSI(series, period=14):
-    delta = series.diff()
+def fuerza_vela(candle):
+    cuerpo = abs(candle['close'] - candle['open'])
+    rango = candle['max'] - candle['min']
 
-    gain = (delta.where(delta > 0, 0)).rolling(period).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(period).mean()
+    if rango == 0:
+        return 0
 
-    rs = gain / loss
-    return 100 - (100 / (1 + rs))
+    return cuerpo / rango
 
 
-def detectar_entrada(iq, par):
-    try:
-        velas = iq.get_candles(par, 60, 120, time.time())
+# ==============================
+# ESTRATEGIA INTELIGENTE
+# ==============================
 
-        if not velas or len(velas) < 60:
-            return None, None
+def detectar_entrada(candles):
+    if len(candles) < 30:
+        return None
 
-        df = pd.DataFrame(velas)
-        df = df.rename(columns={"max": "high", "min": "low"})
+    closes = [c['close'] for c in candles]
+    ema20 = ema(closes, 20)
 
-        close = df["close"]
-        open_ = df["open"]
-        high = df["high"]
-        low = df["low"]
+    ultima = candles[-1]
+    anterior = candles[-2]
 
-        ema20 = EMA(close, 20)
-        ema50 = EMA(close, 50)
-        rsi = RSI(close)
+    soporte, resistencia = detectar_soporte_resistencia(candles)
 
-        precio = close.iloc[-1]
-        apertura = open_.iloc[-1]
-        maximo = high.iloc[-1]
-        minimo = low.iloc[-1]
+    fuerza = fuerza_vela(ultima)
 
-        cuerpo = abs(precio - apertura)
-        rango = maximo - minimo
+    precio = ultima['close']
+    tendencia = "alcista" if precio > ema20[-1] else "bajista"
 
-        # 🔥 FILTRO VELA
-        vela_fuerte = cuerpo > (rango * 0.6)
+    # ==========================
+    # LÓGICA DE ENTRADA
+    # ==========================
 
-        # 🔥 MECHAS (RECHAZO REAL)
-        mecha_superior = maximo - max(precio, apertura)
-        mecha_inferior = min(precio, apertura) - minimo
+    # 🟢 REBOTE EN SOPORTE → CALL
+    if precio <= soporte + 0.0002:
+        if fuerza > 0.5 and ultima['close'] > ultima['open']:
+            return "call", 1
 
-        rechazo_compra = mecha_inferior > cuerpo
-        rechazo_venta = mecha_superior > cuerpo
+    # 🔴 RECHAZO EN RESISTENCIA → PUT
+    if precio >= resistencia - 0.0002:
+        if fuerza > 0.5 and ultima['close'] < ultima['open']:
+            return "put", 1
 
-        # 🔥 TENDENCIA FUERTE
-        distancia_ema = abs(ema20.iloc[-1] - ema50.iloc[-1])
+    # 🔵 CONTINUACIÓN DE TENDENCIA
+    if tendencia == "alcista":
+        if ultima['close'] > anterior['close'] and fuerza > 0.6:
+            return "call", 1
 
-        tendencia_alcista = ema20.iloc[-1] > ema50.iloc[-1] and distancia_ema > 0.00005
-        tendencia_bajista = ema20.iloc[-1] < ema50.iloc[-1] and distancia_ema > 0.00005
+    if tendencia == "bajista":
+        if ultima['close'] < anterior['close'] and fuerza > 0.6:
+            return "put", 1
 
-        # 🔥 SOPORTE / RESISTENCIA
-        resistencia = high.iloc[-20:].max()
-        soporte = low.iloc[-20:].min()
-
-        cerca_resistencia = precio >= resistencia * 0.999
-        cerca_soporte = precio <= soporte * 1.001
-
-        # 🔥 VOLATILIDAD
-        volatilidad = high.iloc[-10:].max() - low.iloc[-10:].min()
-
-        if volatilidad < 0.00008:
-            return None, None
-
-        # =========================
-        # 🔺 CALL (ULTRA FILTRADO)
-        # =========================
-        if (
-            tendencia_alcista and
-            rsi.iloc[-1] < 25 and
-            cerca_soporte and
-            rechazo_compra and
-            vela_fuerte
-        ):
-            return "call", {"tipo": "call"}
-
-        # =========================
-        # 🔻 PUT (ULTRA FILTRADO)
-        # =========================
-        if (
-            tendencia_bajista and
-            rsi.iloc[-1] > 75 and
-            cerca_resistencia and
-            rechazo_venta and
-            vela_fuerte
-        ):
-            return "put", {"tipo": "put"}
-
-        return None, None
-
-    except Exception as e:
-        print(f"❌ ERROR STRATEGY: {e}")
-        return None, None
+    return None
