@@ -1,14 +1,18 @@
 import time
-import datetime
 import requests
 from iqoptionapi.stable_api import IQ_Option
-from strategy import detectar_entrada
 
+# =========================
+# 🔐 CONFIGURACIÓN
+# =========================
 EMAIL = "TU_EMAIL"
 PASSWORD = "TU_PASSWORD"
 
-TOKEN = "TU_TOKEN"
+TELEGRAM_TOKEN = "TU_TOKEN"
 CHAT_ID = "TU_CHAT_ID"
+
+# 💰 IMPORTE
+MONTO = 10  # ← CAMBIA AQUÍ
 
 PARES = [
     "EURGBP-OTC",
@@ -18,149 +22,177 @@ PARES = [
     "USDCHF-OTC"
 ]
 
-MONTO = 20
-EXP = 1
+TIMEFRAME = 60
+EXPIRACION = 1
 
-# ==========================
-# TELEGRAM
-# ==========================
-def telegram(msg):
+# =========================
+# 📩 TELEGRAM
+# =========================
+def enviar_telegram(msg):
     try:
-        requests.post(
-            f"https://api.telegram.org/bot{TOKEN}/sendMessage",
-            data={"chat_id": CHAT_ID, "text": msg},
-            timeout=5
-        )
+        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+        requests.post(url, data={"chat_id": CHAT_ID, "text": msg}, timeout=5)
     except:
         pass
 
-# ==========================
-# CONEXIÓN ULTRA ESTABLE
-# ==========================
+# =========================
+# 🔌 CONEXIÓN ESTABLE
+# =========================
 def conectar():
-    intentos = 0
-
     while True:
         try:
-            print("🔄 Conectando...")
-
+            print("🔄 Conectando a IQ Option...")
             iq = IQ_Option(EMAIL, PASSWORD)
-            iq.connect()
 
-            time.sleep(5)
+            time.sleep(3)
 
-            if iq.check_connect():
-                print("✅ Conectado OK")
+            status, reason = iq.connect()
 
+            if status:
+                print("✅ Conectado correctamente")
                 iq.change_balance("PRACTICE")
-
+                time.sleep(2)
                 return iq
-
             else:
-                print("❌ Fallo conexión")
+                print("❌ Error conexión:", reason)
 
         except Exception as e:
-            print("⚠️ Error conexión:", e)
+            print("⚠️ Excepción:", e)
 
-        intentos += 1
+        print("⏳ Reintentando en 15s...")
+        time.sleep(15)
 
-        # 🔥 evitar bloqueo IQ Option
-        espera = min(10 + intentos * 2, 60)
-        print(f"⏳ Reintentando en {espera}s...")
-        time.sleep(espera)
-
-# ==========================
-# KEEP ALIVE
-# ==========================
-def keep_alive(iq):
+# =========================
+# 📊 OBTENER VELAS
+# =========================
+def get_velas(iq, par):
     try:
-        iq.get_balance()
-    except:
-        pass
-
-# ==========================
-# ESPERA 59
-# ==========================
-def esperar_59():
-    while True:
-        if datetime.datetime.now().second >= 59:
-            break
-        time.sleep(0.05)
-
-# ==========================
-# OBTENER VELAS SEGURO
-# ==========================
-def get_velas_seguro(iq, par):
-    try:
-        velas = iq.get_candles(par, 60, 60, time.time())
-
-        if not velas or len(velas) == 0:
-            return None
-
-        return velas
-
+        return iq.get_candles(par, TIMEFRAME, 50, time.time())
     except:
         return None
 
-# ==========================
-# BOT PRINCIPAL
-# ==========================
+# =========================
+# 🧠 ESTRATEGIA
+# =========================
+def estrategia(velas):
+    try:
+        if not velas or len(velas) < 30:
+            return None
+
+        v = velas[-1]
+
+        o = float(v.get("open", 0))
+        c = float(v.get("close", 0))
+        h = float(v.get("max", 0))
+        l = float(v.get("min", 0))
+
+        rango = h - l
+        if rango <= 0:
+            return None
+
+        cuerpo = abs(c - o)
+        mecha_sup = h - max(o, c)
+        mecha_inf = min(o, c) - l
+
+        # 🔥 fuerza real
+        fuerza = cuerpo > rango * 0.6
+
+        # 🔥 evitar lateral
+        altos = [x["max"] for x in velas[-10:]]
+        bajos = [x["min"] for x in velas[-10:]]
+
+        if max(altos) - min(bajos) < rango * 3:
+            return None
+
+        # 🔥 rechazo
+        rechazo_venta = mecha_sup > cuerpo * 1.5
+        rechazo_compra = mecha_inf > cuerpo * 1.5
+
+        # 🔥 continuidad
+        ultimas = velas[-4:]
+        alcistas = sum(1 for x in ultimas if x["close"] > x["open"])
+        bajistas = sum(1 for x in ultimas if x["close"] < x["open"])
+
+        # 🎯 decisión
+        if fuerza and alcistas >= 3 and not rechazo_venta:
+            return "call"
+
+        if fuerza and bajistas >= 3 and not rechazo_compra:
+            return "put"
+
+        if rechazo_venta:
+            return "put"
+
+        if rechazo_compra:
+            return "call"
+
+        return None
+
+    except Exception as e:
+        print("❌ Error estrategia:", e)
+        return None
+
+# =========================
+# ⏱ ENTRADA EN SEGUNDO 59
+# =========================
+def esperar_entrada():
+    while True:
+        if time.localtime().tm_sec >= 58:
+            break
+        time.sleep(0.2)
+
+# =========================
+# 💓 KEEP ALIVE
+# =========================
+def heartbeat():
+    print("💓 activo:", time.strftime("%H:%M:%S"))
+
+# =========================
+# 🚀 BOT PRINCIPAL
+# =========================
 def run():
     iq = conectar()
 
-    last_keep = time.time()
-
     while True:
         try:
-            # 🔥 mantener conexión viva
-            if time.time() - last_keep > 25:
-                keep_alive(iq)
-                last_keep = time.time()
+            heartbeat()
 
-            # 🔥 reconectar si se cae
             if not iq.check_connect():
                 print("⚠️ Reconectando sesión...")
                 iq = conectar()
                 continue
 
-            operacion = None
-
             for par in PARES:
-                velas = get_velas_seguro(iq, par)
-
-                if velas is None:
+                velas = get_velas(iq, par)
+                if not velas:
                     continue
 
-                señal = detectar_entrada(velas)
+                señal = estrategia(velas)
 
                 if señal:
-                    operacion = (par, señal)
-                    break
+                    print(f"🔥 {par} → {señal.upper()}")
 
-            if operacion:
-                par, señal = operacion
+                    enviar_telegram(
+                        f"📡 SEÑAL\n{par}\n{señal.upper()}\n💰 ${MONTO}\n⏱ 1 MIN"
+                    )
 
-                print(f"🎯 PERFECTO: {par} {señal}")
+                    esperar_entrada()
 
-                esperar_59()
+                    check, _ = iq.buy(MONTO, par, señal, EXPIRACION)
 
-                check, _ = iq.buy(MONTO, par, señal, EXP)
+                    if check:
+                        print("✅ Operación ejecutada")
+                    else:
+                        print("❌ Error al ejecutar operación")
 
-                if check:
-                    msg = f"🔥 SNIPER\n{par}\n{señal.upper()}\nM1"
-                    print(msg)
-                    telegram(msg)
-                else:
-                    print("❌ Error al ejecutar")
-
-            else:
-                print("⏳ Sin condiciones perfectas...")
-
-            # 🔥 delay humano (clave)
-            time.sleep(3)
+            time.sleep(1)
 
         except Exception as e:
-            print("ERROR LOOP:", e)
-            time.sleep(10)
+            print("❌ ERROR GENERAL:", e)
+            time.sleep(5)
 
-run()
+# =========================
+# ▶️ INICIO
+# =========================
+if __name__ == "__main__":
+    run()
