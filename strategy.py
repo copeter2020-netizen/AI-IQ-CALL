@@ -5,7 +5,34 @@ ultima_operacion = 0
 
 
 # ==========================
-# 🔥 FILTRO MERCADO ACTIVO
+# 🔥 INDICADORES
+# ==========================
+def calcular_rsi(closes, period=14):
+    delta = np.diff(closes)
+    gain = np.maximum(delta, 0)
+    loss = np.abs(np.minimum(delta, 0))
+
+    avg_gain = np.mean(gain[-period:])
+    avg_loss = np.mean(loss[-period:])
+
+    if avg_loss == 0:
+        return 100
+
+    rs = avg_gain / avg_loss
+    return 100 - (100 / (1 + rs))
+
+
+def calcular_ema(closes, period=20):
+    return np.mean(closes[-period:])
+
+
+def calcular_adx(highs, lows, closes, period=14):
+    tr = highs - lows
+    return np.mean(tr[-period:])
+
+
+# ==========================
+# 🔥 MERCADO ACTIVO
 # ==========================
 def mercado_activo(velas):
     try:
@@ -15,7 +42,7 @@ def mercado_activo(velas):
         vol_actual = np.mean(highs[-5:] - lows[-5:])
         vol_pasada = np.mean(highs[-30:] - lows[-30:])
 
-        if vol_actual < vol_pasada * 0.8:
+        if vol_actual < vol_pasada * 0.85:
             return False
 
         return True
@@ -25,21 +52,24 @@ def mercado_activo(velas):
 
 
 # ==========================
-# 🔥 ESTRATEGIA CONTINUIDAD
+# 🔥 ESTRATEGIA FINAL
 # ==========================
 def detectar_mejor_entrada(data_por_par):
     global ultima_operacion
 
     ahora = time.time()
 
-    # 🔒 CONTROL (más flexible)
-    if ahora - ultima_operacion < 300:
+    # 🔒 CONTROL
+    if ahora - ultima_operacion < 180:
         return None
 
     mejor = None
     mejor_score = 0
 
     for par, velas in data_por_par.items():
+
+        if par not in ["EURUSD", "EURJPY", "EURGBP", "GBPUSD", "USDCHF"]:
+            continue
 
         if len(velas) < 50:
             continue
@@ -54,15 +84,11 @@ def detectar_mejor_entrada(data_por_par):
         v1 = velas[-1]
         v2 = velas[-2]
         v3 = velas[-3]
-        v4 = velas[-4]
 
-        def d(v):
-            return float(v["open"]), float(v["close"]), float(v["max"]), float(v["min"])
-
-        o1,c1,h1,l1 = d(v1)
-        o2,c2,_,_   = d(v2)
-        o3,c3,_,_   = d(v3)
-        o4,c4,_,_   = d(v4)
+        o1 = float(v1["open"])
+        c1 = float(v1["close"])
+        h1 = float(v1["max"])
+        l1 = float(v1["min"])
 
         rango = h1 - l1
         if rango == 0:
@@ -73,60 +99,69 @@ def detectar_mejor_entrada(data_por_par):
         mecha_sup = h1 - max(o1, c1)
         mecha_inf = min(o1, c1) - l1
 
+        # ==========================
+        # 🔥 INDICADORES
+        # ==========================
+        rsi = calcular_rsi(closes)
+        ema = calcular_ema(closes)
+        adx = calcular_adx(highs, lows, closes)
+
         score = 0
 
         # ==========================
-        # 🔥 1. TENDENCIA CLARA
+        # 🔥 1. TENDENCIA EMA
         # ==========================
-        p = np.polyfit(range(10), closes[-10:], 1)[0]
-
-        if p > 0:
+        if c1 > ema:
             direccion = "call"
-            score += 25
-        elif p < 0:
+            score += 20
+        elif c1 < ema:
             direccion = "put"
-            score += 25
+            score += 20
         else:
             continue
 
         # ==========================
-        # 🔥 2. CONTINUIDAD REAL (CLAVE)
+        # 🔥 2. RSI INTELIGENTE
         # ==========================
-        if direccion == "call":
-            if not (c1 > c2 > c3 > c4):
-                continue
-        else:
-            if not (c1 < c2 < c3 < c4):
-                continue
+        if direccion == "call" and rsi > 75:
+            continue
+        if direccion == "put" and rsi < 25:
+            continue
 
-        score += 30
+        score += 15
 
         # ==========================
-        # 🔥 3. VELA ACTUAL FUERTE
+        # 🔥 3. CONTINUIDAD
+        # ==========================
+        if direccion == "call" and not (c1 > float(v2["close"]) > float(v3["close"])):
+            continue
+        if direccion == "put" and not (c1 < float(v2["close"]) < float(v3["close"])):
+            continue
+
+        score += 20
+
+        # ==========================
+        # 🔥 4. VELA FUERTE
         # ==========================
         if cuerpo < rango * 0.6:
             continue
 
-        score += 15
+        score += 10
 
         # ==========================
-        # 🔥 4. SIN RECHAZO
+        # 🔥 5. SIN RECHAZO
         # ==========================
-        if direccion == "call" and mecha_sup > cuerpo * 0.3:
+        if direccion == "call" and mecha_sup > cuerpo * 0.4:
             continue
-        if direccion == "put" and mecha_inf > cuerpo * 0.3:
+        if direccion == "put" and mecha_inf > cuerpo * 0.4:
             continue
 
-        score += 15
+        score += 10
 
         # ==========================
-        # 🔥 5. ACELERACIÓN
+        # 🔥 6. ADX (FUERZA)
         # ==========================
-        p_corto = np.polyfit(range(5), closes[-5:], 1)[0]
-
-        if direccion == "call" and p_corto <= p:
-            continue
-        if direccion == "put" and p_corto >= p:
+        if adx < np.mean(highs[-20:] - lows[-20:]):
             continue
 
         score += 15
@@ -138,7 +173,7 @@ def detectar_mejor_entrada(data_por_par):
             mejor_score = score
             mejor = (par, direccion, score)
 
-    if mejor and mejor_score >= 80:
+    if mejor and mejor_score >= 75:
         ultima_operacion = ahora
         return mejor
 
