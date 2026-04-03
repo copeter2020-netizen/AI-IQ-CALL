@@ -6,7 +6,7 @@ from strategy import detectar_entrada
 IQ_EMAIL = os.getenv("IQ_EMAIL")
 IQ_PASSWORD = os.getenv("IQ_PASSWORD")
 
-PAR = "EURUSD"
+PAR = "EURUSD-OTC"  # 🔥 IMPORTANTE
 MONTO = 20000
 EXPIRACION = 1
 
@@ -25,33 +25,27 @@ def connect():
         time.sleep(3)
 
 
-# 🔥 SNIPER REAL (SIN DESFASE)
+# 🔥 SNIPER EXACTO
 def esperar_sniper():
-    while True:
-        now = time.time()
-        segundos = int(now) % 60
-
-        if segundos == 59:
-            break
-
+    while int(time.time()) % 60 != 59:
         time.sleep(0.001)
 
 
-# 🔥 EJECUCIÓN REAL FORZADA
+# 🔥 EJECUCIÓN DIGITAL REAL (SIN ERROR)
 def ejecutar(iq, accion):
 
-    print(f"⚡ INTENTANDO ENTRADA: {accion}")
+    print(f"⚡ ENTRANDO: {accion}")
 
     try:
-        status, id = iq.buy(MONTO, PAR, accion, EXPIRACION)
+        id = iq.buy_digital_spot(PAR, MONTO, accion, EXPIRACION)
     except Exception as e:
-        print(f"❌ ERROR BUY: {e}")
+        print(f"❌ ERROR: {e}")
         return
 
-    if status:
-        print(f"🔥 ENTRADA EJECUTADA: {accion.upper()} ID: {id}")
+    if id:
+        print(f"🔥 ENTRADA EJECUTADA ID: {id}")
     else:
-        print("❌ FALLÓ LA ENTRADA")
+        print("❌ FALLÓ LA ORDEN")
 
 
 def run():
@@ -64,8 +58,7 @@ def run():
             señal = detectar_entrada(iq, PAR)
 
             if señal:
-
-                print(f"📊 SEÑAL DETECTADA: {señal}")
+                print(f"📊 SEÑAL: {señal}")
 
                 esperar_sniper()
                 ejecutar(iq, señal)
