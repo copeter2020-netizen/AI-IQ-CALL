@@ -1,133 +1,149 @@
-instrument {
-    name = "AGOTAMIENTO INVERTIDO PRO",
-    short_name = "EXHAUSTION_INV",
-    overlay = true
-}
+import time
+import numpy as np
 
--- ==========================
--- 🎨 COLORES
--- ==========================
-input_group {
-    "COLORES",
-    colorBuy = input { default = "green", type = input.color },
-    colorSell = input { default = "red", type = input.color }
-}
+ultima_operacion = 0
 
--- ==========================
--- 📊 DATOS
--- ==========================
-h = high
-l = low
-c = close
-o = open
 
--- ==========================
--- 🔥 ZONAS
--- ==========================
-lookback = 30
+# ==========================
+# 🔥 MERCADO ACTIVO
+# ==========================
+def mercado_activo(velas):
+    try:
+        highs = np.array([float(v["max"]) for v in velas])
+        lows  = np.array([float(v["min"]) for v in velas])
 
-maximo = highest(high, lookback)
-minimo = lowest(low, lookback)
+        vol_actual = np.mean(highs[-5:] - lows[-5:])
+        vol_pasada = np.mean(highs[-30:] - lows[-30:])
 
-rango_total = maximo - minimo
-zona = rango_total * 0.02
+        if vol_actual < vol_pasada * 0.9:
+            return False
 
-zona_alta = maximo - zona
-zona_baja = minimo + zona
+        return True
+    except:
+        return False
 
--- ==========================
--- 🔥 VELA
--- ==========================
-rango = h - l
-rango = rango == 0 and 0.000001 or rango
 
-cuerpo = math.abs(c - o)
+# ==========================
+# 🔥 ESTRATEGIA AGOTAMIENTO
+# ==========================
+def detectar_mejor_entrada(data_por_par):
+    global ultima_operacion
 
-mecha_sup = h - math.max(o, c)
-mecha_inf = math.min(o, c) - l
+    ahora = time.time()
 
--- ==========================
--- 🔥 AGOTAMIENTO DETECTADO
--- ==========================
-agotamiento_arriba =
-    h >= zona_alta and
-    mecha_sup > cuerpo * 1.5
+    # 🔒 ULTRA SELECTIVO
+    if ahora - ultima_operacion < 300:
+        return None
 
-agotamiento_abajo =
-    l <= zona_baja and
-    mecha_inf > cuerpo * 1.5
+    mejor = None
+    mejor_score = 0
 
--- ==========================
--- 🔥 CONFIRMACIÓN (CLAVE)
--- ==========================
-confirmacion_alcista = c > o
-confirmacion_bajista = c < o
+    for par, velas in data_por_par.items():
 
--- ==========================
--- 🎯 SEÑALES INVERTIDAS
--- ==========================
-call_signal =
-    agotamiento_arriba and
-    confirmacion_alcista
+        if par not in ["EURUSD", "EURJPY", "EURGBP", "GBPUSD", "USDCHF"]:
+            continue
 
-put_signal =
-    agotamiento_abajo and
-    confirmacion_bajista
+        if len(velas) < 60:
+            continue
 
--- ==========================
--- 🔥 ZONAS VISUALES
--- ==========================
-bgcolor(
-    agotamiento_arriba and rgba(255,0,0,0.08) or
-    agotamiento_abajo and rgba(0,0,255,0.08)
-)
+        if not mercado_activo(velas):
+            continue
 
--- ==========================
--- 🔥 LÍNEAS
--- ==========================
-plot(zona_alta, "ZONA ALTA", "red", 1)
-plot(zona_baja, "ZONA BAJA", "blue", 1)
+        closes = np.array([float(v["close"]) for v in velas])
+        highs  = np.array([float(v["max"]) for v in velas])
+        lows   = np.array([float(v["min"]) for v in velas])
 
--- ==========================
--- 🔥 SEÑALES
--- ==========================
-plot_shape(
-    call_signal,
-    "CALL",
-    shape_style.triangleup,
-    shape_size.large,
-    colorBuy,
-    shape_location.belowbar,
-    0,
-    "CALL",
-    "white"
-)
+        v1 = velas[-1]
+        v2 = velas[-2]
+        v3 = velas[-3]
 
-plot_shape(
-    put_signal,
-    "PUT",
-    shape_style.triangledown,
-    shape_size.large,
-    colorSell,
-    shape_location.abovebar,
-    0,
-    "PUT",
-    "white"
-)
+        def d(v):
+            return float(v["open"]), float(v["close"]), float(v["max"]), float(v["min"])
 
--- ==========================
--- 🔥 MARCA PRECISA
--- ==========================
-plot(
-    call_signal and low or na,
-    "BUY DOT",
-    colorBuy,
-    2
-)
+        o1,c1,h1,l1 = d(v1)
 
-plot(
-    put_signal and high or na,
-    "SELL DOT",
-    colorSell,
-    2
-)
+        rango = h1 - l1
+        if rango == 0:
+            continue
+
+        cuerpo = abs(c1 - o1)
+
+        mecha_sup = h1 - max(o1, c1)
+        mecha_inf = min(o1, c1) - l1
+
+        score = 0
+
+        # ==========================
+        # 🔥 1. TENDENCIA PREVIA
+        # ==========================
+        pendiente = np.polyfit(range(10), closes[-10:], 1)[0]
+
+        if pendiente > 0:
+            posible = "put"  # agotamiento arriba
+        elif pendiente < 0:
+            posible = "call"  # agotamiento abajo
+        else:
+            continue
+
+        score += 20
+
+        # ==========================
+        # 🔥 2. EXTREMO DE PRECIO
+        # ==========================
+        maximo = max(highs[-20:])
+        minimo = min(lows[-20:])
+
+        posicion = (c1 - minimo) / (maximo - minimo)
+
+        if posible == "put" and posicion < 0.85:
+            continue
+
+        if posible == "call" and posicion > 0.15:
+            continue
+
+        score += 20
+
+        # ==========================
+        # 🔥 3. VELA DE RECHAZO (CLAVE)
+        # ==========================
+        if posible == "put":
+            if mecha_sup < cuerpo * 1.5:
+                continue
+        else:
+            if mecha_inf < cuerpo * 1.5:
+                continue
+
+        score += 25
+
+        # ==========================
+        # 🔥 4. CUERPO DÉBIL
+        # ==========================
+        if cuerpo > rango * 0.5:
+            continue
+
+        score += 15
+
+        # ==========================
+        # 🔥 5. PÉRDIDA DE FUERZA
+        # ==========================
+        p_corto = np.polyfit(range(5), closes[-5:], 1)[0]
+
+        if posible == "put" and p_corto > 0:
+            score += 10
+        elif posible == "call" and p_corto < 0:
+            score += 10
+        else:
+            continue
+
+        # ==========================
+        # 🔥 SELECCIÓN
+        # ==========================
+        if score > mejor_score:
+            mejor_score = score
+            mejor = (par, posible, score)
+
+    if mejor and mejor_score >= 70:
+        ultima_operacion = ahora
+        return mejor
+
+    return None
