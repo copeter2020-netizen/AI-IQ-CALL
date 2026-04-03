@@ -3,21 +3,9 @@ import numpy as np
 
 ultima_operacion = 0
 
-def detectar_entrada(velas):
-    global ultima_operacion
-
+def evaluar_movimiento(velas):
     try:
-        if len(velas) < 100:
-            return None
-
-        ahora = time.time()
-
-        # 🔒 ULTRA SELECTIVO (1 cada 2–4 horas)
-        if ahora - ultima_operacion < 7200:
-            return None
-
-        # ⏱️ SOLO AL FINAL DE LA VELA
-        if int(ahora) % 60 < 58:
+        if len(velas) < 120:
             return None
 
         closes = np.array([float(v["close"]) for v in velas])
@@ -26,14 +14,12 @@ def detectar_entrada(velas):
 
         v1 = velas[-1]
         v2 = velas[-2]
-        v3 = velas[-3]
 
         def d(v):
             return float(v["open"]), float(v["close"]), float(v["max"]), float(v["min"])
 
         o1,c1,h1,l1 = d(v1)
         o2,c2,h2,l2 = d(v2)
-        o3,c3,_,_   = d(v3)
 
         rango = h1 - l1
         if rango == 0:
@@ -41,120 +27,114 @@ def detectar_entrada(velas):
 
         cuerpo = abs(c1 - o1)
 
-        mecha_sup = h1 - max(o1, c1)
-        mecha_inf = min(o1, c1) - l1
+        score = 0
 
         # ==========================
-        # 🔥 1. MEJOR PAR (VOLATILIDAD REAL)
+        # 🔥 1. DIRECCIÓN GENERAL
         # ==========================
-        volatilidad = np.mean(highs[-20:] - lows[-20:])
-        volatilidad_lenta = np.mean(highs[-50:] - lows[-50:])
+        pendiente = np.polyfit(range(40), closes[-40:], 1)[0]
 
-        if volatilidad < volatilidad_lenta * 0.8:
-            return None  # par muerto
-
-        # ==========================
-        # 🔥 2. EVITAR LATERAL
-        # ==========================
-        rango_total = max(highs[-25:]) - min(lows[-25:])
-        if rango_total < volatilidad * 1.5:
+        if pendiente > 0:
+            direccion = "call"
+            score += 10
+        elif pendiente < 0:
+            direccion = "put"
+            score += 10
+        else:
             return None
 
         # ==========================
-        # 🔥 3. SOPORTE / RESISTENCIA
+        # 🔥 2. ACELERACIÓN REAL
         # ==========================
-        resistencia = max(highs[-30:])
-        soporte = min(lows[-30:])
-
-        if abs(c1 - resistencia) < rango * 1.5:
-            return None
-
-        if abs(c1 - soporte) < rango * 1.5:
-            return None
-
-        # ==========================
-        # 🔥 4. ESTRUCTURA REAL
-        # ==========================
-        estructura_up = highs[-1] > highs[-6] and lows[-1] > lows[-6]
-        estructura_down = highs[-1] < highs[-6] and lows[-1] < lows[-6]
-
-        # ==========================
-        # 🔥 5. TENDENCIA + ACELERACIÓN
-        # ==========================
-        p1 = np.polyfit(range(30), closes[-30:], 1)[0]
+        p1 = np.polyfit(range(20), closes[-20:], 1)[0]
         p2 = np.polyfit(range(10), closes[-10:], 1)[0]
 
-        alcista = p2 > p1 > 0
-        bajista = p2 < p1 < 0
+        if direccion == "call" and p2 > p1:
+            score += 15
+        elif direccion == "put" and p2 < p1:
+            score += 15
+        else:
+            return None
 
         # ==========================
-        # 🔥 6. PULLBACK LIMPIO
+        # 🔥 3. ENERGÍA DEL MOVIMIENTO
         # ==========================
-        pullback_up = c2 < o2 and c2 > closes[-6]
-        pullback_down = c2 > o2 and c2 < closes[-6]
+        impulso = abs(closes[-1] - closes[-15])
+        rango_prom = np.mean(highs[-20:] - lows[-20:])
+
+        if impulso > rango_prom * 2:
+            score += 15
 
         # ==========================
-        # 🔥 7. CONTINUACIÓN PERFECTA
+        # 🔥 4. NO SOBREEXTENDIDO
         # ==========================
-        cont_up = (
-            c1 > o1 and
-            cuerpo > rango * 0.8 and
-            mecha_sup < cuerpo * 0.2
-        )
+        extension = abs(closes[-1] - closes[-30])
 
-        cont_down = (
-            c1 < o1 and
-            cuerpo > rango * 0.8 and
-            mecha_inf < cuerpo * 0.2
-        )
+        if extension < rango_prom * 5:
+            score += 10
+        else:
+            return None
 
         # ==========================
-        # 🔥 8. RUPTURA REAL
+        # 🔥 5. CONTINUACIÓN (VELA ACTUAL)
         # ==========================
-        break_up = c1 > h2
-        break_down = c1 < l2
+        if cuerpo > rango * 0.75:
+            score += 15
 
         # ==========================
-        # 🔥 9. PRESIÓN FINAL
+        # 🔥 6. PRESIÓN FINAL
         # ==========================
-        presion_up = c1 >= (h1 - rango * 0.15)
-        presion_down = c1 <= (l1 + rango * 0.15)
+        if direccion == "call" and c1 >= h1 - rango * 0.2:
+            score += 10
+        elif direccion == "put" and c1 <= l1 + rango * 0.2:
+            score += 10
+        else:
+            return None
 
         # ==========================
-        # 🔥 10. EVITAR MANIPULACIÓN
+        # 🔥 7. RUPTURA
         # ==========================
-        fake_up = mecha_sup > cuerpo
-        fake_down = mecha_inf > cuerpo
+        if direccion == "call" and c1 > h2:
+            score += 15
+        elif direccion == "put" and c1 < l2:
+            score += 15
+        else:
+            return None
 
-        # ==========================
-        # 🎯 ENTRADA FINAL
-        # ==========================
-        if (
-            alcista and
-            estructura_up and
-            pullback_up and
-            cont_up and
-            break_up and
-            presion_up and
-            not fake_up
-        ):
-            ultima_operacion = ahora
-            return "call"
+        return direccion, score
 
-        if (
-            bajista and
-            estructura_down and
-            pullback_down and
-            cont_down and
-            break_down and
-            presion_down and
-            not fake_down
-        ):
-            ultima_operacion = ahora
-            return "put"
-
+    except:
         return None
 
-    except Exception as e:
-        print("ERROR estrategia:", e)
+
+def detectar_mejor_entrada(data_por_par):
+    global ultima_operacion
+
+    ahora = time.time()
+
+    if ahora - ultima_operacion < 7200:
         return None
+
+    if int(ahora) % 60 < 58:
+        return None
+
+    mejor = None
+    mejor_score = 0
+
+    for par, velas in data_por_par.items():
+
+        resultado = evaluar_movimiento(velas)
+
+        if resultado:
+            direccion, score = resultado
+
+            if score > mejor_score:
+                mejor_score = score
+                mejor = (par, direccion, score)
+
+    # 🔥 SOLO ENTRA SI ES CASI PERFECTO
+    if mejor and mejor_score >= 90:
+        ultima_operacion = ahora
+        return mejor
+
+    return None
