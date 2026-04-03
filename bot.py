@@ -4,13 +4,10 @@ import requests
 from iqoptionapi.stable_api import IQ_Option
 from strategy import detectar_entrada
 
-# ==========================
-# 🔐 CONFIG
-# ==========================
 EMAIL = "TU_EMAIL"
 PASSWORD = "TU_PASSWORD"
 
-TELEGRAM_TOKEN = "TU_TOKEN"
+TOKEN = "TU_TOKEN"
 CHAT_ID = "TU_CHAT_ID"
 
 PARES = [
@@ -21,83 +18,96 @@ PARES = [
     "USDCHF-OTC"
 ]
 
-MONTO = 2
-EXPIRACION = 1
+MONTO = 8
+EXP = 1
 
 # ==========================
-# 📩 TELEGRAM
+# TELEGRAM
 # ==========================
-def enviar_telegram(msg):
+def telegram(msg):
     try:
-        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-        requests.post(url, data={"chat_id": CHAT_ID, "text": msg})
+        requests.post(
+            f"https://api.telegram.org/bot{TOKEN}/sendMessage",
+            data={"chat_id": CHAT_ID, "text": msg}
+        )
     except:
         pass
 
 # ==========================
-# ⏱️ ESPERA SEGUNDO 59
+# CONEXIÓN SEGURA
 # ==========================
-def esperar_entrada():
+def conectar():
     while True:
-        now = datetime.datetime.now()
-        if now.second >= 59:
+        try:
+            iq = IQ_Option(EMAIL, PASSWORD)
+            iq.connect()
+
+            if iq.check_connect():
+                print("✅ Conectado a IQ Option")
+
+                # 🔥 IMPORTANTE
+                iq.change_balance("PRACTICE")  # o REAL
+
+                return iq
+            else:
+                print("❌ Fallo conexión, reintentando...")
+                time.sleep(5)
+
+        except Exception as e:
+            print("ERROR conectando:", e)
+            time.sleep(5)
+
+# ==========================
+# ESPERA 59
+# ==========================
+def esperar_59():
+    while True:
+        if datetime.datetime.now().second >= 59:
             break
-        time.sleep(0.2)
+        time.sleep(0.1)
 
 # ==========================
-# 📊 OBTENER VELAS
-# ==========================
-def get_velas(iq, par):
-    velas = iq.get_candles(par, 60, 50, time.time())
-    return velas
-
-# ==========================
-# 🚀 EJECUCIÓN
+# BOT
 # ==========================
 def run():
-    iq = IQ_Option(EMAIL, PASSWORD)
-    iq.connect()
-
-    if not iq.check_connect():
-        print("❌ Error conectando")
-        return
-
-    print("✅ Conectado a IQ Option")
+    iq = conectar()
 
     while True:
         try:
-            mejor_par = None
-            mejor_senal = None
+            # 🔥 verificar conexión viva
+            if not iq.check_connect():
+                print("⚠️ Reconectando...")
+                iq = conectar()
 
-            # ==========================
-            # 🔍 ANALISIS MULTIPAR
-            # ==========================
+            operacion = None
+
             for par in PARES:
-                velas = get_velas(iq, par)
+                try:
+                    velas = iq.get_candles(par, 60, 60, time.time())
+                except:
+                    continue
 
                 señal = detectar_entrada(velas)
 
                 if señal:
-                    mejor_par = par
-                    mejor_senal = señal
-                    break  # 🔥 solo 1 operación perfecta
+                    operacion = (par, señal)
+                    break
 
-            # ==========================
-            # 🎯 EJECUCIÓN SNIPER
-            # ==========================
-            if mejor_senal:
-                print(f"🎯 Señal detectada: {mejor_par} -> {mejor_senal}")
+            if operacion:
+                par, señal = operacion
 
-                esperar_entrada()
+                print(f"🎯 PERFECTO: {par} {señal}")
 
-                check, id = iq.buy(MONTO, mejor_par, mejor_senal, EXPIRACION)
+                esperar_59()
+
+                check, _ = iq.buy(MONTO, par, señal, EXP)
 
                 if check:
-                    msg = f"🔥 ENTRADA\n{mejor_par}\n{mejor_senal.upper()}\n⏱ M1"
+                    msg = f"🔥 SNIPER\n{par}\n{señal.upper()}\nM1"
                     print(msg)
-                    enviar_telegram(msg)
+                    telegram(msg)
                 else:
-                    print("❌ Error al ejecutar")
+                    print("❌ Error ejecución")
 
             else:
                 print("⏳ Sin condiciones perfectas...")
