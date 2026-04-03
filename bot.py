@@ -4,7 +4,6 @@ import requests
 from iqoptionapi.stable_api import IQ_Option
 from strategy import detectar_entrada
 
-
 IQ_EMAIL = os.getenv("IQ_EMAIL")
 IQ_PASSWORD = os.getenv("IQ_PASSWORD")
 
@@ -17,16 +16,17 @@ MONTO = 10000
 
 def telegram(msg):
     try:
-        requests.post(
-            f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
-            data={"chat_id": TELEGRAM_CHAT_ID, "text": msg}
-        )
+        if TELEGRAM_TOKEN and TELEGRAM_CHAT_ID:
+            requests.post(
+                f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
+                data={"chat_id": TELEGRAM_CHAT_ID, "text": msg}
+            )
     except:
         pass
 
 
-# 🔥 PARCHE REAL (EVITA ERROR UNDERLYING)
-def parche(iq):
+# 🔥 PARCHE GLOBAL ANTI-DIGITAL (ELIMINA 'underlying')
+def parche_anti_digital(iq):
     try:
         iq.get_digital_underlying_list_data = lambda: {"underlying": []}
     except:
@@ -40,11 +40,10 @@ def conectar():
             iq.connect()
 
             if iq.check_connect():
-
                 iq.change_balance("PRACTICE")
 
-                # 🔥 APLICAR PARCHE AQUÍ (CLAVE)
-                parche(iq)
+                # 🔥 aplicar parche después de conectar
+                parche_anti_digital(iq)
 
                 print("✅ BOT ACTIVADO")
                 telegram("🤖 BOT ACTIVADO")
@@ -65,7 +64,7 @@ def activo_abierto(iq, par):
         return False
 
 
-# ⏱️ ESPERA NUEVA VELA
+# ⏱️ sincroniza entrada a nueva vela
 def esperar_siguiente_vela():
     while True:
         if int(time.time()) % 60 == 0:
@@ -73,7 +72,7 @@ def esperar_siguiente_vela():
         time.sleep(0.2)
 
 
-# 🔥 ENTRADA REAL
+# 🔥 EJECUCIÓN BINARIA (SIN DIGITAL)
 def ejecutar(iq, accion, expiracion):
 
     print(f"⚡ ENTRANDO: {accion}")
