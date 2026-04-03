@@ -1,75 +1,136 @@
 import time
+import numpy as np
 
 
+# ==========================
+# SAR
+# ==========================
+def calcular_sar(velas, step=0.02, max_step=0.2):
+
+    high = [v["max"] for v in velas]
+    low = [v["min"] for v in velas]
+
+    sar = [low[0]]
+    ep = high[0]
+    af = step
+    uptrend = True
+
+    for i in range(1, len(velas)):
+
+        prev = sar[-1]
+
+        if uptrend:
+            new = prev + af * (ep - prev)
+
+            if low[i] < new:
+                uptrend = False
+                new = ep
+                ep = low[i]
+                af = step
+            else:
+                if high[i] > ep:
+                    ep = high[i]
+                    af = min(af + step, max_step)
+
+        else:
+            new = prev + af * (ep - prev)
+
+            if high[i] > new:
+                uptrend = True
+                new = ep
+                ep = high[i]
+                af = step
+            else:
+                if low[i] < ep:
+                    ep = low[i]
+                    af = min(af + step, max_step)
+
+        sar.append(new)
+
+    return sar
+
+
+# ==========================
+# BOLLINGER
+# ==========================
+def bollinger(velas, period=20):
+
+    closes = [v["close"] for v in velas]
+
+    if len(closes) < period:
+        return None, None
+
+    sma = np.mean(closes[-period:])
+    std = np.std(closes[-period:])
+
+    upper = sma + (2 * std)
+    lower = sma - (2 * std)
+
+    return upper, lower
+
+
+# ==========================
+# 🔥 LÓGICA EXACTA TUYA
+# ==========================
 def detectar_entrada(iq, par):
 
     try:
-        velas = iq.get_candles(par, 60, 50, time.time())
+        velas5 = iq.get_candles(par, 5, 60, time.time())
     except:
         return None
 
-    if not velas or len(velas) < 20:
+    if not velas5 or len(velas5) < 30:
         return None
 
-    vela_actual = velas[-1]
-    vela_anterior = velas[-2]
+    sar = calcular_sar(velas5)
+    upper, lower = bollinger(velas5)
 
-    # ==========================
-    # 🔥 FUNCIONES
-    # ==========================
-    def cuerpo(v):
-        return abs(v["close"] - v["open"])
-
-    def rango(v):
-        return v["max"] - v["min"]
-
-    # ==========================
-    # 🔥 FILTRO VELA FUERTE
-    # ==========================
-    if rango(vela_anterior) == 0:
+    if upper is None:
         return None
 
-    fuerza = cuerpo(vela_anterior) / rango(vela_anterior)
+    # 👉 PRIMERA BURBUJA
+    vela_burbuja = velas5[-5]
+    sar_burbuja = sar[-5]
 
-    if fuerza < 0.6:
+    # 👉 VALIDAR DENTRO DE BANDAS
+    if not (lower <= sar_burbuja <= upper):
         return None
 
     # ==========================
-    # 🔥 TENDENCIA
+    # DATOS 1 MINUTO
     # ==========================
-    ultimas = velas[-10:]
+    try:
+        velas1m = iq.get_candles(par, 60, 4, time.time())
+    except:
+        return None
 
-    alcistas = sum(1 for v in ultimas if v["close"] > v["open"])
-    bajistas = sum(1 for v in ultimas if v["close"] < v["open"])
+    vela_confirmacion = velas1m[-3]
+    vela_entrada = velas1m[-2]
 
-    tendencia_alcista = alcistas >= 6
-    tendencia_bajista = bajistas >= 6
-
-    # ==========================
-    # 🔥 SOPORTE / RESISTENCIA
-    # ==========================
-    maximo = max(v["max"] for v in velas[-15:])
-    minimo = min(v["min"] for v in velas[-15:])
-
-    cerca_resistencia = vela_anterior["close"] >= maximo * 0.999
-    cerca_soporte = vela_anterior["close"] <= minimo * 1.001
+    apertura = vela_confirmacion["open"]
+    cierre = vela_confirmacion["close"]
 
     # ==========================
-    # 🚀 CONTINUIDAD (FUERTE)
+    # 🔻 PUT
     # ==========================
-    if tendencia_alcista and vela_anterior["close"] > vela_anterior["open"]:
-        return {"action": "call"}
+    if sar_burbuja > vela_burbuja["close"]:
 
-    if tendencia_bajista and vela_anterior["close"] < vela_anterior["open"]:
-        return {"action": "put"}
+        # vela termina CALL
+        if cierre > apertura:
+
+            # precio actual mayor apertura
+            if vela_entrada["close"] > vela_entrada["open"]:
+                return "put"
 
     # ==========================
-    # 🔄 REVERSIÓN (PRECISA)
+    # 🔺 CALL
     # ==========================
-    if cerca_resistencia and vela_anterior["close"] < vela_anterior["open"]:
-        return {"action": "put"}
+    if sar_burbuja < vela_burbuja["close"]:
 
-    if cerca_soporte and vela_anterior["close"] > vela_anterior["open"]:
-        return {"action": "call"}
+        # vela termina PUT
+        if cierre < apertura:
+
+            if vela_entrada["close"] < vela_entrada["open"]:
+                return "call"
 
     return None
