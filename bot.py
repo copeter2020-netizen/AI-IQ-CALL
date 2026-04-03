@@ -24,6 +24,7 @@ def telegram(msg):
         pass
 
 
+# 🔥 CONEXIÓN LIMPIA (EVITA BUG DIGITAL)
 def conectar():
     while True:
         try:
@@ -32,6 +33,10 @@ def conectar():
 
             if iq.check_connect():
                 iq.change_balance("PRACTICE")
+
+                # 🔥 IMPORTANTE → limpia subscripciones internas
+                iq.api.digital_option = None
+
                 print("✅ BOT ACTIVADO")
                 telegram("🤖 BOT ACTIVADO")
                 return iq
@@ -45,13 +50,12 @@ def conectar():
 
 def activo_abierto(iq, par):
     try:
-        all_assets = iq.get_all_open_time()
-        return all_assets["binary"][par]["open"]
+        data = iq.get_all_open_time()
+        return data["binary"][par]["open"]
     except:
         return False
 
 
-# 🔥 ENTRA EXACTO EN NUEVA VELA
 def esperar_siguiente_vela():
     while True:
         if int(time.time() % 60) == 0:
@@ -59,16 +63,13 @@ def esperar_siguiente_vela():
         time.sleep(0.2)
 
 
+# 🔥 EJECUCIÓN SOLO BINARY (SIN DIGITAL)
 def ejecutar(iq, accion, expiracion):
 
     print(f"⚡ ENTRANDO: {accion} | {expiracion}m")
     telegram(f"⚡ ENTRANDO: {accion} | {expiracion}m")
 
     for intento in range(5):
-
-        if not iq.check_connect():
-            print("🔁 Reconectando...")
-            iq = conectar()
 
         try:
             status, order_id = iq.buy(
@@ -77,6 +78,7 @@ def ejecutar(iq, accion, expiracion):
                 accion,
                 expiracion
             )
+
         except Exception as e:
             print(f"❌ ERROR API: {e}")
             time.sleep(1)
@@ -90,8 +92,8 @@ def ejecutar(iq, accion, expiracion):
         print(f"⚠️ Reintento {intento+1}")
         time.sleep(1)
 
-    print("❌ NO SE EJECUTÓ")
-    telegram("❌ FALLÓ ENTRADA")
+    print("❌ FALLÓ ENTRADA")
+    telegram("❌ NO SE EJECUTÓ")
     return False
 
 
@@ -119,12 +121,15 @@ def run():
 
                 ejecutar(iq, accion, expiracion)
 
-                # evita múltiples entradas seguidas
                 time.sleep(60)
 
         except Exception as e:
             print(f"❌ ERROR LOOP: {e}")
             telegram(f"❌ ERROR: {e}")
+
+            # 🔥 RECONEXIÓN AUTOMÁTICA
+            iq = conectar()
+
             time.sleep(2)
 
 
