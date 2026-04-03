@@ -1,28 +1,39 @@
 import time
 import os
+import requests
 from iqoptionapi.stable_api import IQ_Option
 from strategy import detectar_entrada
-import requests
 
-# ================= CONFIG =================
+# ========= CONFIG =========
 EMAIL = os.getenv("IQ_EMAIL")
 PASSWORD = os.getenv("IQ_PASSWORD")
 
 TELEGRAM_TOKEN = os.getenv("TG_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TG_CHAT_ID")
 
-PAR = "EURUSD-OTC"
+PARES = [
+    "EURUSD-OTC",
+    "EURGBP-OTC",
+    "EURJPY-OTC",
+    "GBPUSD-OTC",
+    "GBPJPY-OTC"
+]
+
 MONTO = 2
 TIEMPO = 1  # 1 minuto
+# ==========================
 
-# ==========================================
 
 def enviar_telegram(msg):
     try:
         url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-        requests.post(url, data={"chat_id": TELEGRAM_CHAT_ID, "text": msg})
+        requests.post(url, data={
+            "chat_id": TELEGRAM_CHAT_ID,
+            "text": msg
+        })
     except:
         pass
+
 
 def conectar():
     while True:
@@ -48,39 +59,49 @@ def conectar():
             print("⚠️ Error conexión:", e)
             time.sleep(10)
 
+
 def esperar_cierre_vela():
     while True:
-        segundos = int(time.time()) % 60
-        if segundos == 59:
+        if int(time.time()) % 60 == 59:
             time.sleep(1)
             break
         time.sleep(0.2)
 
-def obtener_velas(iq):
-    return iq.get_candles(PAR, 60, 100, time.time())
 
-def ejecutar_operacion(iq, direccion):
-    print(f"⚡ Ejecutando {direccion.upper()}")
+def obtener_velas(iq, par):
+    try:
+        return iq.get_candles(par, 60, 100, time.time())
+    except:
+        return None
 
-    check, id = iq.buy(MONTO, PAR, direccion, TIEMPO)
+
+def ejecutar_operacion(iq, par, direccion):
+    print(f"⚡ {par} → {direccion.upper()}")
+
+    enviar_telegram(f"📊 {par} → {direccion.upper()}")
+
+    check, id = iq.buy(MONTO, par, direccion, TIEMPO)
 
     if check:
         print("✅ Operación abierta")
-        enviar_telegram(f"📊 {direccion.upper()} ejecutado")
 
         while True:
             resultado = iq.check_win_v4(id)
+
             if resultado is not None:
                 if resultado > 0:
-                    enviar_telegram(f"✅ WIN {resultado}")
+                    enviar_telegram(f"✅ {par} WIN {resultado}")
                 else:
-                    enviar_telegram(f"❌ LOSS {resultado}")
+                    enviar_telegram(f"❌ {par} LOSS {resultado}")
                 break
-            time.sleep(1)
-    else:
-        print("❌ Error al ejecutar")
 
-# ================= MAIN =================
+            time.sleep(1)
+
+    else:
+        print("❌ Error ejecutando operación")
+
+
+# ========= MAIN =========
 
 iq = conectar()
 
@@ -88,12 +109,20 @@ while True:
     try:
         esperar_cierre_vela()
 
-        velas = obtener_velas(iq)
+        for par in PARES:
 
-        señal = detectar_entrada(velas)
+            velas = obtener_velas(iq, par)
 
-        if señal:
-            ejecutar_operacion(iq, señal)
+            if not velas:
+                continue
+
+            señal = detectar_entrada(velas)
+
+            if señal:
+                ejecutar_operacion(iq, par, señal)
+
+                # SOLO 1 operación por vela
+                break
 
     except Exception as e:
         print("⚠️ ERROR LOOP:", e)
