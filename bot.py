@@ -11,19 +11,21 @@ TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 PAR = "EURUSD-OTC"
-MONTO = 20000
+MONTO = 1
 EXPIRACION = 1
 
 
 def telegram(msg):
     try:
-        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-        requests.post(url, data={"chat_id": TELEGRAM_CHAT_ID, "text": msg})
+        requests.post(
+            f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
+            data={"chat_id": TELEGRAM_CHAT_ID, "text": msg}
+        )
     except:
         pass
 
 
-def connect():
+def conectar():
     while True:
         iq = IQ_Option(IQ_EMAIL, IQ_PASSWORD)
         iq.connect()
@@ -34,51 +36,49 @@ def connect():
             telegram("🤖 BOT ACTIVADO")
             return iq
 
-        print("❌ Error conectando...")
+        print("❌ Error conexión...")
         time.sleep(3)
 
 
-# 🔥 SNIPER 1 SEG ANTES
-def esperar_sniper():
-    while int(time.time()) % 60 != 59:
-        time.sleep(0.001)
+# 🔥 ESPERA SIGUIENTE VELA REAL (NO SNIPER)
+def esperar_siguiente_vela():
+    actual = int(time.time())
+    restante = 60 - (actual % 60)
+    time.sleep(restante + 0.2)
 
 
-# 🔥 ENTRADA REAL CON REINTENTO
+# 🔥 EJECUCIÓN REAL
 def ejecutar(iq, accion):
 
-    print(f"⚡ ENTRANDO: {accion}")
-    telegram(f"📊 ENTRANDO: {accion}")
+    print(f"⚡ EJECUTANDO: {accion}")
+    telegram(f"⚡ EJECUTANDO: {accion}")
 
-    # 🔥 SUSCRIPCIÓN (CLAVE)
     iq.subscribe_strike_list(PAR, 1)
 
-    for intento in range(3):
-
+    for i in range(5):
         try:
-            id = iq.buy_digital_spot(PAR, MONTO, accion, EXPIRACION)
+            status, id = iq.buy_digital_spot(PAR, MONTO, accion, EXPIRACION)
         except Exception as e:
-            print(f"❌ ERROR: {e}")
+            print(f"❌ ERROR API: {e}")
             continue
 
-        if id:
+        if status:
             print(f"🔥 ORDEN ABIERTA: {id}")
             telegram(f"✅ ORDEN EJECUTADA: {accion}")
             return True
 
-        print(f"⚠️ Reintentando... {intento+1}")
+        print(f"⚠️ Reintento {i+1}")
         time.sleep(1)
 
-    print("❌ NO SE PUDO EJECUTAR")
-    telegram("❌ ERROR: NO EJECUTÓ")
+    print("❌ FALLÓ TOTAL")
+    telegram("❌ NO SE EJECUTÓ")
     return False
 
 
 def run():
 
-    iq = connect()
+    iq = conectar()
 
-    # 🔥 ACTIVA STREAM (IMPORTANTE)
     iq.start_candles_stream(PAR, 5, 100)
 
     while True:
@@ -87,19 +87,12 @@ def run():
             señal = detectar_entrada(iq, PAR)
 
             if señal:
-                print(f"📊 SEÑAL: {señal}")
+                print(f"📊 SEÑAL DETECTADA: {señal}")
                 telegram(f"📊 SEÑAL: {señal}")
 
-                esperar_sniper()
+                # 🔥 ESPERA LA SIGUIENTE VELA
+                esperar_siguiente_vela()
+
                 ejecutar(iq, señal)
 
-        except Exception as e:
-            print(f"❌ ERROR GENERAL: {e}")
-            telegram(f"❌ ERROR: {e}")
-            iq = connect()
-
-        time.sleep(0.5)
-
-
-if __name__ == "__main__":
-    run()
+        except Exception as
