@@ -11,7 +11,8 @@ TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 PAR = "EURUSD-OTC"
-MONTO = 1200
+MONTO = 2000
+EXPIRACION = 1  # 🔥 FIJO A 1 MINUTO
 
 
 def telegram(msg):
@@ -42,12 +43,12 @@ def conectar():
         time.sleep(3)
 
 
-def ejecutar(iq, accion, expiracion):
-    print(f"⚡ ENTRANDO: {accion} ({expiracion}m)")
-    telegram(f"⚡ ENTRANDO: {accion} ({expiracion}m)")
+def ejecutar(iq, accion):
+    print(f"⚡ ENTRANDO: {accion} (1m)")
+    telegram(f"⚡ ENTRANDO: {accion} (1m)")
 
     try:
-        status, order_id = iq.buy(MONTO, PAR, accion, expiracion)
+        status, order_id = iq.buy(MONTO, PAR, accion, EXPIRACION)
 
         if status:
             print(f"🔥 ORDEN ABIERTA: {order_id}")
@@ -68,17 +69,16 @@ def run():
 
     while True:
         try:
-            accion, expiracion = detectar_entrada(iq, PAR)
+            accion, _ = detectar_entrada(iq, PAR)
 
             if accion:
                 print(f"📊 SEÑAL: {accion}")
                 telegram(f"📊 SEÑAL: {accion}")
 
-                # 🔥 ENTRADA INMEDIATA (LO QUE PEDISTE)
-                ejecutar(iq, accion, expiracion)
+                # 🔥 ENTRADA INMEDIATA
+                ejecutar(iq, accion)
 
-                # evitar sobreoperar
-                time.sleep(5)
+                time.sleep(5)  # evita sobreoperar
 
             time.sleep(1)
 
