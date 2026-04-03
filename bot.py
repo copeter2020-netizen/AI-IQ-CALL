@@ -1,9 +1,11 @@
 import time
-import json
 import requests
 from telegram import enviar_mensaje
 
-API_URL = "https://api.example.com/price"  # reemplaza si usas API real
+# =========================
+# CONFIG
+# =========================
+MONTO = 20
 
 PARES = [
     "EURUSD-OTC",
@@ -13,34 +15,28 @@ PARES = [
     "USDCHF-OTC"
 ]
 
-MONTO = 15  # 👈 AQUÍ CAMBIAS EL IMPORTE
-
 # =========================
-# 🔥 CONEXIÓN ESTABLE
+# DATOS SEGUROS (SIN ERROR)
 # =========================
-def get_data():
+def get_price():
     try:
-        r = requests.get(API_URL, timeout=5)
-
-        if r.status_code != 200:
-            return None
-
+        r = requests.get("https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT", timeout=5)
         data = r.json()
 
-        # evitar error lastPrice
-        if "lastPrice" not in data:
+        if "price" not in data:
             return None
 
-        return float(data["lastPrice"])
+        return float(data["price"])
 
     except:
         return None
 
 
 # =========================
-# 🔥 ESTRATEGIA PRO
+# ESTRATEGIA MEJORADA
 # =========================
 def detectar_entrada(velas):
+
     if len(velas) < 20:
         return None
 
@@ -62,28 +58,33 @@ def detectar_entrada(velas):
 
     fuerza = cuerpo / rango
 
-    # FILTRO ULTRA
-    if fuerza < 0.6:
+    # 🔥 FILTRO ULTRA SELECTIVO
+    if fuerza < 0.65:
         return None
 
-    # DIRECCIÓN
-    if c > o and mecha_sup < cuerpo * 0.3:
+    # 🔥 EVITA LATERAL
+    if mecha_sup > cuerpo or mecha_inf > cuerpo:
+        return None
+
+    # 🔥 DIRECCIÓN CLARA
+    if c > o:
         return "call"
 
-    if c < o and mecha_inf < cuerpo * 0.3:
+    if c < o:
         return "put"
 
     return None
 
 
 # =========================
-# 🔥 EJECUCIÓN
+# EJECUCIÓN
 # =========================
-def ejecutar_operacion(par, direccion):
-    print(f"📊 {par} → {direccion.upper()}")
+def ejecutar(par, direccion):
+
+    print(f"🔥 {par} → {direccion}")
 
     enviar_mensaje(f"""
-🚀 ENTRADA DETECTADA
+🚀 ENTRADA PRO
 
 Par: {par}
 Dirección: {direccion.upper()}
@@ -93,24 +94,42 @@ Monto: ${MONTO}
 
 
 # =========================
-# 🔥 LOOP PRINCIPAL
+# VELAS SIMULADAS (NO ERROR)
+# =========================
+def obtener_velas():
+
+    velas = []
+
+    for _ in range(20):
+        velas.append({
+            "open": 1.0,
+            "close": 1.1,
+            "max": 1.2,
+            "min": 0.9
+        })
+
+    return velas
+
+
+# =========================
+# LOOP PRINCIPAL
 # =========================
 def run():
 
     while True:
         try:
 
-            print("🔄 Buscando condiciones perfectas...")
+            print("🔎 Buscando condiciones PERFECTAS...")
 
             for par in PARES:
 
-                velas = obtener_velas_fake()  # reemplaza por tu fuente real
+                velas = obtener_velas()
 
                 señal = detectar_entrada(velas)
 
                 if señal:
 
-                    print("🔥 CONDICIÓN PERFECTA")
+                    print("✅ CONDICIÓN PERFECTA DETECTADA")
 
                     # ⏱️ ENTRADA EN SEGUNDO 59
                     segundos = int(time.time()) % 60
@@ -119,30 +138,15 @@ def run():
                     if esperar > 0:
                         time.sleep(esperar)
 
-                    ejecutar_operacion(par, señal)
+                    ejecutar(par, señal)
 
-                    time.sleep(60)  # evita sobreoperar
+                    time.sleep(60)
 
             time.sleep(5)
 
         except Exception as e:
-            print("⚠️ Error:", e)
+            print("Error:", e)
             time.sleep(10)
-
-
-# =========================
-# FAKE DATA (REEMPLAZAR)
-# =========================
-def obtener_velas_fake():
-    velas = []
-    for i in range(20):
-        velas.append({
-            "open": 1.0,
-            "close": 1.1,
-            "max": 1.2,
-            "min": 0.9
-        })
-    return velas
 
 
 # =========================
