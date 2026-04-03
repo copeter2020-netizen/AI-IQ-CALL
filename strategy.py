@@ -52,38 +52,38 @@ def detectar_entrada(iq, par):
         soporte = low.iloc[-20:].min()
 
         # =========================
-        # 🚀 ENTRADAS RÁPIDAS
+        # 🚀 ENTRADAS RÁPIDAS (SCALPING 1M)
         # =========================
 
-        # CALL inmediato
+        # CALL
         if (
             tendencia_alcista and
             vela_verde and
             precio > ema_20.iloc[-1] and
             rsi.iloc[-1] > 55
         ):
-            return "call", 3
+            return "call", 1
 
-        # PUT inmediato
+        # PUT
         if (
             tendencia_bajista and
             vela_roja and
             precio < ema_20.iloc[-1] and
             rsi.iloc[-1] < 45
         ):
-            return "put", 3
+            return "put", 1
 
         # =========================
         # 🔥 SOBRECOMPRA
         # =========================
         if rsi.iloc[-1] > 75 and vela_roja and precio >= resistencia * 0.995:
-            return "put", 3
+            return "put", 1
 
         # =========================
         # 🔥 SOBREVENTA
         # =========================
         if rsi.iloc[-1] < 25 and vela_verde and precio <= soporte * 1.005:
-            return "call", 3
+            return "call", 1
 
         return None, None
 
