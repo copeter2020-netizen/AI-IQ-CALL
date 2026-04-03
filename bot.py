@@ -11,8 +11,8 @@ TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 PAR = "EURUSD-OTC"
-MONTO = 2000
-EXPIRACION = 1  # 🔥 FIJO A 1 MINUTO
+MONTO = 1300
+EXPIRACION = 1
 
 
 def telegram(msg):
@@ -56,7 +56,6 @@ def ejecutar(iq, accion):
             return True
         else:
             print("❌ ERROR AL EJECUTAR")
-            telegram("❌ ERROR AL EJECUTAR")
             return False
 
     except Exception as e:
@@ -67,18 +66,25 @@ def ejecutar(iq, accion):
 def run():
     iq = conectar()
 
+    ultima_senal = None  # 🔥 evita repetir misma entrada
+
     while True:
         try:
             accion, _ = detectar_entrada(iq, PAR)
 
-            if accion:
-                print(f"📊 SEÑAL: {accion}")
+            if accion and accion != ultima_senal:
+                print(f"📊 NUEVA SEÑAL: {accion}")
                 telegram(f"📊 SEÑAL: {accion}")
 
-                # 🔥 ENTRADA INMEDIATA
                 ejecutar(iq, accion)
 
-                time.sleep(5)  # evita sobreoperar
+                ultima_senal = accion  # 🔥 guarda señal ejecutada
+
+                time.sleep(10)  # 🔥 evita duplicados inmediatos
+
+            # reset si ya no hay señal
+            if accion is None:
+                ultima_senal = None
 
             time.sleep(1)
 
