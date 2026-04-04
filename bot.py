@@ -2,9 +2,10 @@ import time
 import os
 import requests
 from iqoptionapi.stable_api import IQ_Option
+from estrategia import analyze_market
 
 # =========================
-# VARIABLES RAILWAY
+# VARIABLES
 # =========================
 EMAIL = os.getenv("IQ_EMAIL")
 PASSWORD = os.getenv("IQ_PASSWORD")
@@ -18,22 +19,25 @@ CUENTA = "PRACTICE"
 PARES = [
     "EURUSD-OTC",
     "GBPUSD-OTC",
-    "EURGB-OTC",
-    "USDCHF-OTC",
-    "GBPJPY-OTC",  
     "EURJPY-OTC",
-    "USDZAR-OTC"
+    "EURGBP-OTC",
+    "GBPJPY-OTC",
+    "USDZAR-OTC",
+    "USDHKD-OTC",
+    "USDINR-OTC",
+    "USDTRY-OTC",
+    "USDCHF-OTC"
 ]
 
+bot_activo = True
+last_update_id = None
+
+
 # =========================
-# TELEGRAM (SIN LIBRERÍA)
+# TELEGRAM
 # =========================
 def enviar_mensaje(texto):
     try:
-        if not TOKEN or not CHAT_ID:
-            print("⚠️ Telegram no configurado")
-            return
-
         url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
 
         requests.post(url, data={
@@ -45,105 +49,67 @@ def enviar_mensaje(texto):
         print("Error Telegram:", e)
 
 
-# =========================
-# CONEXIÓN ESTABLE PRO
-# =========================
-def conectar():
+def leer_comandos():
+    global bot_activo, last_update_id
 
-    while True:
-        try:
-            if not EMAIL or not PASSWORD:
-                print("❌ Faltan credenciales en Railway")
-                time.sleep(10)
+    try:
+        url = f"https://api.telegram.org/bot{TOKEN}/getUpdates"
+        r = requests.get(url, timeout=5)
+        data = r.json()
+
+        for update in data["result"]:
+
+            update_id = update["update_id"]
+
+            if last_update_id and update_id <= last_update_id:
                 continue
 
-            iq = IQ_Option(EMAIL, PASSWORD)
-            iq.connect()
+            last_update_id = update_id
 
-            if iq.check_connect():
-                print("✅ CONECTADO A IQ OPTION")
-                iq.change_balance(CUENTA)
-                return iq
-            else:
-                print("❌ Credenciales incorrectas")
-                time.sleep(10)
+            if "message" in update:
+                texto = update["message"].get("text", "")
 
-        except Exception as e:
-            print("Error conexión:", e)
-            time.sleep(10)
+                if texto == "/startbot":
+                    bot_activo = True
+                    enviar_mensaje("✅ BOT ACTIVADO")
+
+                elif texto == "/stopbot":
+                    bot_activo = False
+                    enviar_mensaje("⛔ BOT DETENIDO")
+
+    except Exception as e:
+        print("Error comandos:", e)
 
 
 # =========================
-# VELAS REALES
+# CONEXIÓN
+# =========================
+def conectar():
+    while True:
+        iq = IQ_Option(EMAIL, PASSWORD)
+        iq.connect()
+
+        if iq.check_connect():
+            iq.change_balance(CUENTA)
+            print("✅ CONECTADO")
+            return iq
+
+        print("❌ Error conexión")
+        time.sleep(10)
+
+
+# =========================
+# VELAS
 # =========================
 def obtener_velas(iq, par):
-    try:
-        velas = iq.get_candles(par, 60, 20, time.time())
+    velas = iq.get_candles(par, 60, 30, time.time())
 
-        if not velas:
-            return []
-
-        resultado = []
-        for v in velas:
-            resultado.append({
-                "open": v.get("open", 0),
-                "close": v.get("close", 0),
-                "max": v.get("max", 0),
-                "min": v.get("min", 0)
-            })
-
-        return resultado
-
-    except Exception as e:
-        print("Error velas:", e)
-        return []
-
-
-# =========================
-# ESTRATEGIA (CORREGIDA)
-# =========================
-def detectar_entrada(velas, *_):  # ✅ acepta extra argumentos (FIX ERROR)
-
-    try:
-        if len(velas) < 20:
-            return None
-
-        v = velas[-1]
-
-        o = float(v["open"])
-        c = float(v["close"])
-        h = float(v["max"])
-        l = float(v["min"])
-
-        rango = h - l
-        if rango == 0:
-            return None
-
-        cuerpo = abs(c - o)
-        mecha_sup = h - max(o, c)
-        mecha_inf = min(o, c) - l
-
-        fuerza = cuerpo / rango
-
-        # 🔥 FILTRO ULTRA SELECTIVO
-        if fuerza < 0.65:
-            return None
-
-        # 🔥 EVITA LATERAL
-        if mecha_sup > cuerpo or mecha_inf > cuerpo:
-            return None
-
-        if c > o:
-            return "call"
-
-        if c < o:
-            return "put"
-
-        return None
-
-    except Exception as e:
-        print("Error estrategia:", e)
-        return None
+    return [{
+        "open": v["open"],
+        "close": v["close"],
+        "max": v["max"],
+        "min": v["min"]
+    } for v in velas]
 
 
 # =========================
@@ -151,31 +117,25 @@ def detectar_entrada(velas, *_):  # ✅ acepta extra argumentos (FIX ERROR)
 # =========================
 def operar(iq, par, direccion):
 
-    try:
-        print(f"🔥 {par} → {direccion}")
+    print(f"🔥 {par} → {direccion}")
 
-        check, _ = iq.buy(MONTO, par, direccion, 1)
+    check, _ = iq.buy(MONTO, par, direccion, 4)  # 🔥 4 MIN
 
-        if check:
-            print("✅ OPERACIÓN ABIERTA")
-
-            enviar_mensaje(f"""
+    if check:
+        enviar_mensaje(f"""
 🚀 ENTRADA PRO
 
 Par: {par}
 Dirección: {direccion.upper()}
-Expiración: 1MIN
+Expiración: 4 MIN
 Monto: ${MONTO}
 """)
-        else:
-            print("❌ No ejecutada")
-
-    except Exception as e:
-        print("Error operación:", e)
+    else:
+        print("❌ Error operación")
 
 
 # =========================
-# LOOP PRINCIPAL
+# LOOP
 # =========================
 def run():
 
@@ -184,37 +144,36 @@ def run():
     while True:
         try:
 
-            if not iq.check_connect():
-                print("🔄 Reconectando...")
-                iq = conectar()
+            leer_comandos()
 
-            print("🔎 Buscando condiciones PERFECTAS...")
+            if not bot_activo:
+                time.sleep(2)
+                continue
 
             for par in PARES:
 
                 velas = obtener_velas(iq, par)
 
-                señal = detectar_entrada(velas)  # ✅ YA NO FALLA
+                señal = analyze_market(velas, None, None)
 
                 if señal:
 
-                    print("✅ CONDICIÓN PERFECTA")
+                    direccion = señal["action"]
 
-                    # ⏱️ ENTRADA SEGUNDO 59
                     segundos = int(time.time()) % 60
-                    esperar = 59.8 - segundos
+                    esperar = 60 - segundos
 
                     if esperar > 0:
                         time.sleep(esperar)
 
-                    operar(iq, par, señal)
+                    operar(iq, par, direccion)
 
-                    time.sleep(60)
+                    time.sleep(240)  # 🔥 4 min
 
-            time.sleep(3)
+            time.sleep(2)
 
         except Exception as e:
-            print("ERROR LOOP:", e)
+            print("ERROR:", e)
             time.sleep(5)
 
 
