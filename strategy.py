@@ -2,7 +2,22 @@ import pandas as pd
 import numpy as np
 
 # ==========================
-# UTILIDADES
+# 🔥 ESTOCÁSTICO DINAPOLI
+# ==========================
+def stochastic(df, k_period=8, d_period=3, slowing=3):
+
+    low_min = df["min"].rolling(k_period).min()
+    high_max = df["max"].rolling(k_period).max()
+
+    k = 100 * (df["close"] - low_min) / (high_max - low_min)
+    k = k.rolling(slowing).mean()
+    d = k.rolling(d_period).mean()
+
+    return k, d
+
+
+# ==========================
+# 🔥 UTILIDADES
 # ==========================
 def body(c):
     return abs(c["close"] - c["open"])
@@ -24,7 +39,7 @@ def es_bajista(c):
 
 
 # ==========================
-# SOPORTE / RESISTENCIA
+# 🔥 SOPORTE / RESISTENCIA
 # ==========================
 def niveles(df):
     soporte = df["min"].rolling(20).min().iloc[-1]
@@ -33,29 +48,22 @@ def niveles(df):
 
 
 # ==========================
-# CERCA DE ZONA
+# 🔥 DETECTAR TENDENCIA FUERTE
 # ==========================
-def cerca(valor, nivel, rango_total):
-    return abs(valor - nivel) < rango_total * 0.05
+def tendencia_fuerte(df):
 
+    closes = df["close"].values
 
-# ==========================
-# MERCADO ACTIVO
-# ==========================
-def mercado_activo(df):
-    highs = df["max"].values
-    lows = df["min"].values
+    p1 = np.polyfit(range(5), closes[-5:], 1)[0]
+    p2 = np.polyfit(range(15), closes[-15:], 1)[0]
 
-    vol = np.mean(highs[-5:] - lows[-5:])
-    rango_total = max(highs[-20:]) - min(lows[-20:])
-
-    return rango_total > vol * 2
+    return abs(p1) > abs(p2) and abs(p1) > 0.02
 
 
 # ==========================
-# 🔥 ENTRADA OCULTA
+# 🔥 DETECTOR PRINCIPAL
 # ==========================
-def detectar_entrada_oculta(data_por_par):
+def detectar_mejor_entrada(data_por_par):
 
     mejor = None
     mejor_score = 0
@@ -64,48 +72,91 @@ def detectar_entrada_oculta(data_por_par):
 
         df = pd.DataFrame(velas)
 
-        if len(df) < 30:
-            continue
-
-        if not mercado_activo(df):
+        if len(df) < 50:
             continue
 
         soporte, resistencia = niveles(df)
         rango_total = max(df["max"][-20:]) - min(df["min"][-20:])
 
-        v = df.iloc[-1]  # vela ACTUAL (clave)
-        prev = df.iloc[-2]
+        v = df.iloc[-1]
+
+        r = rango(v)
+        if r == 0:
+            continue
+
+        c = body(v)
+        ms = mecha_sup(v)
+        mi = mecha_inf(v)
+
+        # 🚫 BLOQUEO POR TENDENCIA
+        if tendencia_fuerte(df):
+            continue
+
+        # ==========================
+        # 🔥 ESTOCÁSTICO
+        # ==========================
+        k, d = stochastic(df)
+
+        k1, d1 = k.iloc[-1], d.iloc[-1]
+        k2, d2 = k.iloc[-2], d.iloc[-2]
 
         score = 0
+        direccion = None
 
-        # ======================
+        # ==========================
         # 🔥 SOPORTE → CALL
-        # ======================
-        if cerca(v["min"], soporte, rango_total):
+        # ==========================
+        if abs(v["min"] - soporte) < rango_total * 0.03:
 
-            if mecha_inf(v) > body(v):
-                score += 2
+            # 🔥 DINAPOLI EXTREMO
+            if k1 > 15:
+                continue
 
-            if es_alcista(v) and body(v) > rango(v) * 0.4:
-                score += 2
+            # 🔥 GIRO
+            if k2 < d2 and k1 > d1:
+                score += 30
 
-        # ======================
+            # 🔥 RECHAZO
+            if mi > c * 1.5:
+                score += 30
+
+            # 🔥 VELA FUERTE
+            if es_alcista(v) and c > r * 0.6:
+                score += 30
+
+            direccion = "call"
+
+        # ==========================
         # 🔥 RESISTENCIA → PUT
-        # ======================
-        if cerca(v["max"], resistencia, rango_total):
+        # ==========================
+        elif abs(v["max"] - resistencia) < rango_total * 0.03:
 
-            if mecha_sup(v) > body(v):
-                score += 2
+            # 🔥 DINAPOLI EXTREMO
+            if k1 < 85:
+                continue
 
-            if es_bajista(v) and body(v) > rango(v) * 0.4:
-                score += 2
+            # 🔥 GIRO
+            if k2 > d2 and k1 < d1:
+                score += 30
+
+            # 🔥 RECHAZO
+            if ms > c * 1.5:
+                score += 30
+
+            # 🔥 VELA FUERTE
+            if es_bajista(v) and c > r * 0.6:
+                score += 30
+
+            direccion = "put"
+
+        else:
+            continue
 
         if score > mejor_score:
-            direccion = "call" if es_alcista(v) else "put"
             mejor_score = score
             mejor = (par, direccion, score)
 
-    if mejor and mejor_score >= 3:
+    if mejor and mejor_score >= 70:
         return mejor
 
     return None
