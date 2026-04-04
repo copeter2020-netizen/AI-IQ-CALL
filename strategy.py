@@ -9,7 +9,7 @@ def body(c):
 
 def rango(c):
     r = c["max"] - c["min"]
-    return r if r != 0 else 1  # evita división por 0
+    return r if r != 0 else 1
 
 def mecha_sup(c):
     return c["max"] - max(c["open"], c["close"])
@@ -56,16 +56,20 @@ def mercado_activo(df):
     if len(df) < 20:
         return False
 
-    highs = df["max"].values
-    lows = df["min"].values
+    try:
+        highs = df["max"].values
+        lows = df["min"].values
 
-    vol = np.mean(highs[-5:] - lows[-5:])
-    rango_total = max(highs[-20:]) - min(lows[-20:])
+        vol = np.mean(highs[-5:] - lows[-5:])
+        rango_total = max(highs[-20:]) - min(lows[-20:])
 
-    if rango_total == 0:
+        if rango_total == 0 or np.isnan(vol):
+            return False
+
+        return rango_total > vol * 2
+
+    except:
         return False
-
-    return rango_total > vol * 2
 
 
 # ==========================
@@ -85,6 +89,9 @@ def detectar_entrada_oculta(data_por_par):
             if not all(col in df.columns for col in ["open", "close", "max", "min"]):
                 continue
 
+            # limpiar NaN
+            df = df.dropna()
+
             if len(df) < 30:
                 continue
 
@@ -103,7 +110,6 @@ def detectar_entrada_oculta(data_por_par):
 
             v = df.iloc[-1]
 
-            # evitar NaN
             if any(pd.isna(v[col]) for col in ["open", "close", "max", "min"]):
                 continue
 
@@ -137,7 +143,6 @@ def detectar_entrada_oculta(data_por_par):
                 mejor = (par, direccion, score)
 
         except:
-            # evita que Railway se caiga
             continue
 
     if mejor and mejor_score >= 3:
