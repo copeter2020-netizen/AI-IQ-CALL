@@ -1,9 +1,6 @@
 import pandas as pd
 import numpy as np
 
-# ==========================
-# UTILIDADES
-# ==========================
 def body(c):
     return abs(c["close"] - c["open"])
 
@@ -23,10 +20,6 @@ def es_alcista(c):
 def es_bajista(c):
     return c["close"] < c["open"]
 
-
-# ==========================
-# SOPORTE / RESISTENCIA
-# ==========================
 def niveles(df):
     if len(df) < 20:
         return None, None
@@ -39,19 +32,11 @@ def niveles(df):
 
     return soporte, resistencia
 
-
-# ==========================
-# CERCA DE ZONA
-# ==========================
 def cerca(valor, nivel, rango_total):
     if nivel is None or rango_total == 0:
         return False
     return abs(valor - nivel) < rango_total * 0.05
 
-
-# ==========================
-# MERCADO ACTIVO
-# ==========================
 def mercado_activo(df):
     if len(df) < 20:
         return False
@@ -67,29 +52,21 @@ def mercado_activo(df):
             return False
 
         return rango_total > vol * 2
-
     except:
         return False
 
-
-# ==========================
-# 🔥 ENTRADA OCULTA
-# ==========================
 def detectar_entrada_oculta(data_por_par):
 
     mejor = None
     mejor_score = 0
 
     for par, velas in data_por_par.items():
-
         try:
             df = pd.DataFrame(velas)
 
-            # Validación de columnas
             if not all(col in df.columns for col in ["open", "close", "max", "min"]):
                 continue
 
-            # limpiar NaN
             df = df.dropna()
 
             if len(df) < 30:
@@ -110,30 +87,17 @@ def detectar_entrada_oculta(data_por_par):
 
             v = df.iloc[-1]
 
-            if any(pd.isna(v[col]) for col in ["open", "close", "max", "min"]):
-                continue
-
             score = 0
 
-            # ======================
-            # SOPORTE → CALL
-            # ======================
             if cerca(v["min"], soporte, rango_total):
-
                 if mecha_inf(v) > body(v):
                     score += 2
-
                 if es_alcista(v) and body(v) > rango(v) * 0.4:
                     score += 2
 
-            # ======================
-            # RESISTENCIA → PUT
-            # ======================
             if cerca(v["max"], resistencia, rango_total):
-
                 if mecha_sup(v) > body(v):
                     score += 2
-
                 if es_bajista(v) and body(v) > rango(v) * 0.4:
                     score += 2
 
