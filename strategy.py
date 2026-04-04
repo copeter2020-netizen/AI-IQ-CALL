@@ -49,23 +49,54 @@ def atr(highs, lows, period=14):
 def mercado_valido(highs, lows):
     vol_actual = np.mean(highs[-5:] - lows[-5:])
     vol_pasada = np.mean(highs[-30:] - lows[-30:])
-
     return vol_actual > vol_pasada * 0.9
 
 
 # ==========================
-# 🔥 CALIDAD DEL PAR
+# 🔥 SCORE PAR
 # ==========================
 def score_par(highs, lows, closes):
     volatilidad = np.mean(highs[-10:] - lows[-10:])
     tendencia = abs(np.polyfit(range(10), closes[-10:], 1)[0])
     ruido = np.std(closes[-10:])
-
     return (volatilidad * 2) + (tendencia * 5) - ruido
 
 
 # ==========================
-# 🔥 ESTRATEGIA PRINCIPAL
+# 🔥 VALIDAR CONTINUIDAD
+# ==========================
+def vela_continuidad(o, c, h, l, direccion):
+
+    rango = h - l
+    if rango == 0:
+        return False
+
+    cuerpo = abs(c - o)
+    posicion = (c - l) / rango
+
+    mecha_sup = h - max(o, c)
+    mecha_inf = min(o, c) - l
+
+    # 🔥 CUERPO FUERTE
+    if cuerpo < rango * 0.7:
+        return False
+
+    # 🔥 SIN RECHAZO
+    if mecha_sup > cuerpo * 0.3 or mecha_inf > cuerpo * 0.3:
+        return False
+
+    # 🔥 POSICIÓN DE CIERRE
+    if direccion == "call" and posicion < 0.85:
+        return False
+
+    if direccion == "put" and posicion > 0.15:
+        return False
+
+    return True
+
+
+# ==========================
+# 🔥 ESTRATEGIA FINAL
 # ==========================
 def detectar_mejor_entrada(data_por_par):
     global ultima_operacion
@@ -77,9 +108,6 @@ def detectar_mejor_entrada(data_por_par):
 
     candidatos = []
 
-    # ==========================
-    # 🔥 FILTRAR PARES
-    # ==========================
     for par, velas in data_por_par.items():
 
         if len(velas) < 60:
@@ -93,26 +121,18 @@ def detectar_mejor_entrada(data_por_par):
             continue
 
         calidad = score_par(highs, lows, closes)
-
         candidatos.append((par, velas, calidad))
 
     if not candidatos:
         return None
 
-    # ==========================
-    # 🔥 ELEGIR MEJOR PAR
-    # ==========================
     candidatos.sort(key=lambda x: x[2], reverse=True)
-
     par, velas, _ = candidatos[0]
 
     closes = np.array([v["close"] for v in velas])
     highs  = np.array([v["max"] for v in velas])
     lows   = np.array([v["min"] for v in velas])
 
-    # ==========================
-    # 🔥 INDICADORES
-    # ==========================
     r = rsi(closes)
     c = cci(highs, lows, closes)
     a = atr(highs, lows)
@@ -129,14 +149,14 @@ def detectar_mejor_entrada(data_por_par):
     score = 0
 
     # ==========================
-    # 🔥 EXTREMO + INDICADORES
+    # 🔥 EXTREMO
     # ==========================
     if r > 75 and c > 100:
         direccion = "put"
-        score += 25
+        score += 20
     elif r < 25 and c < -100:
         direccion = "call"
-        score += 25
+        score += 20
     else:
         return None
 
@@ -146,10 +166,10 @@ def detectar_mejor_entrada(data_por_par):
     if a < np.mean(highs[-30:] - lows[-30:]):
         return None
 
-    score += 15
+    score += 10
 
     # ==========================
-    # 🔥 LIQUIDEZ (TRAMPA)
+    # 🔥 TRAMPA (LIQUIDEZ)
     # ==========================
     max_prev = max(highs[-20:-2])
     min_prev = min(lows[-20:-2])
@@ -163,7 +183,7 @@ def detectar_mejor_entrada(data_por_par):
     if direccion == "call" and not fake_down:
         return None
 
-    score += 25
+    score += 20
 
     # ==========================
     # 🔥 PÉRDIDA DE FUERZA
@@ -176,20 +196,17 @@ def detectar_mejor_entrada(data_por_par):
         return None
 
     # ==========================
-    # 🔥 CONFIRMACIÓN FINAL
+    # 🔥 CONTINUIDAD REAL (CLAVE FINAL)
     # ==========================
-    if direccion == "put" and c1 >= c2:
+    if not vela_continuidad(o1, c1, h1, l1, direccion):
         return None
 
-    if direccion == "call" and c1 <= c2:
-        return None
-
-    score += 20
+    score += 35
 
     # ==========================
-    # 🔥 SOLO ENTRADAS TOP
+    # 🔥 SOLO PERFECTAS
     # ==========================
-    if score >= 85:
+    if score >= 90:
         ultima_operacion = ahora
         return (par, direccion, score)
 
