@@ -1,207 +1,201 @@
-import time
-import numpy as np
-
-ultima_operacion = 0
-
+import pandas as pd
 
 # ==========================
-# 🔥 RSI
+# UTILIDADES
 # ==========================
-def rsi(closes, period=14):
-    delta = np.diff(closes)
-    gain = np.maximum(delta, 0)
-    loss = np.abs(np.minimum(delta, 0))
+def body(c):
+    return abs(c["close"] - c["open"])
 
-    avg_gain = np.mean(gain[-period:])
-    avg_loss = np.mean(loss[-period:])
+def candle_range(c):
+    return c["max"] - c["min"]
 
-    if avg_loss == 0:
-        return 100
+def is_bullish(c):
+    return c["close"] > c["open"]
 
-    rs = avg_gain / avg_loss
+def is_bearish(c):
+    return c["close"] < c["open"]
+
+# ==========================
+# FUERZA
+# ==========================
+def fuerza(c):
+    r = candle_range(c)
+    if r == 0:
+        return 0
+    return body(c) / r
+
+# ==========================
+# EMA
+# ==========================
+def ema(df, period=20):
+    return df["close"].ewm(span=period).mean()
+
+# ==========================
+# RSI
+# ==========================
+def rsi(df, period=14):
+    delta = df["close"].diff()
+    gain = (delta.where(delta > 0, 0)).rolling(period).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(period).mean()
+    rs = gain / loss
     return 100 - (100 / (1 + rs))
 
+# ==========================
+# SOPORTE / RESISTENCIA
+# ==========================
+def soporte_resistencia(df):
+    soporte = df["min"].rolling(20).min().iloc[-1]
+    resistencia = df["max"].rolling(20).max().iloc[-1]
+    return soporte, resistencia
 
 # ==========================
-# 🔥 CCI
+# TENDENCIA ALCISTA
 # ==========================
-def cci(highs, lows, closes, period=20):
-    tp = (highs + lows + closes) / 3
-    sma = np.mean(tp[-period:])
-    mad = np.mean(np.abs(tp[-period:] - sma))
-
-    if mad == 0:
-        return 0
-
-    return (tp[-1] - sma) / (0.015 * mad)
-
+def tendencia_alcista(df):
+    ultimas = df.tail(6)
+    verdes = sum(1 for i in range(len(ultimas)) if is_bullish(ultimas.iloc[i]))
+    return verdes >= 3
 
 # ==========================
-# 🔥 ATR
+# TENDENCIA BAJISTA
 # ==========================
-def atr(highs, lows, period=14):
-    return np.mean(highs[-period:] - lows[-period:])
-
-
-# ==========================
-# 🔥 MERCADO ACTIVO
-# ==========================
-def mercado_valido(highs, lows):
-    vol_actual = np.mean(highs[-5:] - lows[-5:])
-    vol_pasada = np.mean(highs[-30:] - lows[-30:])
-    return vol_actual > vol_pasada * 0.9
-
+def tendencia_bajista(df):
+    ultimas = df.tail(6)
+    rojas = sum(1 for i in range(len(ultimas)) if is_bearish(ultimas.iloc[i]))
+    return rojas >= 3
 
 # ==========================
-# 🔥 SCORE PAR
+# CONTINUIDAD BAJISTA
 # ==========================
-def score_par(highs, lows, closes):
-    volatilidad = np.mean(highs[-10:] - lows[-10:])
-    tendencia = abs(np.polyfit(range(10), closes[-10:], 1)[0])
-    ruido = np.std(closes[-10:])
-    return (volatilidad * 2) + (tendencia * 5) - ruido
+def continuidad_bajista(df):
+    c1 = df.iloc[-1]
+    c2 = df.iloc[-2]
 
-
-# ==========================
-# 🔥 CONTINUIDAD
-# ==========================
-def vela_continuidad(o, c, h, l, direccion):
-
-    rango = h - l
-    if rango == 0:
+    if not is_bearish(c1):
         return False
 
-    cuerpo = abs(c - o)
-    posicion = (c - l) / rango
-
-    mecha_sup = h - max(o, c)
-    mecha_inf = min(o, c) - l
-
-    if cuerpo < rango * 0.7:
+    if fuerza(c1) < 0.5:
         return False
 
-    if mecha_sup > cuerpo * 0.3 or mecha_inf > cuerpo * 0.3:
-        return False
-
-    if direccion == "call" and posicion < 0.85:
-        return False
-
-    if direccion == "put" and posicion > 0.15:
+    # rompe mínimo anterior
+    if c1["close"] >= c2["min"]:
         return False
 
     return True
 
+# ==========================
+# EVITAR INDECISIÓN
+# ==========================
+def vela_limpia(c):
+    r = candle_range(c)
+    if r == 0:
+        return False
+
+    f = fuerza(c)
+
+    upper = c["max"] - max(c["close"], c["open"])
+    lower = min(c["close"], c["open"]) - c["min"]
+
+    if f < 0.5:
+        return False
+
+    if upper > body(c) * 0.6 or lower > body(c) * 0.6:
+        return False
+
+    return True
 
 # ==========================
-# 🔥 ESTRATEGIA INVERTIDA
+# SCORE INTELIGENTE
 # ==========================
-def detectar_mejor_entrada(data_por_par):
-    global ultima_operacion
+def calcular_score(df, soporte, resistencia):
 
-    ahora = time.time()
-
-    if ahora - ultima_operacion < 600:
-        return None
-
-    candidatos = []
-
-    for par, velas in data_por_par.items():
-
-        if len(velas) < 60:
-            continue
-
-        closes = np.array([v["close"] for v in velas])
-        highs  = np.array([v["max"] for v in velas])
-        lows   = np.array([v["min"] for v in velas])
-
-        if not mercado_valido(highs, lows):
-            continue
-
-        calidad = score_par(highs, lows, closes)
-        candidatos.append((par, velas, calidad))
-
-    if not candidatos:
-        return None
-
-    candidatos.sort(key=lambda x: x[2], reverse=True)
-    par, velas, _ = candidatos[0]
-
-    closes = np.array([v["close"] for v in velas])
-    highs  = np.array([v["max"] for v in velas])
-    lows   = np.array([v["min"] for v in velas])
-
-    r = rsi(closes)
-    c = cci(highs, lows, closes)
-    a = atr(highs, lows)
-
-    pendiente = np.polyfit(range(10), closes[-10:], 1)[0]
-    pendiente_corta = np.polyfit(range(5), closes[-5:], 1)[0]
-
-    v1 = velas[-1]
-    v2 = velas[-2]
-
-    o1, c1, h1, l1 = v1["open"], v1["close"], v1["max"], v1["min"]
-    o2, c2, h2, l2 = v2["open"], v2["close"], v2["max"], v2["min"]
-
+    last = df.iloc[-1]
     score = 0
 
-    # ==========================
-    # 🔥 EXTREMO (INVERTIDO)
-    # ==========================
-    if r > 75 and c > 100:
-        direccion = "call"  # 🔥 antes era PUT
-        score += 20
-    elif r < 25 and c < -100:
-        direccion = "put"   # 🔥 antes era CALL
-        score += 20
-    else:
+    if tendencia_alcista(df):
+        score += 2
+
+    if is_bullish(last):
+        score += 1
+
+    if fuerza(last) > 0.4:
+        score += 1
+
+    if last["close"] > last["ema"]:
+        score += 1
+
+    if last["rsi"] > 50:
+        score += 1
+
+    if last["close"] > soporte:
+        score += 1
+
+    return score
+
+# ==========================
+# FUNCIÓN PRINCIPAL
+# ==========================
+def analyze_market(c1, c5, c15):
+
+    try:
+        df = pd.DataFrame(c1)
+
+        if len(df) < 30:
+            return None
+
+        df["ema"] = ema(df)
+        df["rsi"] = rsi(df)
+
+        soporte, resistencia = soporte_resistencia(df)
+
+        last = df.iloc[-1]
+
+        # ==========================
+        # 🔼 ALCISTA (tu lógica original)
+        # ==========================
+        if tendencia_alcista(df):
+
+            score = calcular_score(df, soporte, resistencia)
+
+            if score >= 4 and vela_limpia(last):
+                return {
+                    "action": "call",
+                    "score": score,
+                    "maximo": resistencia,
+                    "minimo": soporte
+                }
+
+        # ==========================
+        # 🔽 BAJISTA (nuevo)
+        # ==========================
+        if tendencia_bajista(df):
+
+            if not continuidad_bajista(df):
+                return None
+
+            if not vela_limpia(last):
+                return None
+
+            # evitar soporte (rebote)
+            if last["close"] <= soporte:
+                return None
+
+            if last["close"] > last["ema"]:
+                return None
+
+            if last["rsi"] > 50:
+                return None
+
+            score = fuerza(last)
+
+            return {
+                "action": "put",
+                "score": score,
+                "maximo": resistencia,
+                "minimo": soporte
+            }
+
         return None
 
-    # ==========================
-    # 🔥 VOLATILIDAD
-    # ==========================
-    if a < np.mean(highs[-30:] - lows[-30:]):
+    except:
         return None
-
-    score += 10
-
-    # ==========================
-    # 🔥 TRAMPA (INVERTIDA)
-    # ==========================
-    max_prev = max(highs[-20:-2])
-    min_prev = min(lows[-20:-2])
-
-    fake_up = h2 > max_prev and c2 < max_prev
-    fake_down = l2 < min_prev and c2 > min_prev
-
-    if direccion == "call" and not fake_up:
-        return None
-
-    if direccion == "put" and not fake_down:
-        return None
-
-    score += 20
-
-    # ==========================
-    # 🔥 MOMENTUM INVERTIDO
-    # ==========================
-    if direccion == "call" and pendiente_corta > pendiente:
-        score += 15
-    elif direccion == "put" and pendiente_corta < pendiente:
-        score += 15
-    else:
-        return None
-
-    # ==========================
-    # 🔥 CONTINUIDAD
-    # ==========================
-    if not vela_continuidad(o1, c1, h1, l1, direccion):
-        return None
-
-    score += 35
-
-    if score >= 90:
-        ultima_operacion = ahora
-        return (par, direccion, score)
-
-    return None
