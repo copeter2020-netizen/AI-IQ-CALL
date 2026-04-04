@@ -6,96 +6,61 @@ import pandas as pd
 def body(c):
     return abs(c["close"] - c["open"])
 
-def candle_range(c):
+def rango(c):
     return c["max"] - c["min"]
 
-def is_bullish(c):
+def mecha_sup(c):
+    return c["max"] - max(c["open"], c["close"])
+
+def mecha_inf(c):
+    return min(c["open"], c["close"]) - c["min"]
+
+def es_alcista(c):
     return c["close"] > c["open"]
 
-def is_bearish(c):
+def es_bajista(c):
     return c["close"] < c["open"]
 
-# ==========================
-# FUERZA
-# ==========================
-def fuerza(c):
-    r = candle_range(c)
-    if r == 0:
-        return 0
-    return body(c) / r
-
-# ==========================
-# EMA
-# ==========================
-def ema(df, period=20):
-    return df["close"].ewm(span=period).mean()
-
-# ==========================
-# RSI
-# ==========================
-def rsi(df, period=14):
-    delta = df["close"].diff()
-    gain = (delta.where(delta > 0, 0)).rolling(period).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(period).mean()
-    rs = gain / loss
-    return 100 - (100 / (1 + rs))
 
 # ==========================
 # SOPORTE / RESISTENCIA
 # ==========================
-def soporte_resistencia(df):
+def niveles(df):
     soporte = df["min"].rolling(20).min().iloc[-1]
     resistencia = df["max"].rolling(20).max().iloc[-1]
     return soporte, resistencia
 
-# ==========================
-# TENDENCIA ALCISTA (SUAVIZADA)
-# ==========================
-def tendencia_alcista(df):
-    ultimas = df.tail(6)
-    verdes = sum(1 for i in range(len(ultimas)) if is_bullish(ultimas.iloc[i]))
-    return verdes >= 3
 
 # ==========================
-# IMPULSO
+# RECHAZO (LIQUIDEZ)
 # ==========================
-def impulso_alcista(df):
-    return is_bullish(df.iloc[-1])
+def rechazo_soporte(c):
+    return mecha_inf(c) > body(c) * 1.5
 
-# ==========================
-# CONFIRMACIÓN
-# ==========================
-def confirmacion_alcista(c):
-    f = fuerza(c)
-    return f > 0.4
+def rechazo_resistencia(c):
+    return mecha_sup(c) > body(c) * 1.5
+
 
 # ==========================
-# SCORE INTELIGENTE
+# CONTINUACIÓN (CONFIRMACIÓN)
 # ==========================
-def calcular_score(df, soporte, resistencia):
+def continuidad_alcista(c):
+    r = rango(c)
+    if r == 0:
+        return False
 
-    last = df.iloc[-1]
-    score = 0
+    pos = (c["close"] - c["min"]) / r
+    return es_alcista(c) and pos > 0.7 and body(c) > r * 0.5
 
-    if tendencia_alcista(df):
-        score += 2
 
-    if impulso_alcista(df):
-        score += 1
+def continuidad_bajista(c):
+    r = rango(c)
+    if r == 0:
+        return False
 
-    if confirmacion_alcista(last):
-        score += 1
+    pos = (c["close"] - c["min"]) / r
+    return es_bajista(c) and pos < 0.3 and body(c) > r * 0.5
 
-    if last["close"] > last["ema"]:
-        score += 1
-
-    if last["rsi"] > 50:
-        score += 1
-
-    if last["close"] > soporte:
-        score += 1
-
-    return score
 
 # ==========================
 # FUNCIÓN PRINCIPAL
@@ -105,24 +70,37 @@ def analyze_market(c1, c5, c15):
     try:
         df = pd.DataFrame(c1)
 
-        if len(df) < 30:
+        if len(df) < 25:
             return None
 
-        df["ema"] = ema(df)
-        df["rsi"] = rsi(df)
+        soporte, resistencia = niveles(df)
 
-        soporte, resistencia = soporte_resistencia(df)
+        c1_ = df.iloc[-1]  # confirmación
+        c2_ = df.iloc[-2]  # rechazo
 
-        score = calcular_score(df, soporte, resistencia)
+        # ==========================
+        # 🔥 COMPRA (SOPORTE)
+        # ==========================
+        if c2_["min"] <= soporte:
 
-        # 🔥 ENTRADA INVERTIDA
-        if score >= 4:
-            return {
-                "action": "put",  # 🔥 ANTES ERA CALL
-                "score": score,
-                "maximo": resistencia,
-                "minimo": soporte
-            }
+            if rechazo_soporte(c2_) and continuidad_alcista(c1_):
+                return {
+                    "action": "call",
+                    "zona": "soporte",
+                    "nivel": soporte
+                }
+
+        # ==========================
+        # 🔥 VENTA (RESISTENCIA)
+        # ==========================
+        if c2_["max"] >= resistencia:
+
+            if rechazo_resistencia(c2_) and continuidad_bajista(c1_):
+                return {
+                    "action": "put",
+                    "zona": "resistencia",
+                    "nivel": resistencia
+                }
 
         return None
 
