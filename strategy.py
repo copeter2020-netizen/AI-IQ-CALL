@@ -1,100 +1,41 @@
 import pandas as pd
-import numpy as np
 
-# ==========================
-# 🔥 ESTOCÁSTICO DINAPOLI
-# ==========================
-def stochastic(df, k_period=8, d_period=3, slowing=3):
-
-    low_min = df["min"].rolling(k_period).min()
-    high_max = df["max"].rolling(k_period).max()
+def stochastic(df):
+    low_min = df["min"].rolling(8).min()
+    high_max = df["max"].rolling(8).max()
 
     k = 100 * (df["close"] - low_min) / (high_max - low_min)
-    k = k.rolling(slowing).mean()
-    d = k.rolling(d_period).mean()
+    k = k.rolling(3).mean()
+    d = k.rolling(3).mean()
 
     return k, d
 
 
-# ==========================
-# 🔥 UTILIDADES
-# ==========================
-def body(c):
-    return abs(c["close"] - c["open"])
-
-def rango(c):
-    return c["max"] - c["min"]
-
-def mecha_sup(c):
-    return c["max"] - max(c["open"], c["close"])
-
-def mecha_inf(c):
-    return min(c["open"], c["close"]) - c["min"]
-
-def es_alcista(c):
-    return c["close"] > c["open"]
-
-def es_bajista(c):
-    return c["close"] < c["open"]
-
-
-# ==========================
-# 🔥 SOPORTE / RESISTENCIA
-# ==========================
-def niveles(df):
-    soporte = df["min"].rolling(20).min().iloc[-1]
-    resistencia = df["max"].rolling(20).max().iloc[-1]
-    return soporte, resistencia
-
-
-# ==========================
-# 🔥 DETECTAR TENDENCIA FUERTE
-# ==========================
-def tendencia_fuerte(df):
-
-    closes = df["close"].values
-
-    p1 = np.polyfit(range(5), closes[-5:], 1)[0]
-    p2 = np.polyfit(range(15), closes[-15:], 1)[0]
-
-    return abs(p1) > abs(p2) and abs(p1) > 0.02
-
-
-# ==========================
-# 🔥 DETECTOR PRINCIPAL
-# ==========================
-def detectar_mejor_entrada(data_por_par):
+def detectar_mejor_entrada(data):
 
     mejor = None
     mejor_score = 0
 
-    for par, velas in data_por_par.items():
+    for par, velas in data.items():
 
         df = pd.DataFrame(velas)
 
         if len(df) < 50:
             continue
 
-        soporte, resistencia = niveles(df)
-        rango_total = max(df["max"][-20:]) - min(df["min"][-20:])
+        soporte = df["min"].rolling(20).min().iloc[-1]
+        resistencia = df["max"].rolling(20).max().iloc[-1]
 
         v = df.iloc[-1]
 
-        r = rango(v)
-        if r == 0:
+        rango = v["max"] - v["min"]
+        if rango == 0:
             continue
 
-        c = body(v)
-        ms = mecha_sup(v)
-        mi = mecha_inf(v)
+        cuerpo = abs(v["close"] - v["open"])
+        mecha_sup = v["max"] - max(v["open"], v["close"])
+        mecha_inf = min(v["open"], v["close"]) - v["min"]
 
-        # 🚫 BLOQUEO POR TENDENCIA
-        if tendencia_fuerte(df):
-            continue
-
-        # ==========================
-        # 🔥 ESTOCÁSTICO
-        # ==========================
         k, d = stochastic(df)
 
         k1, d1 = k.iloc[-1], d.iloc[-1]
@@ -103,48 +44,36 @@ def detectar_mejor_entrada(data_por_par):
         score = 0
         direccion = None
 
-        # ==========================
-        # 🔥 SOPORTE → CALL
-        # ==========================
-        if abs(v["min"] - soporte) < rango_total * 0.03:
+        # CALL
+        if abs(v["min"] - soporte) < (resistencia - soporte) * 0.03:
 
-            # 🔥 DINAPOLI EXTREMO
             if k1 > 15:
                 continue
 
-            # 🔥 GIRO
             if k2 < d2 and k1 > d1:
                 score += 30
 
-            # 🔥 RECHAZO
-            if mi > c * 1.5:
+            if mecha_inf > cuerpo * 1.5:
                 score += 30
 
-            # 🔥 VELA FUERTE
-            if es_alcista(v) and c > r * 0.6:
+            if v["close"] > v["open"] and cuerpo > rango * 0.6:
                 score += 30
 
             direccion = "call"
 
-        # ==========================
-        # 🔥 RESISTENCIA → PUT
-        # ==========================
-        elif abs(v["max"] - resistencia) < rango_total * 0.03:
+        # PUT
+        elif abs(v["max"] - resistencia) < (resistencia - soporte) * 0.03:
 
-            # 🔥 DINAPOLI EXTREMO
             if k1 < 85:
                 continue
 
-            # 🔥 GIRO
             if k2 > d2 and k1 < d1:
                 score += 30
 
-            # 🔥 RECHAZO
-            if ms > c * 1.5:
+            if mecha_sup > cuerpo * 1.5:
                 score += 30
 
-            # 🔥 VELA FUERTE
-            if es_bajista(v) and c > r * 0.6:
+            if v["close"] < v["open"] and cuerpo > rango * 0.6:
                 score += 30
 
             direccion = "put"
