@@ -38,6 +38,9 @@ def detectar_mejor_entrada(data):
 
         k, d = stochastic(df)
 
+        if k.isna().iloc[-1] or d.isna().iloc[-1]:
+            continue
+
         k1, d1 = k.iloc[-1], d.iloc[-1]
         k2, d2 = k.iloc[-2], d.iloc[-2]
 
