@@ -52,11 +52,8 @@ def soporte_resistencia(df):
 # TENDENCIA ALCISTA (SUAVIZADA)
 # ==========================
 def tendencia_alcista(df):
-
     ultimas = df.tail(6)
-
     verdes = sum(1 for i in range(len(ultimas)) if is_bullish(ultimas.iloc[i]))
-
     return verdes >= 3
 
 # ==========================
@@ -118,9 +115,10 @@ def analyze_market(c1, c5, c15):
 
         score = calcular_score(df, soporte, resistencia)
 
+        # 🔥 ENTRADA INVERTIDA
         if score >= 4:
             return {
-                "action": "call",
+                "action": "put",  # 🔥 ANTES ERA CALL
                 "score": score,
                 "maximo": resistencia,
                 "minimo": soporte
