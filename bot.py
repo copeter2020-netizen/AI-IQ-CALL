@@ -12,7 +12,7 @@ PASSWORD = os.getenv("IQ_PASSWORD")
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-MONTO = 30
+MONTO = 3.33
 CUENTA = "PRACTICE"
 
 PARES = [
