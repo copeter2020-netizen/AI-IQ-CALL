@@ -24,6 +24,68 @@ def es_bajista(c):
 
 
 # ==========================
+# 🔥 SOPORTE / RESISTENCIA
+# ==========================
+def niveles(df):
+    soporte = df["min"].rolling(20).min().iloc[-1]
+    resistencia = df["max"].rolling(20).max().iloc[-1]
+    return soporte, resistencia
+
+
+# ==========================
+# 🔥 DISTANCIA A ZONA (CLAVE)
+# ==========================
+def cerca_de_soporte(c, soporte, rango_total):
+    return abs(c["min"] - soporte) < rango_total * 0.05
+
+def cerca_de_resistencia(c, resistencia, rango_total):
+    return abs(c["max"] - resistencia) < rango_total * 0.05
+
+
+# ==========================
+# 🔥 RECHAZO (LIQUIDEZ)
+# ==========================
+def rechazo_soporte(c):
+    return mecha_inf(c) > body(c) * 1.5
+
+def rechazo_resistencia(c):
+    return mecha_sup(c) > body(c) * 1.5
+
+
+# ==========================
+# 🔥 CONTINUIDAD (CONFIRMACIÓN)
+# ==========================
+def continuidad_alcista(c):
+    r = rango(c)
+    if r == 0:
+        return False
+
+    pos = (c["close"] - c["min"]) / r
+
+    return (
+        es_alcista(c) and
+        pos > 0.7 and
+        body(c) > r * 0.5 and
+        mecha_sup(c) < body(c) * 0.4
+    )
+
+
+def continuidad_bajista(c):
+    r = rango(c)
+    if r == 0:
+        return False
+
+    pos = (c["close"] - c["min"]) / r
+
+    return (
+        es_bajista(c) and
+        pos < 0.3 and
+        body(c) > r * 0.5 and
+        mecha_inf(c) < body(c) * 0.4
+    )
+
+
+# ==========================
 # 🔥 MERCADO ACTIVO (ANTI LATERAL)
 # ==========================
 def mercado_activo(df):
@@ -45,70 +107,6 @@ def mercado_activo(df):
 
 
 # ==========================
-# 🔥 SOPORTE / RESISTENCIA
-# ==========================
-def niveles(df):
-    soporte = df["min"].rolling(20).min().iloc[-1]
-    resistencia = df["max"].rolling(20).max().iloc[-1]
-    return soporte, resistencia
-
-
-# ==========================
-# 🔥 RECHAZO (LIQUIDEZ)
-# ==========================
-def rechazo_soporte(c):
-    return mecha_inf(c) > body(c) * 1.5
-
-def rechazo_resistencia(c):
-    return mecha_sup(c) > body(c) * 1.5
-
-
-# ==========================
-# 🔥 CONTINUIDAD
-# ==========================
-def continuidad_alcista(c):
-    r = rango(c)
-    if r == 0:
-        return False
-
-    pos = (c["close"] - c["min"]) / r
-
-    return (
-        es_alcista(c) and
-        pos > 0.75 and
-        body(c) > r * 0.6 and
-        mecha_sup(c) < body(c) * 0.3
-    )
-
-
-def continuidad_bajista(c):
-    r = rango(c)
-    if r == 0:
-        return False
-
-    pos = (c["close"] - c["min"]) / r
-
-    return (
-        es_bajista(c) and
-        pos < 0.25 and
-        body(c) > r * 0.6 and
-        mecha_inf(c) < body(c) * 0.3
-    )
-
-
-# ==========================
-# 🔥 SCORE DE CALIDAD
-# ==========================
-def score_setup(df, tipo):
-
-    ultimas = df.tail(5)
-
-    fuerza_total = sum(body(c) / rango(c) if rango(c) != 0 else 0 for _, c in ultimas.iterrows())
-
-    return fuerza_total
-
-
-# ==========================
 # 🔥 FUNCIÓN PRINCIPAL
 # ==========================
 def detectar_mejor_entrada(data_por_par):
@@ -123,41 +121,51 @@ def detectar_mejor_entrada(data_por_par):
         if len(df) < 30:
             continue
 
+        # 🔥 FILTRO MERCADO
         if not mercado_activo(df):
             continue
 
         soporte, resistencia = niveles(df)
 
-        c1 = df.iloc[-1]
-        c2 = df.iloc[-2]
+        rango_total = max(df["max"][-20:]) - min(df["min"][-20:])
+
+        c1 = df.iloc[-1]  # confirmación
+        c2 = df.iloc[-2]  # rechazo
+
+        score = 0
 
         # ======================
-        # CALL
+        # 🔥 CALL (SOPORTE)
         # ======================
-        if c2["min"] <= soporte:
+        if cerca_de_soporte(c2, soporte, rango_total):
 
-            if rechazo_soporte(c2) and continuidad_alcista(c1):
+            if rechazo_soporte(c2):
+                score += 2
 
-                score = score_setup(df, "call")
-
-                if score > mejor_score:
-                    mejor_score = score
-                    mejor = (par, "call", score)
+                if continuidad_alcista(c1):
+                    score += 2
 
         # ======================
-        # PUT
+        # 🔥 PUT (RESISTENCIA)
         # ======================
-        if c2["max"] >= resistencia:
+        if cerca_de_resistencia(c2, resistencia, rango_total):
 
-            if rechazo_resistencia(c2) and continuidad_bajista(c1):
+            if rechazo_resistencia(c2):
+                score += 2
 
-                score = score_setup(df, "put")
+                if continuidad_bajista(c1):
+                    score += 2
 
-                if score > mejor_score:
-                    mejor_score = score
-                    mejor = (par, "put", score)
+        # ======================
+        # 🔥 SELECCIÓN
+        # ======================
+        if score > mejor_score:
+            direccion = "call" if es_alcista(c1) else "put"
+            mejor_score = score
+            mejor = (par, direccion, score)
 
-    if mejor and mejor_score > 2.5:
+    # 🔥 SOLO ENTRADAS REALES
+    if mejor and mejor_score >= 4:
         return mejor
 
     return None
