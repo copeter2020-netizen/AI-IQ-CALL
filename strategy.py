@@ -1,4 +1,5 @@
 import pandas as pd
+import numpy as np
 
 # ==========================
 # UTILIDADES
@@ -23,7 +24,28 @@ def es_bajista(c):
 
 
 # ==========================
-# SOPORTE / RESISTENCIA
+# 🔥 MERCADO ACTIVO (ANTI LATERAL)
+# ==========================
+def mercado_activo(df):
+    highs = df["max"].values
+    lows = df["min"].values
+
+    vol_actual = np.mean(highs[-5:] - lows[-5:])
+    vol_pasada = np.mean(highs[-30:] - lows[-30:])
+
+    rango_total = max(highs[-20:]) - min(lows[-20:])
+
+    if vol_actual < vol_pasada * 0.8:
+        return False
+
+    if rango_total < vol_actual * 2:
+        return False
+
+    return True
+
+
+# ==========================
+# 🔥 SOPORTE / RESISTENCIA
 # ==========================
 def niveles(df):
     soporte = df["min"].rolling(20).min().iloc[-1]
@@ -32,7 +54,7 @@ def niveles(df):
 
 
 # ==========================
-# RECHAZO (LIQUIDEZ)
+# 🔥 RECHAZO (LIQUIDEZ)
 # ==========================
 def rechazo_soporte(c):
     return mecha_inf(c) > body(c) * 1.5
@@ -42,7 +64,7 @@ def rechazo_resistencia(c):
 
 
 # ==========================
-# CONTINUACIÓN (CONFIRMACIÓN)
+# 🔥 CONTINUIDAD
 # ==========================
 def continuidad_alcista(c):
     r = rango(c)
@@ -50,7 +72,13 @@ def continuidad_alcista(c):
         return False
 
     pos = (c["close"] - c["min"]) / r
-    return es_alcista(c) and pos > 0.7 and body(c) > r * 0.5
+
+    return (
+        es_alcista(c) and
+        pos > 0.75 and
+        body(c) > r * 0.6 and
+        mecha_sup(c) < body(c) * 0.3
+    )
 
 
 def continuidad_bajista(c):
@@ -59,50 +87,77 @@ def continuidad_bajista(c):
         return False
 
     pos = (c["close"] - c["min"]) / r
-    return es_bajista(c) and pos < 0.3 and body(c) > r * 0.5
+
+    return (
+        es_bajista(c) and
+        pos < 0.25 and
+        body(c) > r * 0.6 and
+        mecha_inf(c) < body(c) * 0.3
+    )
 
 
 # ==========================
-# FUNCIÓN PRINCIPAL
+# 🔥 SCORE DE CALIDAD
 # ==========================
-def analyze_market(c1, c5, c15):
+def score_setup(df, tipo):
 
-    try:
-        df = pd.DataFrame(c1)
+    ultimas = df.tail(5)
 
-        if len(df) < 25:
-            return None
+    fuerza_total = sum(body(c) / rango(c) if rango(c) != 0 else 0 for _, c in ultimas.iterrows())
+
+    return fuerza_total
+
+
+# ==========================
+# 🔥 FUNCIÓN PRINCIPAL
+# ==========================
+def detectar_mejor_entrada(data_por_par):
+
+    mejor = None
+    mejor_score = 0
+
+    for par, velas in data_por_par.items():
+
+        df = pd.DataFrame(velas)
+
+        if len(df) < 30:
+            continue
+
+        if not mercado_activo(df):
+            continue
 
         soporte, resistencia = niveles(df)
 
-        c1_ = df.iloc[-1]  # confirmación
-        c2_ = df.iloc[-2]  # rechazo
+        c1 = df.iloc[-1]
+        c2 = df.iloc[-2]
 
-        # ==========================
-        # 🔥 COMPRA (SOPORTE)
-        # ==========================
-        if c2_["min"] <= soporte:
+        # ======================
+        # CALL
+        # ======================
+        if c2["min"] <= soporte:
 
-            if rechazo_soporte(c2_) and continuidad_alcista(c1_):
-                return {
-                    "action": "call",
-                    "zona": "soporte",
-                    "nivel": soporte
-                }
+            if rechazo_soporte(c2) and continuidad_alcista(c1):
 
-        # ==========================
-        # 🔥 VENTA (RESISTENCIA)
-        # ==========================
-        if c2_["max"] >= resistencia:
+                score = score_setup(df, "call")
 
-            if rechazo_resistencia(c2_) and continuidad_bajista(c1_):
-                return {
-                    "action": "put",
-                    "zona": "resistencia",
-                    "nivel": resistencia
-                }
+                if score > mejor_score:
+                    mejor_score = score
+                    mejor = (par, "call", score)
 
-        return None
+        # ======================
+        # PUT
+        # ======================
+        if c2["max"] >= resistencia:
 
-    except:
-        return None
+            if rechazo_resistencia(c2) and continuidad_bajista(c1):
+
+                score = score_setup(df, "put")
+
+                if score > mejor_score:
+                    mejor_score = score
+                    mejor = (par, "put", score)
+
+    if mejor and mejor_score > 2.5:
+        return mejor
+
+    return None
