@@ -8,7 +8,8 @@ def body(c):
     return abs(c["close"] - c["open"])
 
 def rango(c):
-    return c["max"] - c["min"]
+    r = c["max"] - c["min"]
+    return r if r != 0 else 1  # evita división por 0
 
 def mecha_sup(c):
     return c["max"] - max(c["open"], c["close"])
@@ -32,6 +33,9 @@ def niveles(df):
 
     soporte = df["min"].rolling(20).min().iloc[-1]
     resistencia = df["max"].rolling(20).max().iloc[-1]
+
+    if pd.isna(soporte) or pd.isna(resistencia):
+        return None, None
 
     return soporte, resistencia
 
@@ -99,6 +103,10 @@ def detectar_entrada_oculta(data_por_par):
 
             v = df.iloc[-1]
 
+            # evitar NaN
+            if any(pd.isna(v[col]) for col in ["open", "close", "max", "min"]):
+                continue
+
             score = 0
 
             # ======================
@@ -129,7 +137,7 @@ def detectar_entrada_oculta(data_por_par):
                 mejor = (par, direccion, score)
 
         except:
-            # Evita que el bot se caiga por un par defectuoso
+            # evita que Railway se caiga
             continue
 
     if mejor and mejor_score >= 3:
