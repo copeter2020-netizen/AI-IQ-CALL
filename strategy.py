@@ -63,7 +63,7 @@ def score_par(highs, lows, closes):
 
 
 # ==========================
-# 🔥 VALIDAR CONTINUIDAD
+# 🔥 CONTINUIDAD
 # ==========================
 def vela_continuidad(o, c, h, l, direccion):
 
@@ -77,15 +77,12 @@ def vela_continuidad(o, c, h, l, direccion):
     mecha_sup = h - max(o, c)
     mecha_inf = min(o, c) - l
 
-    # 🔥 CUERPO FUERTE
     if cuerpo < rango * 0.7:
         return False
 
-    # 🔥 SIN RECHAZO
     if mecha_sup > cuerpo * 0.3 or mecha_inf > cuerpo * 0.3:
         return False
 
-    # 🔥 POSICIÓN DE CIERRE
     if direccion == "call" and posicion < 0.85:
         return False
 
@@ -96,7 +93,7 @@ def vela_continuidad(o, c, h, l, direccion):
 
 
 # ==========================
-# 🔥 ESTRATEGIA FINAL
+# 🔥 ESTRATEGIA INVERTIDA
 # ==========================
 def detectar_mejor_entrada(data_por_par):
     global ultima_operacion
@@ -149,13 +146,13 @@ def detectar_mejor_entrada(data_por_par):
     score = 0
 
     # ==========================
-    # 🔥 EXTREMO
+    # 🔥 EXTREMO (INVERTIDO)
     # ==========================
     if r > 75 and c > 100:
-        direccion = "put"
+        direccion = "call"  # 🔥 antes era PUT
         score += 20
     elif r < 25 and c < -100:
-        direccion = "call"
+        direccion = "put"   # 🔥 antes era CALL
         score += 20
     else:
         return None
@@ -169,7 +166,7 @@ def detectar_mejor_entrada(data_por_par):
     score += 10
 
     # ==========================
-    # 🔥 TRAMPA (LIQUIDEZ)
+    # 🔥 TRAMPA (INVERTIDA)
     # ==========================
     max_prev = max(highs[-20:-2])
     min_prev = min(lows[-20:-2])
@@ -177,35 +174,32 @@ def detectar_mejor_entrada(data_por_par):
     fake_up = h2 > max_prev and c2 < max_prev
     fake_down = l2 < min_prev and c2 > min_prev
 
-    if direccion == "put" and not fake_up:
+    if direccion == "call" and not fake_up:
         return None
 
-    if direccion == "call" and not fake_down:
+    if direccion == "put" and not fake_down:
         return None
 
     score += 20
 
     # ==========================
-    # 🔥 PÉRDIDA DE FUERZA
+    # 🔥 MOMENTUM INVERTIDO
     # ==========================
-    if direccion == "put" and pendiente_corta < pendiente:
+    if direccion == "call" and pendiente_corta > pendiente:
         score += 15
-    elif direccion == "call" and pendiente_corta > pendiente:
+    elif direccion == "put" and pendiente_corta < pendiente:
         score += 15
     else:
         return None
 
     # ==========================
-    # 🔥 CONTINUIDAD REAL (CLAVE FINAL)
+    # 🔥 CONTINUIDAD
     # ==========================
     if not vela_continuidad(o1, c1, h1, l1, direccion):
         return None
 
     score += 35
 
-    # ==========================
-    # 🔥 SOLO PERFECTAS
-    # ==========================
     if score >= 90:
         ultima_operacion = ahora
         return (par, direccion, score)
