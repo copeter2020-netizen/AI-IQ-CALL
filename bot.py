@@ -10,67 +10,97 @@ PASSWORD = os.getenv("IQ_PASSWORD")
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-MONTO = 2000
+MONTO = 1000
 CUENTA = "PRACTICE"
 
+# 🔥 LISTA COMPLETA (IMÁGENES + ANTERIORES)
 PARES = [
-    "EURUSD-OTC",
-    "GBPUSD-OTC",
-    "EURJPY-OTC",
-    "USDCHF-OTC"
+
+    # FOREX OTC
+    "EURUSD-OTC","GBPUSD-OTC","USDJPY-OTC","USDCHF-OTC",
+    "EURJPY-OTC","EURGBP-OTC","GBPJPY-OTC","AUDUSD-OTC",
+    "USDCAD-OTC","NZDUSD-OTC","EURCAD-OTC","GBPCAD-OTC",
+    "EURAUD-OTC","GBPAUD-OTC","AUDJPY-OTC","CHFJPY-OTC",
+    "NZDJPY-OTC","AUDCAD-OTC","AUDCHF-OTC","CADJPY-OTC",
+    "NZDCAD-OTC","NZDCHF-OTC","EURCHF-OTC","GBPNZD-OTC",
+    "EURNZD-OTC","AUDNZD-OTC","USDZAR-OTC","USDSGD-OTC",
+    "USDHKD-OTC","USDTRY-OTC","USDNOK-OTC","USDSEK-OTC",
+    "USDMXN-OTC","USDPLN-OTC","USDHUF-OTC","USDCZK-OTC",
+
+    # CRIPTOS / OTC
+    "BTCUSD-OTC","ETHUSD-OTC","LTCUSD-OTC","XRPUSD-OTC",
+    "ADAUSD-OTC","DOTUSD-OTC","SOLUSD-OTC","BNBUSD-OTC",
+
+    # ACCIONES OTC (de tus imágenes)
+    "AIG-OTC","Amazon-OTC","Apple-OTC","Tesla-OTC",
+    "Google-OTC","Microsoft-OTC","Netflix-OTC",
+    "Nvidia-OTC","Meta-OTC","Intel-OTC","AMD-OTC",
+
+    # OTROS QUE SE VEN
+    "Gold-OTC","Silver-OTC","Oil-OTC","NaturalGas-OTC",
+    "Platinum-OTC","Palladium-OTC",
+
+    # ÍNDICES / OTROS
+    "SP500-OTC","NASDAQ-OTC","DOWJONES-OTC",
+
+    # EXTRA (de listas visibles)
+    "Alibaba-OTC","Baidu-OTC","Cisco-OTC","Oracle-OTC",
+    "IBM-OTC","JPMorgan-OTC","Visa-OTC","Mastercard-OTC"
 ]
 
-def enviar_mensaje(msg):
+# =========================
+def enviar(msg):
     try:
-        requests.post(f"https://api.telegram.org/bot{TOKEN}/sendMessage", data={
-            "chat_id": CHAT_ID,
-            "text": msg
-        })
+        if TOKEN and CHAT_ID:
+            requests.post(
+                f"https://api.telegram.org/bot{TOKEN}/sendMessage",
+                data={"chat_id": CHAT_ID, "text": msg},
+                timeout=5
+            )
     except:
         pass
 
-
+# =========================
 def conectar():
     while True:
-        iq = IQ_Option(EMAIL, PASSWORD)
-        iq.connect()
+        try:
+            iq = IQ_Option(EMAIL, PASSWORD)
+            iq.connect()
 
-        if iq.check_connect():
-            iq.change_balance(CUENTA)
-            print("✅ CONECTADO")
-            return iq
+            if iq.check_connect():
+                iq.change_balance(CUENTA)
+                print("BOT ACTIVADO")
+                enviar("🤖 BOT ACTIVADO")
+                return iq
+        except:
+            pass
 
         time.sleep(5)
 
+# =========================
+def velas(iq, par):
+    try:
+        data = iq.get_candles(par, 60, 60, time.time())
 
-def obtener_velas(iq, par):
-    velas = iq.get_candles(par, 60, 60, time.time())
+        return [{
+            "open": v["open"],
+            "close": v["close"],
+            "max": v["max"],
+            "min": v["min"]
+        } for v in data]
 
-    return [{
-        "open": v["open"],
-        "close": v["close"],
-        "max": v["max"],
-        "min": v["min"]
-    } for v in velas]
+    except:
+        return []
 
-
+# =========================
 def operar(iq, par, direccion):
-
     check, _ = iq.buy(MONTO, par, direccion, 4)
 
     if check:
-        print(f"🚀 {par} {direccion}")
+        print(f"SEÑAL → {par} {direccion}")
+        enviar(f"🚀 {par} → {direccion.upper()}")
 
-        enviar_mensaje(f"""
-🚀 ENTRADA EXTREMA
-
-Par: {par}
-Dirección: {direccion.upper()}
-Expiración: 4 MIN
-Monto: ${MONTO}
-""")
-
-
+# =========================
 def run():
 
     iq = conectar()
@@ -81,14 +111,12 @@ def run():
             data = {}
 
             for par in PARES:
-                data[par] = obtener_velas(iq, par)
+                data[par] = velas(iq, par)
 
             resultado = detectar_mejor_entrada(data)
 
             if resultado:
                 par, direccion, score = resultado
-
-                print(f"🔥 EXTREMO ({score})")
 
                 segundos = int(time.time()) % 60
                 esperar = 60 - segundos
@@ -106,6 +134,6 @@ def run():
         except:
             time.sleep(5)
 
-
+# =========================
 if __name__ == "__main__":
     run()
