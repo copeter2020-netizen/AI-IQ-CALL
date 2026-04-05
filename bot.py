@@ -35,7 +35,6 @@ CUENTA = "PRACTICE"
 PARES = [
     "EURUSD-OTC",
     "EURJPY-OTC",
-    "EURNZD-OTC",
     "EURGBP-OTC",
     "USDCHF-OTC", 
     "GBPJPY-OTC", 
