@@ -1,8 +1,14 @@
+import numpy as np
 import pandas as pd
 
-# ================================
-# 📌 UTILIDADES BÁSICAS
-# ================================
+# =========================
+# UTILIDADES
+# =========================
+def body(v):
+    return abs(v["close"] - v["open"])
+
+def rango(v):
+    return v["max"] - v["min"]
 
 def es_alcista(v):
     return v["close"] > v["open"]
@@ -10,153 +16,177 @@ def es_alcista(v):
 def es_bajista(v):
     return v["close"] < v["open"]
 
-def cuerpo(v):
-    return abs(v["close"] - v["open"])
 
-# ================================
-# 📊 DETECCIÓN DE TENDENCIA
-# ================================
+# =========================
+# NIVELES REALES
+# =========================
+def niveles(df):
+    soporte = df["min"].rolling(20).min().iloc[-2]
+    resistencia = df["max"].rolling(20).max().iloc[-2]
+    return soporte, resistencia
 
-def tendencia(df):
-    ultimas = df.iloc[-10:]
-    alcistas = sum(1 for _, v in ultimas.iterrows() if es_alcista(v))
-    bajistas = sum(1 for _, v in ultimas.iterrows() if es_bajista(v))
 
-    if alcistas > bajistas:
+# =========================
+# FILTRO LATERAL (NO OPERAR)
+# =========================
+def mercado_lateral(df):
+    ultimas = df.iloc[-6:]
+    rangos = [rango(v) for _, v in ultimas.iterrows()]
+
+    if len(rangos) == 0:
+        return True
+
+    return np.mean(rangos) < (max(rangos) * 0.5)
+
+
+# =========================
+# MICRO TENDENCIA
+# =========================
+def micro_tendencia(df):
+    ultimas = df.iloc[-5:]
+
+    verdes = sum(es_alcista(v) for _, v in ultimas.iterrows())
+    rojas = sum(es_bajista(v) for _, v in ultimas.iterrows())
+
+    if verdes >= 4:
         return "alcista"
-    elif bajistas > alcistas:
+
+    if rojas >= 4:
         return "bajista"
-    return "lateral"
 
-# ================================
-# 🔥 ACUMULACIÓN (ANTES DEL MOVIMIENTO)
-# ================================
+    return "neutral"
 
-def acumulacion(df):
-    velas = df.iloc[-6:]
-    cuerpos = [cuerpo(v) for _, v in velas.iterrows()]
-    promedio = sum(cuerpos) / len(cuerpos)
 
-    # muchas velas pequeñas = acumulación
-    return sum(1 for c in cuerpos if c < promedio) >= 4
+# =========================
+# IMPULSO FUERTE (CLAVE)
+# =========================
+def impulso_fuerte(v):
+    if rango(v) == 0:
+        return False
 
-# ================================
-# ⚠️ EVITAR ENTRADAS TARDÍAS
-# ================================
+    return body(v) > rango(v) * 0.7
 
-def vela_explosiva(df):
-    v = df.iloc[-2]
-    media = df["close"].diff().abs().mean()
 
-    return cuerpo(v) > media * 2
+# =========================
+# RECHAZO REAL (CLAVE)
+# =========================
+def rechazo_fuerte(v):
+    if rango(v) == 0:
+        return False
 
-# ================================
-# 🚀 ENTRADA ANTICIPADA (CLAVE)
-# ================================
-
-def entrada_anticipada_compra(df):
-    v1 = df.iloc[-2]
-    v2 = df.iloc[-3]
-    v3 = df.iloc[-4]
+    mecha_sup = v["max"] - max(v["open"], v["close"])
+    mecha_inf = min(v["open"], v["close"]) - v["min"]
 
     return (
-        es_alcista(v1) and
-        es_bajista(v2) and
-        es_bajista(v3) and
-        cuerpo(v1) < cuerpo(v2) * 1.2
+        mecha_sup > body(v) * 1.2 or
+        mecha_inf > body(v) * 1.2
     )
 
-def entrada_anticipada_venta(df):
-    v1 = df.iloc[-2]
-    v2 = df.iloc[-3]
-    v3 = df.iloc[-4]
 
-    return (
-        es_bajista(v1) and
-        es_alcista(v2) and
-        es_alcista(v3) and
-        cuerpo(v1) < cuerpo(v2) * 1.2
-    )
+# =========================
+# ZONA BASURA (EVITAR)
+# =========================
+def zona_mala(df, soporte, resistencia):
+    precio = df["close"].iloc[-1]
+    rango_total = resistencia - soporte
 
-# ================================
-# 🔥 MICRO RETROCESO (MÁS ENTRADAS)
-# ================================
-
-def micro_pullback_compra(df):
-    v1 = df.iloc[-2]
-    v2 = df.iloc[-3]
-
-    return es_alcista(v1) and es_bajista(v2)
-
-def micro_pullback_venta(df):
-    v1 = df.iloc[-2]
-    v2 = df.iloc[-3]
-
-    return es_bajista(v1) and es_alcista(v2)
-
-# ================================
-# 🎯 RSI FILTRO LIGERO (NO BLOQUEA)
-# ================================
-
-def rsi_filtro_compra(df):
-    if "rsi" not in df.columns:
+    if rango_total == 0:
         return True
-    return df.iloc[-2]["rsi"] < 65
 
-def rsi_filtro_venta(df):
-    if "rsi" not in df.columns:
-        return True
-    return df.iloc[-2]["rsi"] > 35
+    distancia = min(abs(precio - soporte), abs(precio - resistencia))
 
-# ================================
-# 🧠 FUNCIÓN PRINCIPAL
-# ================================
+    return distancia > rango_total * 0.6
 
-def detectar_entrada(df):
-    if len(df) < 20:
-        return None
 
-    if vela_explosiva(df):
-        return None  # evitar entrar tarde
+# =========================
+# FILTRO ANTI ENTRADA TARDE 🔥
+# =========================
+def entrada_tarde(df):
+    ultimas = df.iloc[-3:]
 
-    t = tendencia(df)
+    verdes = sum(v["close"] > v["open"] for _, v in ultimas.iterrows())
+    rojas = sum(v["close"] < v["open"] for _, v in ultimas.iterrows())
 
-    # ====================
-    # 🚀 COMPRA
-    # ====================
-    if (
-        t == "bajista" and
-        acumulacion(df) and
-        entrada_anticipada_compra(df) and
-        rsi_filtro_compra(df)
-    ):
-        return "CALL"
+    return verdes == 3 or rojas == 3
 
-    # entrada más agresiva (no dejar pasar oportunidades)
-    if (
-        t == "bajista" and
-        micro_pullback_compra(df) and
-        rsi_filtro_compra(df)
-    ):
-        return "CALL"
 
-    # ====================
-    # 🚀 VENTA
-    # ====================
-    if (
-        t == "alcista" and
-        acumulacion(df) and
-        entrada_anticipada_venta(df) and
-        rsi_filtro_venta(df)
-    ):
-        return "PUT"
+# =========================
+# DETECTOR PRINCIPAL
+# =========================
+def detectar_entrada_oculta(data):
 
-    # entrada más agresiva
-    if (
-        t == "alcista" and
-        micro_pullback_venta(df) and
-        rsi_filtro_venta(df)
-    ):
-        return "PUT"
+    mejor = None
+    mejor_score = 0
 
-    return None
+    for par, velas in data.items():
+
+        if len(velas) < 30:
+            continue
+
+        df = pd.DataFrame(velas)
+
+        # =========================
+        # FILTROS BASE
+        # =========================
+        if mercado_lateral(df):
+            continue
+
+        if entrada_tarde(df):
+            continue
+
+        tendencia = micro_tendencia(df)
+        if tendencia != "neutral":
+            continue
+
+        soporte, resistencia = niveles(df)
+
+        if zona_mala(df, soporte, resistencia):
+            continue
+
+        # =========================
+        # VELAS CLAVE
+        # =========================
+        v_confirmacion = df.iloc[-2]  # vela buena
+        v_manipulacion = df.iloc[-3]  # barrida
+
+        score = 0
+
+        # =========================
+        # SETUP PUT
+        # =========================
+        if v_manipulacion["max"] >= resistencia:
+
+            if rechazo_fuerte(v_manipulacion):
+                score += 2
+
+            if es_bajista(v_confirmacion):
+                score += 2
+
+            if impulso_fuerte(v_confirmacion):
+                score += 3
+
+            if score >= 10:
+                if score > mejor_score:
+                    mejor_score = score
+                    mejor = (par, "put", score)
+
+        # =========================
+        # SETUP CALL
+        # =========================
+        if v_manipulacion["min"] <= soporte:
+
+            if rechazo_fuerte(v_manipulacion):
+                score += 2
+
+            if es_alcista(v_confirmacion):
+                score += 2
+
+            if impulso_fuerte(v_confirmacion):
+                score += 3
+
+            if score >= 5:
+                if score > mejor_score:
+                    mejor_score = score
+                    mejor = (par, "call", score)
+
+    return mejor
