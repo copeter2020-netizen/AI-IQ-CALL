@@ -61,15 +61,15 @@ def conectar():
         time.sleep(5)
 
 
-# ✅ FIX ERROR (ESTA FUNCIÓN FALTABA)
+# 🔥 MEJORADO (ANTES 58 → AHORA 59 REAL)
 def esperar_segundo_59():
     while True:
         segundos = int(time.time()) % 60
 
-        if segundos >= 58:
+        if segundos >= 59:
             return
 
-        time.sleep(0.1)
+        time.sleep(0.05)
 
 
 def obtener_velas(iq, par):
@@ -91,7 +91,6 @@ def obtener_velas(iq, par):
 def operar(iq, par, direccion):
 
     try:
-        # ✅ USA LA FUNCIÓN CORRECTA
         esperar_segundo_59()
 
         check, _ = iq.buy(MONTO, par, direccion, 3)
@@ -107,7 +106,7 @@ Dirección: {direccion.upper()}
 Expiración: 3 MIN
 Monto: ${MONTO}
 
-⏱ Entrada en apertura REAL
+⏱ Entrada optimizada (segundo 59 real)
 """)
 
     except Exception as e:
