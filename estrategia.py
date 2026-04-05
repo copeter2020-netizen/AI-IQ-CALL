@@ -279,7 +279,7 @@ def detectar_entrada_oculta(data_por_par):
             mejor_score = score
             mejor = (par, direccion, score)
 
-    if mejor and mejor_score >= 6:
+    if mejor and mejor_score >= 9:
         return mejor
 
     return None
