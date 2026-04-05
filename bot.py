@@ -41,6 +41,21 @@ def enviar_mensaje(texto):
 
 
 # =========================
+# ⏱️ SINCRONIZAR VELA
+# =========================
+def esperar_cierre_vela():
+    while True:
+        now = time.time()
+        segundos = now % 60
+
+        # Espera hasta segundo 59.5
+        if segundos >= 59.5:
+            break
+
+        time.sleep(0.1)
+
+
+# =========================
 # CONEXIÓN
 # =========================
 def conectar():
@@ -79,7 +94,7 @@ def obtener_velas(iq, par):
 
 
 # =========================
-# 🔥 ESTRATEGIA INLINE (OCULTA)
+# 🔥 ESTRATEGIA
 # =========================
 def detectar_entrada(data):
 
@@ -112,7 +127,7 @@ def detectar_entrada(data):
         score = 0
 
         # ======================
-        # SOPORTE → CALL
+        # CALL
         # ======================
         if abs(v["min"] - soporte) < rango_total * 0.05:
 
@@ -125,7 +140,7 @@ def detectar_entrada(data):
             direccion = "call"
 
         # ======================
-        # RESISTENCIA → PUT
+        # PUT
         # ======================
         elif abs(v["max"] - resistencia) < rango_total * 0.05:
 
@@ -156,7 +171,7 @@ def detectar_entrada(data):
 def operar(iq, par, direccion):
 
     try:
-        check, _ = iq.buy(MONTO, par, direccion, 4)
+        check, _ = iq.buy(MONTO, par, direccion, 3)
 
         if check:
             print(f"🚀 ENTRADA {par} {direccion}")
@@ -166,7 +181,7 @@ def operar(iq, par, direccion):
 
 Par: {par}
 Dirección: {direccion.upper()}
-Expiración: 4 MIN
+Expiración: 3 MIN
 Monto: ${MONTO}
 """)
 
@@ -183,6 +198,8 @@ def run():
 
     while True:
         try:
+            # 🔥 ESPERA AL CIERRE DE VELA
+            esperar_cierre_vela()
 
             data = {}
 
@@ -193,13 +210,9 @@ def run():
 
             if señal:
                 par, direccion = señal
-
                 operar(iq, par, direccion)
 
-                time.sleep(240)
-
-            else:
-                time.sleep(1)
+                time.sleep(180)
 
         except:
             time.sleep(5)
