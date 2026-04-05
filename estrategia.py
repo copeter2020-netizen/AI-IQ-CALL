@@ -31,44 +31,40 @@ def mercado_lateral(df):
     return np.mean(rangos) < (max(rangos) * 0.5)
 
 
-def micro_tendencia(df):
-    ultimas = df.iloc[-5:]
+# 🔥 NUEVO: estructura real del mercado
+def estructura_bajista(df):
+    highs = df["max"].iloc[-5:]
+    lows = df["min"].iloc[-5:]
 
-    verdes = sum(es_alcista(v) for _, v in ultimas.iterrows())
-    rojas = sum(es_bajista(v) for _, v in ultimas.iterrows())
-
-    if verdes >= 4:
-        return "alcista"
-
-    if rojas >= 4:
-        return "bajista"
-
-    return "neutral"
+    return all(highs.iloc[i] < highs.iloc[i-1] for i in range(1, len(highs))) and \
+           all(lows.iloc[i] < lows.iloc[i-1] for i in range(1, len(lows)))
 
 
-def tendencia_fuerte(df):
-    ultimas = df.iloc[-6:]
+def estructura_alcista(df):
+    highs = df["max"].iloc[-5:]
+    lows = df["min"].iloc[-5:]
 
-    verdes = sum(v["close"] > v["open"] for _, v in ultimas.iterrows())
-    rojas = sum(v["close"] < v["open"] for _, v in ultimas.iterrows())
+    return all(highs.iloc[i] > highs.iloc[i-1] for i in range(1, len(highs))) and \
+           all(lows.iloc[i] > lows.iloc[i-1] for i in range(1, len(lows)))
 
-    if verdes >= 5:
-        return "alcista"
 
-    if rojas >= 5:
-        return "bajista"
-
-    return "neutral"
+# 🔥 NUEVO: evita entrar después de impulso fuerte
+def impulso_reciente(df):
+    v = df.iloc[-2]
+    if rango(v) == 0:
+        return False
+    return body(v) > rango(v) * 0.8
 
 
 def confirmacion_fuerte(v):
+    if rango(v) == 0:
+        return False
     return body(v) > rango(v) * 0.6
 
 
-def impulso_fuerte(v):
-    if rango(v) == 0:
-        return False
-    return body(v) > rango(v) * 0.7
+def ruptura_valida(v1, v2):
+    # rompe la dirección previa
+    return v2["close"] > v1["max"] or v2["close"] < v1["min"]
 
 
 def rechazo_fuerte(v):
@@ -96,29 +92,11 @@ def zona_mala(df, soporte, resistencia):
     return distancia > rango_total * 0.6
 
 
-# 🔥 NUEVO
-def continuidad_real(df, direccion):
-    ultimas = df.iloc[-6:]
-    closes = [v["close"] for _, v in ultimas.iterrows()]
-
-    if direccion == "put":
-        if all(closes[i] >= closes[i-1] for i in range(1, len(closes))):
-            return True
-
-    if direccion == "call":
-        if all(closes[i] <= closes[i-1] for i in range(1, len(closes))):
-            return True
-
-    return False
-
-
-# 🔥 NUEVO
-def sobreextension(df):
-    ultimas = df.iloc[-5:]
-    verdes = sum(es_alcista(v) for _, v in ultimas.iterrows())
-    rojas = sum(es_bajista(v) for _, v in ultimas.iterrows())
-
-    return verdes >= 4 or rojas >= 4
+# 🔥 NUEVO: evita entrar tarde (vela ya movida)
+def entrada_limpia(v):
+    if rango(v) == 0:
+        return False
+    return abs(v["close"] - v["open"]) < (rango(v) * 0.2)
 
 
 def detectar_entrada_oculta(data):
@@ -136,14 +114,12 @@ def detectar_entrada_oculta(data):
         if mercado_lateral(df):
             continue
 
-        if tendencia_fuerte(df) != "neutral":
+        # ❌ BLOQUEA CONTRA TENDENCIA REAL
+        if estructura_bajista(df) or estructura_alcista(df):
             continue
 
-        if sobreextension(df):
-            continue
-
-        tendencia = micro_tendencia(df)
-        if tendencia != "neutral":
+        # ❌ BLOQUEA IMPULSOS
+        if impulso_reciente(df):
             continue
 
         soporte, resistencia = niveles(df)
@@ -153,14 +129,18 @@ def detectar_entrada_oculta(data):
 
         v_confirmacion = df.iloc[-2]
         v_manipulacion = df.iloc[-3]
+        v_actual = df.iloc[-1]
+
+        # ❌ EVITA ENTRADAS TARDÍAS
+        if not entrada_limpia(v_actual):
+            continue
 
         score = 0
 
+        # =========================
         # PUT
+        # =========================
         if v_manipulacion["max"] >= resistencia:
-
-            if continuidad_real(df, "put"):
-                continue
 
             if rechazo_fuerte(v_manipulacion):
                 score += 2
@@ -168,21 +148,20 @@ def detectar_entrada_oculta(data):
             if es_bajista(v_confirmacion):
                 score += 2
 
-            if impulso_fuerte(v_confirmacion):
-                score += 3
+            if confirmacion_fuerte(v_confirmacion):
+                score += 2
 
-            if not confirmacion_fuerte(v_confirmacion):
+            if not ruptura_valida(v_manipulacion, v_confirmacion):
                 continue
 
             if score >= 5 and score > mejor_score:
                 mejor = (par, "put", score)
                 mejor_score = score
 
+        # =========================
         # CALL
+        # =========================
         if v_manipulacion["min"] <= soporte:
-
-            if continuidad_real(df, "call"):
-                continue
 
             if rechazo_fuerte(v_manipulacion):
                 score += 2
@@ -190,10 +169,10 @@ def detectar_entrada_oculta(data):
             if es_alcista(v_confirmacion):
                 score += 2
 
-            if impulso_fuerte(v_confirmacion):
-                score += 3
+            if confirmacion_fuerte(v_confirmacion):
+                score += 2
 
-            if not confirmacion_fuerte(v_confirmacion):
+            if not ruptura_valida(v_manipulacion, v_confirmacion):
                 continue
 
             if score >= 5 and score > mejor_score:
