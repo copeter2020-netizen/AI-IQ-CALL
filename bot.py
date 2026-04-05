@@ -4,15 +4,9 @@ import requests
 import sys
 from iqoptionapi.stable_api import IQ_Option
 
-# =========================
-# 🔥 FIX PATH (Railway)
-# =========================
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(BASE_DIR)
 
-# =========================
-# IMPORT
-# =========================
 try:
     from estrategia import detectar_entrada_oculta
 except Exception as e:
@@ -20,9 +14,6 @@ except Exception as e:
     detectar_entrada_oculta = None
 
 
-# =========================
-# CONFIG
-# =========================
 EMAIL = os.getenv("IQ_EMAIL")
 PASSWORD = os.getenv("IQ_PASSWORD")
 
@@ -34,16 +25,14 @@ CUENTA = "PRACTICE"
 
 PARES = [
     "EURUSD-OTC",
+    "GBPUSD-OTC",
     "EURJPY-OTC",
     "EURGBP-OTC",
-    "USDCHF-OTC", 
-    "GBPJPY-OTC", 
-    "AUDCAD-OTC"
+    "GBPJPY-OTC",
+    "USDCHF-OTC"
 ]
 
-# =========================
-# TELEGRAM
-# =========================
+
 def enviar_mensaje(texto):
     try:
         url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
@@ -55,9 +44,6 @@ def enviar_mensaje(texto):
         pass
 
 
-# =========================
-# CONEXIÓN
-# =========================
 def conectar():
     while True:
         try:
@@ -75,22 +61,17 @@ def conectar():
         time.sleep(5)
 
 
-# =========================
-# 🔥 SEGUNDO 58 (SNIPER)
-# =========================
-def esperar_segundo_58():
+# ✅ FIX ERROR (ESTA FUNCIÓN FALTABA)
+def esperar_segundo_59():
     while True:
         segundos = int(time.time()) % 60
 
-        if segundos >= 59:
+        if segundos >= 58:
             return
 
         time.sleep(0.1)
 
 
-# =========================
-# VELAS
-# =========================
 def obtener_velas(iq, par):
     try:
         velas = iq.get_candles(par, 60, 40, time.time())
@@ -107,45 +88,32 @@ def obtener_velas(iq, par):
         return []
 
 
-# =========================
-# 🔥 OPERAR (MEJORADO)
-# =========================
 def operar(iq, par, direccion):
 
     try:
-        if not iq.check_connect():
-            print("⚠️ Reconectando...")
-            iq.connect()
-
-        # ⏱️ Entrada SNIPER
+        # ✅ USA LA FUNCIÓN CORRECTA
         esperar_segundo_59()
 
-        check, id = iq.buy(MONTO, par, direccion, 4)
+        check, _ = iq.buy(MONTO, par, direccion, 3)
 
         if check:
             print(f"🚀 ENTRADA {par} {direccion}")
 
             enviar_mensaje(f"""
-🚀 ENTRADA SNIPER
+🚀 ENTRADA PRO
 
 Par: {par}
 Dirección: {direccion.upper()}
-Expiración: 4 MIN
+Expiración: 3 MIN
 Monto: ${MONTO}
 
-⏱ Entrada en segundo 59
+⏱ Entrada en apertura REAL
 """)
-
-        else:
-            print("❌ Falló ejecución")
 
     except Exception as e:
         print("Error operar:", e)
 
 
-# =========================
-# LOOP PRINCIPAL
-# =========================
 def run():
 
     if detectar_entrada_oculta is None:
@@ -154,36 +122,24 @@ def run():
 
     iq = conectar()
 
-    ultima_operacion = 0  # 🔥 evita duplicar
-
     while True:
         try:
 
             data = {}
 
             for par in PARES:
-                velas = obtener_velas(iq, par)
-
-                if len(velas) < 30:
-                    continue
-
-                data[par] = velas
+                data[par] = obtener_velas(iq, par)
 
             señal = detectar_entrada_oculta(data)
 
-            ahora = time.time()
-
-            if señal and (ahora - ultima_operacion > 180):
-
+            if señal:
                 par, direccion, score = señal
 
                 print(f"🎯 Señal {par} {direccion} Score:{score}")
 
                 operar(iq, par, direccion)
 
-                ultima_operacion = ahora
-
-                time.sleep(5)
+                time.sleep(180)
 
             else:
                 time.sleep(0.5)
@@ -193,8 +149,5 @@ def run():
             time.sleep(5)
 
 
-# =========================
-# START
-# =========================
 if __name__ == "__main__":
     run()
