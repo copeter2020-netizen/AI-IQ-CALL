@@ -1,98 +1,73 @@
 import time
-import os
-from iqoptionapi.stable_api import IQ_Option
-from estrategia import detectar_mejor_entrada
+import random
+from estrategia import detectar_entrada_oculta
 from telegram_bot import enviar, escuchar
 
-EMAIL = os.getenv("IQ_EMAIL")
-PASSWORD = os.getenv("IQ_PASSWORD")
+print("✅ BOT CONECTADO")
 
-MONTO = 1000
-CUENTA = "PRACTICE"
+# ==========================
+# SIMULACIÓN DE DATOS (IQ OPTION)
+# ==========================
+def obtener_datos():
 
-PARES = [
-    "EURUSD-OTC","GBPUSD-OTC","USDCHF-OTC",
-    "EURJPY-OTC","EURGBP-OTC","GBPJPY-OTC","AUDUSD-OTC","BTCUSD-OTC","ETHUSD-OTC"
-]
+    # ⚠️ AQUÍ luego conectamos IQ Option real
+    pares = ["EURUSD", "GBPUSD", "USDJPY", "AUDUSD"]
+
+    data = {}
+
+    for par in pares:
+        velas = []
+        precio = random.uniform(1, 2)
+
+        for _ in range(60):
+            open_p = precio
+            close_p = precio + random.uniform(-0.001, 0.001)
+            high = max(open_p, close_p) + random.uniform(0, 0.0005)
+            low = min(open_p, close_p) - random.uniform(0, 0.0005)
+
+            velas.append({
+                "open": open_p,
+                "close": close_p,
+                "max": high,
+                "min": low
+            })
+
+            precio = close_p
+
+        data[par] = velas
+
+    return data
 
 
-def conectar():
-    while True:
-        try:
-            iq = IQ_Option(EMAIL, PASSWORD)
-            iq.connect()
+# ==========================
+# LOOP PRINCIPAL
+# ==========================
+while True:
 
-            if iq.check_connect():
-                iq.change_balance(CUENTA)
-                print("BOT CONECTADO")
-                return iq
-        except:
-            pass
+    activo = escuchar()
 
-        time.sleep(5)
+    if not activo:
+        time.sleep(2)
+        continue
 
-
-def obtener_velas(iq, par):
     try:
-        data = iq.get_candles(par, 60, 60, time.time())
+        data = obtener_datos()
 
-        return [{
-            "open": v["open"],
-            "close": v["close"],
-            "max": v["max"],
-            "min": v["min"]
-        } for v in data]
+        entrada = detectar_entrada_oculta(data)
 
-    except:
-        return []
+        if entrada:
+            par, direccion, score = entrada
 
+            mensaje = f"📊 ENTRADA\n{par}\n{direccion.upper()}\nScore: {score}"
 
-def operar(iq, par, direccion):
-    check, _ = iq.buy(MONTO, par, direccion, 4)
+            print(f"Entrada: {par} {direccion} ⭐{score}")
+            enviar(mensaje)
 
-    if check:
-        print(f"SEÑAL → {par} {direccion}")
-        enviar(f"🚀 {par} → {direccion.upper()}")
+            time.sleep(60)  # evita spam
 
+        else:
+            time.sleep(2)
 
-def run():
-    iq = conectar()
-
-    while True:
-        try:
-
-            activo = escuchar()
-
-            if not activo:
-                time.sleep(2)
-                continue
-
-            data = {}
-
-            for par in PARES:
-                data[par] = obtener_velas(iq, par)
-
-            resultado = detectar_mejor_entrada(data)
-
-            if resultado:
-                par, direccion, _ = resultado
-
-                segundos = int(time.time()) % 60
-                esperar = 60 - segundos
-
-                if esperar > 0:
-                    time.sleep(esperar)
-
-                operar(iq, par, direccion)
-
-                time.sleep(240)
-
-            else:
-                time.sleep(2)
-
-        except:
-            time.sleep(5)
-
-
-if __name__ == "__main__":
-    run()
+    except Exception as e:
+        print("Error:", e)
+        time.sleep(5)
