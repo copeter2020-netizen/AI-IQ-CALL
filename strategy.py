@@ -53,7 +53,7 @@ def cerca(valor, nivel, rango_total):
 
 
 # ==========================
-# FILTROS PRO
+# 🔥 FILTROS PRO
 # ==========================
 def zona_sucia(df, rango_total):
     precio = df["close"].iloc[-1]
@@ -86,13 +86,23 @@ def posible_trampa(df):
 
 
 # ==========================
-# 🔥 FILTROS CLAVE NUEVOS
+# 🔥 FILTROS ANTI-ERROR (CLAVE)
 # ==========================
-def continuacion_activa(df):
-    ultimas = df.iloc[-4:]
-    verdes = sum(ultimas["close"] > ultimas["open"])
+def tendencia_fuerte(df):
+    ultimas = df.iloc[-5:]
     rojas = sum(ultimas["close"] < ultimas["open"])
-    return verdes >= 3 or rojas >= 3
+    verdes = sum(ultimas["close"] > ultimas["open"])
+    return rojas >= 4 or verdes >= 4
+
+
+def caida_limpia(df):
+    ultimas = df.iloc[-4:]
+    return all(v["close"] < v["open"] for _, v in ultimas.iterrows())
+
+
+def subida_limpia(df):
+    ultimas = df.iloc[-4:]
+    return all(v["close"] > v["open"] for _, v in ultimas.iterrows())
 
 
 def entrada_extendida(df):
@@ -119,14 +129,21 @@ def consolidacion(df):
     return np.mean(rangos) < (max(rangos) * 0.6)
 
 
-def primera_vela_reversa(df):
+def reversa_real(df):
     v = df.iloc[-1]
     prev = df.iloc[-2]
 
     return (
-        body(v) > body(prev) * 1.5 and
+        body(v) > body(prev) * 1.7 and
         ((es_alcista(v) and es_bajista(prev)) or
          (es_bajista(v) and es_alcista(prev)))
+    )
+
+
+def rechazo_extremo(v):
+    return (
+        mecha_inf(v) > body(v) * 2.5 or
+        mecha_sup(v) > body(v) * 2.5
     )
 
 
@@ -145,15 +162,6 @@ def hay_impulso(v):
 
 def vela_fuerte(v):
     return body(v) > rango(v) * 0.6
-
-
-def rechazo_pro(v, direccion):
-    cuerpo = body(v)
-
-    if direccion == "call":
-        return mecha_inf(v) > cuerpo * 2.5
-    else:
-        return mecha_sup(v) > cuerpo * 2.5
 
 
 def fallo_continuacion(df, tipo):
@@ -200,7 +208,7 @@ def divergencia_rsi(df):
 
 
 # ==========================
-# 🚀 ENTRADA FINAL PRO MAX
+# 🚀 ENTRADA FINAL PRO
 # ==========================
 def detectar_entrada_oculta(data_por_par):
 
@@ -223,49 +231,29 @@ def detectar_entrada_oculta(data_por_par):
         v = df.iloc[-1]
 
         # ==========================
-        # FILTROS CRÍTICOS (MEJORADOS)
+        # FILTROS CRÍTICOS
         # ==========================
-        if zona_sucia(df, rango_total):
-            continue
+        if zona_sucia(df, rango_total): continue
+        if entrada_tardia(df, rango_total): continue
+        if impulso_reciente(df, rango_total): continue
+        if rango_muerto(df): continue
+        if posible_trampa(df): continue
 
-        if entrada_tardia(df, rango_total):
-            continue
+        # 🔥 EVITAR MALAS ENTRADAS
+        if tendencia_fuerte(df): continue
+        if caida_limpia(df): continue
+        if subida_limpia(df): continue
+        if entrada_extendida(df): continue
+        if momentum_activo(df): continue
+        if consolidacion(df): continue
 
-        if impulso_reciente(df, rango_total):
-            continue
-
-        if rango_muerto(df):
-            continue
-
-        if posible_trampa(df):
-            continue
-
-        if continuacion_activa(df):
-            continue
-
-        if entrada_extendida(df):
-            continue
-
-        if momentum_activo(df):
-            continue
-
-        if consolidacion(df):
-            continue
-
-        if not agotamiento(df):
-            continue
-
-        if not primera_vela_reversa(df):
-            continue
-
-        if not hay_barrida(df):
-            continue
-
-        if not hay_impulso(v):
-            continue
-
-        if not vela_fuerte(v):
-            continue
+        # 🔥 OBLIGAR CALIDAD
+        if not agotamiento(df): continue
+        if not reversa_real(df): continue
+        if not rechazo_extremo(v): continue
+        if not hay_barrida(df): continue
+        if not hay_impulso(v): continue
+        if not vela_fuerte(v): continue
 
         score = 0
         direccion = None
@@ -282,17 +270,9 @@ def detectar_entrada_oculta(data_por_par):
 
             if div == "alcista" and rsi_actual < 30:
 
-                if fallo_continuacion(df, "call"):
-                    score += 3
-
-                if rechazo_pro(v, "call"):
-                    score += 2
-
-                if confirmacion_real(df, "call"):
-                    score += 3
-
-                if es_alcista(v):
-                    score += 2
+                if fallo_continuacion(df, "call"): score += 3
+                if confirmacion_real(df, "call"): score += 3
+                if es_alcista(v): score += 2
 
                 direccion = "call"
 
@@ -306,17 +286,9 @@ def detectar_entrada_oculta(data_por_par):
 
             if div == "bajista" and rsi_actual > 70:
 
-                if fallo_continuacion(df, "put"):
-                    score += 3
-
-                if rechazo_pro(v, "put"):
-                    score += 2
-
-                if confirmacion_real(df, "put"):
-                    score += 3
-
-                if es_bajista(v):
-                    score += 2
+                if fallo_continuacion(df, "put"): score += 3
+                if confirmacion_real(df, "put"): score += 3
+                if es_bajista(v): score += 2
 
                 direccion = "put"
 
