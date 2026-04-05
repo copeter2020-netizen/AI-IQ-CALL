@@ -14,7 +14,7 @@ PASSWORD = os.getenv("IQ_PASSWORD")
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-MONTO = 1750
+MONTO = 17500
 CUENTA = "PRACTICE"
 
 PARES = [
@@ -38,21 +38,6 @@ def enviar_mensaje(texto):
         }, timeout=5)
     except:
         pass
-
-
-# =========================
-# ⏱️ SINCRONIZAR VELA
-# =========================
-def esperar_cierre_vela():
-    while True:
-        now = time.time()
-        segundos = now % 60
-
-        # Espera hasta segundo 59.5
-        if segundos >= 59.5:
-            break
-
-        time.sleep(0.1)
 
 
 # =========================
@@ -94,7 +79,7 @@ def obtener_velas(iq, par):
 
 
 # =========================
-# 🔥 ESTRATEGIA
+# 🔥 ESTRATEGIA INLINE (OCULTA)
 # =========================
 def detectar_entrada(data):
 
@@ -127,7 +112,7 @@ def detectar_entrada(data):
         score = 0
 
         # ======================
-        # CALL
+        # SOPORTE → CALL
         # ======================
         if abs(v["min"] - soporte) < rango_total * 0.05:
 
@@ -140,7 +125,7 @@ def detectar_entrada(data):
             direccion = "call"
 
         # ======================
-        # PUT
+        # RESISTENCIA → PUT
         # ======================
         elif abs(v["max"] - resistencia) < rango_total * 0.05:
 
@@ -181,7 +166,7 @@ def operar(iq, par, direccion):
 
 Par: {par}
 Dirección: {direccion.upper()}
-Expiración: 3 MIN
+Expiración: 4 MIN
 Monto: ${MONTO}
 """)
 
@@ -198,8 +183,6 @@ def run():
 
     while True:
         try:
-            # 🔥 ESPERA AL CIERRE DE VELA
-            esperar_cierre_vela()
 
             data = {}
 
@@ -210,9 +193,13 @@ def run():
 
             if señal:
                 par, direccion = señal
+
                 operar(iq, par, direccion)
 
-                time.sleep(180)
+                time.sleep(240)
+
+            else:
+                time.sleep(1)
 
         except:
             time.sleep(5)
