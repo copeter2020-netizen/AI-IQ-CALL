@@ -49,7 +49,7 @@ def niveles(df):
 
 
 def cerca(valor, nivel, rango_total):
-    return abs(valor - nivel) < rango_total * 0.05
+    return abs(valor - nivel) < rango_total * 0.04
 
 
 # ==========================
@@ -61,22 +61,19 @@ def zona_sucia(df, rango_total):
     return abs(precio - centro) < rango_total * 0.2
 
 
-def entrada_tardia(df):
-    ultimas = df.iloc[-3:]
-    verdes = sum(ultimas["close"] > ultimas["open"])
-    rojas = sum(ultimas["close"] < ultimas["open"])
-    return verdes >= 2 or rojas >= 2
+def entrada_tardia(df, rango_total):
+    mov = abs(df["close"].iloc[-1] - df["close"].iloc[-4])
+    return mov > rango_total * 0.45
 
 
-def tendencia_limpia(df):
-    ultimas = df.iloc[-5:]
-    return all(v["close"] > v["open"] for _, v in ultimas.iterrows()) or \
-           all(v["close"] < v["open"] for _, v in ultimas.iterrows())
+def impulso_reciente(df, rango_total):
+    mov = df["close"].iloc[-1] - df["close"].iloc[-3]
+    return abs(mov) > rango_total * 0.30
 
 
 def rango_muerto(df):
     velas = df.iloc[-5:]
-    return all(body(v) < rango(v) * 0.4 for _, v in velas.iterrows())
+    return all(body(v) < rango(v) * 0.35 for _, v in velas.iterrows())
 
 
 def posible_trampa(df):
@@ -89,13 +86,24 @@ def posible_trampa(df):
 
 
 # ==========================
-# 🔥 DETECCIÓN INTELIGENTE
+# 🔥 FILTROS CLAVE SNIPER
 # ==========================
-def primera_vela_fuerte(df):
-    v = df.iloc[-1]
-    prev = df.iloc[-2]
+def tendencia_fuerte(df):
+    ultimas = df.iloc[-5:]
+    direcciones = [v["close"] > v["open"] for _, v in ultimas.iterrows()]
+    cuerpos = [body(v) for _, v in ultimas.iterrows()]
 
-    return body(v) > body(prev) * 1.5
+    return (
+        sum(direcciones) >= 4 or
+        sum([not d for d in direcciones]) >= 4
+    ) and np.mean(cuerpos) > np.mean([rango(v) for _, v in ultimas.iterrows()]) * 0.5
+
+
+def segunda_o_tercera_vela(df):
+    ultimas = df.iloc[-3:]
+    verdes = sum(ultimas["close"] > ultimas["open"])
+    rojas = sum(ultimas["close"] < ultimas["open"])
+    return verdes >= 2 or rojas >= 2
 
 
 def agotamiento(df):
@@ -108,6 +116,12 @@ def consolidacion(df):
     ultimas = df.iloc[-5:]
     rangos = [rango(v) for _, v in ultimas.iterrows()]
     return np.mean(rangos) < (max(rangos) * 0.6)
+
+
+def inicio_reversa(df):
+    v = df.iloc[-1]
+    prev = df.iloc[-2]
+    return body(v) > body(prev) * 1.5
 
 
 # ==========================
@@ -131,19 +145,29 @@ def rechazo_pro(v, direccion):
     cuerpo = body(v)
 
     if direccion == "call":
-        return mecha_inf(v) > cuerpo * 2.5
+        return mecha_inf(v) > cuerpo * 3
     else:
-        return mecha_sup(v) > cuerpo * 2.5
+        return mecha_sup(v) > cuerpo * 3
 
 
-def confirmacion_real(df, direccion):
+def fallo_continuacion(df, tipo):
+    v = df.iloc[-1]
+    prev = df.iloc[-2]
+
+    if tipo == "call":
+        return v["min"] < prev["min"] and v["close"] > prev["min"]
+    else:
+        return v["max"] > prev["max"] and v["close"] < prev["max"]
+
+
+def confirmacion_fuerte(df, direccion):
     v = df.iloc[-1]
     prev = df.iloc[-2]
 
     if direccion == "call":
-        return v["close"] > prev["max"]
+        return v["close"] > prev["max"] and body(v) > body(prev)
     else:
-        return v["close"] < prev["min"]
+        return v["close"] < prev["min"] and body(v) > body(prev)
 
 
 def primer_toque(df, nivel, tipo):
@@ -193,30 +217,36 @@ def detectar_entrada_oculta(data_por_par):
         v = df.iloc[-1]
 
         # ==========================
-        # FILTROS SNIPER
+        # FILTROS CRÍTICOS
         # ==========================
         if zona_sucia(df, rango_total):
             continue
 
-        if entrada_tardia(df):
+        if entrada_tardia(df, rango_total):
             continue
 
-        if tendencia_limpia(df):
+        if impulso_reciente(df, rango_total):
             continue
 
         if rango_muerto(df):
             continue
 
-        if consolidacion(df):
-            continue
-
         if posible_trampa(df):
             continue
 
-        if not primera_vela_fuerte(df):
+        if tendencia_fuerte(df):
+            continue
+
+        if segunda_o_tercera_vela(df):
+            continue
+
+        if consolidacion(df):
             continue
 
         if not agotamiento(df):
+            continue
+
+        if not inicio_reversa(df):
             continue
 
         if not hay_barrida(df):
@@ -241,12 +271,15 @@ def detectar_entrada_oculta(data_por_par):
             if not primer_toque(df, soporte, "soporte"):
                 continue
 
-            if div == "alcista" and rsi_actual < 35:
+            if div == "alcista" and rsi_actual < 30:
 
-                if rechazo_pro(v, "call"):
+                if fallo_continuacion(df, "call"):
                     score += 3
 
-                if confirmacion_real(df, "call"):
+                if rechazo_pro(v, "call"):
+                    score += 2
+
+                if confirmacion_fuerte(df, "call"):
                     score += 3
 
                 if es_alcista(v):
@@ -262,12 +295,15 @@ def detectar_entrada_oculta(data_por_par):
             if not primer_toque(df, resistencia, "resistencia"):
                 continue
 
-            if div == "bajista" and rsi_actual > 65:
+            if div == "bajista" and rsi_actual > 70:
 
-                if rechazo_pro(v, "put"):
+                if fallo_continuacion(df, "put"):
                     score += 3
 
-                if confirmacion_real(df, "put"):
+                if rechazo_pro(v, "put"):
+                    score += 2
+
+                if confirmacion_fuerte(df, "put"):
                     score += 3
 
                 if es_bajista(v):
@@ -279,7 +315,7 @@ def detectar_entrada_oculta(data_por_par):
             mejor_score = score
             mejor = (par, direccion, score)
 
-    if mejor and mejor_score >= 9:
+    if mejor and mejor_score >= 7:
         return mejor
 
     return None
