@@ -97,20 +97,20 @@ def zona_mala(df, soporte, resistencia):
     return distancia > rango_total * 0.6
 
 
-# 🔥 NUEVO: evitar retrocesos
-def es_retroceso(df):
+# 🔥 NUEVO → evita entrar contra tendencia reciente
+def continuidad_contra(df, direccion):
     ultimas = df.iloc[-5:]
-    altos = [v["max"] for _, v in ultimas.iterrows()]
-    bajos = [v["min"] for _, v in ultimas.iterrows()]
 
-    return altos[-1] > altos[0] and bajos[-1] > bajos[0]
+    verdes = sum(v["close"] > v["open"] for _, v in ultimas.iterrows())
+    rojas = sum(v["close"] < v["open"] for _, v in ultimas.iterrows())
 
+    if direccion == "put" and verdes >= 4:
+        return True
 
-# 🔥 NUEVO: evitar señal débil
-def confirmacion_debil(df):
-    ultimas = df.iloc[-2:]
-    return ultimas.iloc[-1]["close"] < ultimas.iloc[-1]["open"] and \
-           ultimas.iloc[-2]["close"] > ultimas.iloc[-2]["open"]
+    if direccion == "call" and rojas >= 4:
+        return True
+
+    return False
 
 
 def detectar_entrada_oculta(data):
@@ -129,12 +129,6 @@ def detectar_entrada_oculta(data):
             continue
 
         if tendencia_fuerte(df) != "neutral":
-            continue
-
-        if es_retroceso(df):  # 🔥 NUEVO
-            continue
-
-        if confirmacion_debil(df):  # 🔥 NUEVO
             continue
 
         tendencia = micro_tendencia(df)
@@ -157,6 +151,9 @@ def detectar_entrada_oculta(data):
         # =========================
         if v_manipulacion["max"] >= resistencia:
 
+            if continuidad_contra(df, "put"):
+                continue
+
             if rechazo_fuerte(v_manipulacion):
                 score += 2
 
@@ -169,8 +166,8 @@ def detectar_entrada_oculta(data):
             if not confirmacion_fuerte(v_confirmacion):
                 continue
 
-            # 🔥 DOBLE CONFIRMACIÓN REAL
-            if v_siguiente["close"] >= v_confirmacion["close"]:
+            # 🔥 CONFIRMACIÓN REAL
+            if v_siguiente["close"] > v_confirmacion["close"]:
                 continue
 
             if score >= 5 and score > mejor_score:
@@ -181,6 +178,9 @@ def detectar_entrada_oculta(data):
         # CALL
         # =========================
         if v_manipulacion["min"] <= soporte:
+
+            if continuidad_contra(df, "call"):
+                continue
 
             if rechazo_fuerte(v_manipulacion):
                 score += 2
@@ -194,8 +194,8 @@ def detectar_entrada_oculta(data):
             if not confirmacion_fuerte(v_confirmacion):
                 continue
 
-            # 🔥 DOBLE CONFIRMACIÓN REAL
-            if v_siguiente["close"] <= v_confirmacion["close"]:
+            # 🔥 CONFIRMACIÓN REAL
+            if v_siguiente["close"] < v_confirmacion["close"]:
                 continue
 
             if score >= 5 and score > mejor_score:
