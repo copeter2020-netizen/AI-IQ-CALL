@@ -82,7 +82,7 @@ def esperar_segundo_58():
     while True:
         segundos = int(time.time()) % 60
 
-        if segundos >= 58:
+        if segundos >= 59:
             return
 
         time.sleep(0.1)
@@ -118,9 +118,9 @@ def operar(iq, par, direccion):
             iq.connect()
 
         # ⏱️ Entrada SNIPER
-        esperar_segundo_58()
+        esperar_segundo_59()
 
-        check, id = iq.buy(MONTO, par, direccion, 3)
+        check, id = iq.buy(MONTO, par, direccion, 4)
 
         if check:
             print(f"🚀 ENTRADA {par} {direccion}")
@@ -130,10 +130,10 @@ def operar(iq, par, direccion):
 
 Par: {par}
 Dirección: {direccion.upper()}
-Expiración: 3 MIN
+Expiración: 4 MIN
 Monto: ${MONTO}
 
-⏱ Entrada en segundo 58
+⏱ Entrada en segundo 59
 """)
 
         else:
