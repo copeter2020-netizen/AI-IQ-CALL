@@ -86,7 +86,7 @@ def posible_trampa(df):
 
 
 # ==========================
-# 🔥 NUEVOS FILTROS PRO
+# 🔥 FILTROS CLAVE NUEVOS
 # ==========================
 def continuacion_activa(df):
     ultimas = df.iloc[-4:]
@@ -95,16 +95,22 @@ def continuacion_activa(df):
     return verdes >= 3 or rojas >= 3
 
 
-def agotamiento(df):
+def entrada_extendida(df):
     ultimas = df.iloc[-3:]
-    cuerpos = [body(v) for _, v in ultimas.iterrows()]
-    return cuerpos[0] > cuerpos[1] > cuerpos[2]
-
-
-def movimiento_limpio(df):
-    ultimas = df.iloc[-5:]
     return all(v["close"] > v["open"] for _, v in ultimas.iterrows()) or \
            all(v["close"] < v["open"] for _, v in ultimas.iterrows())
+
+
+def momentum_activo(df):
+    ultimas = df.iloc[-3:]
+    return sum(ultimas["close"] > ultimas["open"]) >= 2 or \
+           sum(ultimas["close"] < ultimas["open"]) >= 2
+
+
+def agotamiento(df):
+    ultimas = df.iloc[-4:]
+    cuerpos = [body(v) for _, v in ultimas.iterrows()]
+    return cuerpos[0] > cuerpos[1] and cuerpos[1] > cuerpos[2]
 
 
 def consolidacion(df):
@@ -113,10 +119,15 @@ def consolidacion(df):
     return np.mean(rangos) < (max(rangos) * 0.6)
 
 
-def inicio_reversa(df):
+def primera_vela_reversa(df):
     v = df.iloc[-1]
     prev = df.iloc[-2]
-    return body(v) > body(prev) * 1.5
+
+    return (
+        body(v) > body(prev) * 1.5 and
+        ((es_alcista(v) and es_bajista(prev)) or
+         (es_bajista(v) and es_alcista(prev)))
+    )
 
 
 # ==========================
@@ -212,7 +223,7 @@ def detectar_entrada_oculta(data_por_par):
         v = df.iloc[-1]
 
         # ==========================
-        # FILTROS CRÍTICOS
+        # FILTROS CRÍTICOS (MEJORADOS)
         # ==========================
         if zona_sucia(df, rango_total):
             continue
@@ -232,7 +243,10 @@ def detectar_entrada_oculta(data_por_par):
         if continuacion_activa(df):
             continue
 
-        if movimiento_limpio(df):
+        if entrada_extendida(df):
+            continue
+
+        if momentum_activo(df):
             continue
 
         if consolidacion(df):
@@ -241,7 +255,7 @@ def detectar_entrada_oculta(data_por_par):
         if not agotamiento(df):
             continue
 
-        if not inicio_reversa(df):
+        if not primera_vela_reversa(df):
             continue
 
         if not hay_barrida(df):
