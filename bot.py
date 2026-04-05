@@ -5,6 +5,13 @@ import pandas as pd
 import numpy as np
 from iqoptionapi.stable_api import IQ_Option
 
+# 🔥 FIX IMPORT (Railway)
+import sys
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
+from estrategia import detectar_entrada_oculta
+
+
 # =========================
 # CONFIG
 # =========================
@@ -14,10 +21,8 @@ PASSWORD = os.getenv("IQ_PASSWORD")
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-MONTO = 1750
+MONTO = 17500
 CUENTA = "PRACTICE"
-
-EXPIRACION = 3  # 🔥 3 minutos fijo
 
 PARES = [
     "EURUSD-OTC",
@@ -27,6 +32,7 @@ PARES = [
     "GBPJPY-OTC",
     "USDCHF-OTC"
 ]
+
 
 # =========================
 # TELEGRAM
@@ -63,6 +69,20 @@ def conectar():
 
 
 # =========================
+# ⏱️ ESPERAR APERTURA VELA
+# =========================
+def esperar_apertura_vela():
+    while True:
+        segundos = int(time.time()) % 60
+
+        # Espera justo a que abra la vela
+        if segundos == 0:
+            return
+
+        time.sleep(0.3)
+
+
+# =========================
 # VELAS
 # =========================
 def obtener_velas(iq, par):
@@ -81,47 +101,28 @@ def obtener_velas(iq, par):
 
 
 # =========================
-# ⏱️ ESPERAR APERTURA EXACTA
-# =========================
-def esperar_apertura_vela():
-    while True:
-        segundos = int(time.time()) % 60
-
-        # entrar justo en segundo 0-1
-        if segundos == 0 or segundos == 1:
-            return
-
-        time.sleep(0.2)
-
-
-# =========================
-# 🔥 ESTRATEGIA (LLAMA TU ARCHIVO)
-# =========================
-from estrategia import detectar_entrada_oculta
-
-
-# =========================
-# OPERAR
+# OPERAR (ENTRADA PERFECTA)
 # =========================
 def operar(iq, par, direccion):
 
     try:
-        # 🔥 ENTRAR EXACTO EN APERTURA
+        # 🔥 ENTRAR JUSTO EN APERTURA
         esperar_apertura_vela()
 
-        check, _ = iq.buy(MONTO, par, direccion, EXPIRACION)
+        check, _ = iq.buy(MONTO, par, direccion, 3)
 
         if check:
-            print(f"🚀 ENTRADA {par} {direccion}")
+            print(f"🚀 ENTRADA PERFECTA {par} {direccion}")
 
             enviar_mensaje(f"""
 🚀 ENTRADA SNIPER
 
 Par: {par}
 Dirección: {direccion.upper()}
-Expiración: {EXPIRACION} MIN
-Entrada: APERTURA DE VELA
+Expiración: 3 MIN
 Monto: ${MONTO}
+
+⏱ Entrada EXACTA en apertura de vela
 """)
 
     except:
@@ -129,7 +130,7 @@ Monto: ${MONTO}
 
 
 # =========================
-# LOOP
+# LOOP PRINCIPAL
 # =========================
 def run():
 
@@ -146,17 +147,20 @@ def run():
             señal = detectar_entrada_oculta(data)
 
             if señal:
-                par, direccion, _ = señal
+                par, direccion, score = señal
+
+                print(f"🎯 Señal detectada {par} {direccion} Score: {score}")
 
                 operar(iq, par, direccion)
 
-                # esperar cierre de operación
-                time.sleep(EXPIRACION * 60)
+                # Esperar cierre operación (3 min)
+                time.sleep(180)
 
             else:
                 time.sleep(0.5)
 
-        except:
+        except Exception as e:
+            print("Error:", e)
             time.sleep(5)
 
 
