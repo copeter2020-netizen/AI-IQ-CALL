@@ -21,6 +21,8 @@ PARES = [
     "EURUSD-OTC",
     "GBPUSD-OTC",
     "EURJPY-OTC",
+    "EURGBP-OTC",
+    "GBPJPY-OTC",
     "USDCHF-OTC"
 ]
 
