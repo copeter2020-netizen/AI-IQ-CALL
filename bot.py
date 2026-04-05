@@ -61,15 +61,17 @@ def conectar():
         time.sleep(5)
 
 
-# 🔥 MEJORADO (ANTES 58 → AHORA 59 REAL)
-def esperar_segundo_59():
+# 🔥 ENTRADA PRECISA REAL
+def esperar_apertura_real():
     while True:
-        segundos = int(time.time()) % 60
+        ahora = time.time()
+        segundos = int(ahora) % 60
+        milisegundos = ahora - int(ahora)
 
-        if segundos >= 59:
+        if segundos == 59 and milisegundos > 0.80:
             return
 
-        time.sleep(0.05)
+        time.sleep(0.01)
 
 
 def obtener_velas(iq, par):
@@ -91,7 +93,7 @@ def obtener_velas(iq, par):
 def operar(iq, par, direccion):
 
     try:
-        esperar_segundo_59()
+        esperar_apertura_real()
 
         check, _ = iq.buy(MONTO, par, direccion, 3)
 
@@ -106,7 +108,7 @@ Dirección: {direccion.upper()}
 Expiración: 3 MIN
 Monto: ${MONTO}
 
-⏱ Entrada optimizada (segundo 59 real)
+⏱ Entrada EXACTA en apertura
 """)
 
     except Exception as e:
