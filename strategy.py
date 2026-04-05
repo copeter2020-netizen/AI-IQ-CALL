@@ -1,221 +1,21 @@
 import pandas as pd
 import numpy as np
+from filtros import *
 
-# ==========================
-# UTILIDADES
-# ==========================
-def body(c):
-    return abs(c["close"] - c["open"])
-
-def rango(c):
-    return c["max"] - c["min"]
-
-def mecha_sup(c):
-    return c["max"] - max(c["open"], c["close"])
-
-def mecha_inf(c):
-    return min(c["open"], c["close"]) - c["min"]
-
-def es_alcista(c):
-    return c["close"] > c["open"]
-
-def es_bajista(c):
-    return c["close"] < c["open"]
-
-
-# ==========================
-# RSI
-# ==========================
 def calcular_rsi(df, periodo=14):
     delta = df["close"].diff()
-
-    ganancia = np.where(delta > 0, delta, 0)
-    perdida = np.where(delta < 0, -delta, 0)
-
-    roll_up = pd.Series(ganancia).rolling(periodo).mean()
-    roll_down = pd.Series(perdida).rolling(periodo).mean()
-
-    rs = roll_up / roll_down
+    gain = (delta.where(delta > 0, 0)).rolling(periodo).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(periodo).mean()
+    rs = gain / loss
     return 100 - (100 / (1 + rs))
 
 
-# ==========================
-# NIVELES
-# ==========================
-def niveles(df):
-    soporte = df["min"].rolling(20).min().iloc[-1]
-    resistencia = df["max"].rolling(20).max().iloc[-1]
-    return soporte, resistencia
-
-
-def cerca(valor, nivel, rango_total):
-    return abs(valor - nivel) < rango_total * 0.05
-
-
-# ==========================
-# 🔥 FILTROS PRO
-# ==========================
-def zona_sucia(df, rango_total):
-    precio = df["close"].iloc[-1]
-    centro = (max(df["max"][-20:]) + min(df["min"][-20:])) / 2
-    return abs(precio - centro) < rango_total * 0.2
-
-
-def entrada_tardia(df, rango_total):
-    mov = abs(df["close"].iloc[-1] - df["close"].iloc[-4])
-    return mov > rango_total * 0.5
-
-
-def impulso_reciente(df, rango_total):
-    mov = df["close"].iloc[-1] - df["close"].iloc[-3]
-    return abs(mov) > rango_total * 0.35
-
-
-def rango_muerto(df):
-    velas = df.iloc[-5:]
-    return all(body(v) < rango(v) * 0.4 for _, v in velas.iterrows())
-
-
-def posible_trampa(df):
-    v = df.iloc[-1]
-    prev = df.iloc[-2]
-    return (
-        body(v) > body(prev) * 1.5 and
-        (mecha_sup(v) > body(v) or mecha_inf(v) > body(v))
-    )
-
-
-# ==========================
-# 🔥 FILTROS ANTI-ERROR (CLAVE)
-# ==========================
-def tendencia_fuerte(df):
-    ultimas = df.iloc[-5:]
-    rojas = sum(ultimas["close"] < ultimas["open"])
-    verdes = sum(ultimas["close"] > ultimas["open"])
-    return rojas >= 4 or verdes >= 4
-
-
-def caida_limpia(df):
-    ultimas = df.iloc[-4:]
-    return all(v["close"] < v["open"] for _, v in ultimas.iterrows())
-
-
-def subida_limpia(df):
-    ultimas = df.iloc[-4:]
-    return all(v["close"] > v["open"] for _, v in ultimas.iterrows())
-
-
-def entrada_extendida(df):
-    ultimas = df.iloc[-3:]
-    return all(v["close"] > v["open"] for _, v in ultimas.iterrows()) or \
-           all(v["close"] < v["open"] for _, v in ultimas.iterrows())
-
-
-def momentum_activo(df):
-    ultimas = df.iloc[-3:]
-    return sum(ultimas["close"] > ultimas["open"]) >= 2 or \
-           sum(ultimas["close"] < ultimas["open"]) >= 2
-
-
-def agotamiento(df):
-    ultimas = df.iloc[-4:]
-    cuerpos = [body(v) for _, v in ultimas.iterrows()]
-    return cuerpos[0] > cuerpos[1] and cuerpos[1] > cuerpos[2]
-
-
-def consolidacion(df):
-    ultimas = df.iloc[-5:]
-    rangos = [rango(v) for _, v in ultimas.iterrows()]
-    return np.mean(rangos) < (max(rangos) * 0.6)
-
-
-def reversa_real(df):
-    v = df.iloc[-1]
-    prev = df.iloc[-2]
-
-    return (
-        body(v) > body(prev) * 1.7 and
-        ((es_alcista(v) and es_bajista(prev)) or
-         (es_bajista(v) and es_alcista(prev)))
-    )
-
-
-def rechazo_extremo(v):
-    return (
-        mecha_inf(v) > body(v) * 2.5 or
-        mecha_sup(v) > body(v) * 2.5
-    )
-
-
-# ==========================
-# ACCIÓN DE PRECIO
-# ==========================
-def hay_barrida(df):
-    v = df.iloc[-1]
-    prev = df.iloc[-2]
-    return v["min"] < prev["min"] or v["max"] > prev["max"]
-
-
-def hay_impulso(v):
-    return body(v) > rango(v) * 0.5
-
-
-def vela_fuerte(v):
-    return body(v) > rango(v) * 0.6
-
-
-def fallo_continuacion(df, tipo):
-    v = df.iloc[-1]
-    prev = df.iloc[-2]
-
-    if tipo == "call":
-        return v["min"] < prev["min"] and v["close"] > prev["min"]
-    else:
-        return v["max"] > prev["max"] and v["close"] < prev["max"]
-
-
-def confirmacion_real(df, direccion):
-    v = df.iloc[-1]
-    prev = df.iloc[-2]
-
-    if direccion == "call":
-        return v["close"] > prev["max"]
-    else:
-        return v["close"] < prev["min"]
-
-
-def primer_toque(df, nivel, tipo):
-    if tipo == "soporte":
-        return df["min"].iloc[-2] > nivel
-    else:
-        return df["max"].iloc[-2] < nivel
-
-
-# ==========================
-# DIVERGENCIA
-# ==========================
-def divergencia_rsi(df):
-    precios = df["close"]
-    rsi = df["rsi"]
-
-    if precios.iloc[-1] < precios.iloc[-5] and rsi.iloc[-1] > rsi.iloc[-5]:
-        return "alcista"
-
-    if precios.iloc[-1] > precios.iloc[-5] and rsi.iloc[-1] < rsi.iloc[-5]:
-        return "bajista"
-
-    return None
-
-
-# ==========================
-# 🚀 ENTRADA FINAL PRO
-# ==========================
-def detectar_entrada_oculta(data_por_par):
+def detectar_entrada_oculta(data):
 
     mejor = None
     mejor_score = 0
 
-    for par, velas in data_por_par.items():
+    for par, velas in data.items():
 
         df = pd.DataFrame(velas)
 
@@ -223,80 +23,65 @@ def detectar_entrada_oculta(data_por_par):
             continue
 
         df["rsi"] = calcular_rsi(df)
-        rsi_actual = df["rsi"].iloc[-1]
+        rsi = df["rsi"].iloc[-1]
 
-        soporte, resistencia = niveles(df)
-        rango_total = max(df["max"][-20:]) - min(df["min"][-20:])
+        soporte = df["min"].rolling(20).min().iloc[-1]
+        resistencia = df["max"].rolling(20).max().iloc[-1]
+
+        rango = max(df["max"][-20:]) - min(df["min"][-20:])
 
         v = df.iloc[-1]
+        cuerpo = abs(v["close"] - v["open"])
 
-        # ==========================
-        # FILTROS CRÍTICOS
-        # ==========================
-        if zona_sucia(df, rango_total): continue
-        if entrada_tardia(df, rango_total): continue
-        if impulso_reciente(df, rango_total): continue
-        if rango_muerto(df): continue
-        if posible_trampa(df): continue
-
-        # 🔥 EVITAR MALAS ENTRADAS
+        # =========================
+        # 🔥 FILTROS PRO
+        # =========================
+        if volatilidad_baja(df): continue
+        if mercado_lento(df): continue
         if tendencia_fuerte(df): continue
-        if caida_limpia(df): continue
-        if subida_limpia(df): continue
-        if entrada_extendida(df): continue
-        if momentum_activo(df): continue
-        if consolidacion(df): continue
-
-        # 🔥 OBLIGAR CALIDAD
-        if not agotamiento(df): continue
-        if not reversa_real(df): continue
-        if not rechazo_extremo(v): continue
-        if not hay_barrida(df): continue
-        if not hay_impulso(v): continue
-        if not vela_fuerte(v): continue
+        if sobre_extension(df): continue
+        if mechas_peligrosas(df): continue
 
         score = 0
         direccion = None
 
-        div = divergencia_rsi(df)
-
-        # ======================
+        # =========================
         # CALL
-        # ======================
-        if cerca(v["min"], soporte, rango_total):
+        # =========================
+        if abs(v["min"] - soporte) < rango * 0.04:
 
-            if not primer_toque(df, soporte, "soporte"):
-                continue
+            if rsi < 30:
+                score += 2
 
-            if div == "alcista" and rsi_actual < 30:
+            if v["close"] > v["open"]:
+                score += 2
 
-                if fallo_continuacion(df, "call"): score += 3
-                if confirmacion_real(df, "call"): score += 3
-                if es_alcista(v): score += 2
+            if cuerpo > (v["max"] - v["min"]) * 0.5:
+                score += 2
 
-                direccion = "call"
+            direccion = "call"
 
-        # ======================
+        # =========================
         # PUT
-        # ======================
-        if cerca(v["max"], resistencia, rango_total):
+        # =========================
+        if abs(v["max"] - resistencia) < rango * 0.04:
 
-            if not primer_toque(df, resistencia, "resistencia"):
-                continue
+            if rsi > 70:
+                score += 2
 
-            if div == "bajista" and rsi_actual > 70:
+            if v["close"] < v["open"]:
+                score += 2
 
-                if fallo_continuacion(df, "put"): score += 3
-                if confirmacion_real(df, "put"): score += 3
-                if es_bajista(v): score += 2
+            if cuerpo > (v["max"] - v["min"]) * 0.5:
+                score += 2
 
-                direccion = "put"
+            direccion = "put"
 
         if score > mejor_score and direccion:
-            mejor_score = score
             mejor = (par, direccion, score)
+            mejor_score = score
 
-    if mejor and mejor_score >= 6:
+    if mejor and mejor_score >= 5:
         return mejor
 
     return None
