@@ -31,40 +31,71 @@ def mercado_lateral(df):
     return np.mean(rangos) < (max(rangos) * 0.5)
 
 
-# 🔥 NUEVO: estructura real del mercado
-def estructura_bajista(df):
-    highs = df["max"].iloc[-5:]
-    lows = df["min"].iloc[-5:]
+def micro_tendencia(df):
+    ultimas = df.iloc[-5:]
 
-    return all(highs.iloc[i] < highs.iloc[i-1] for i in range(1, len(highs))) and \
-           all(lows.iloc[i] < lows.iloc[i-1] for i in range(1, len(lows)))
+    verdes = sum(es_alcista(v) for _, v in ultimas.iterrows())
+    rojas = sum(es_bajista(v) for _, v in ultimas.iterrows())
 
+    if verdes >= 4:
+        return "alcista"
 
-def estructura_alcista(df):
-    highs = df["max"].iloc[-5:]
-    lows = df["min"].iloc[-5:]
+    if rojas >= 4:
+        return "bajista"
 
-    return all(highs.iloc[i] > highs.iloc[i-1] for i in range(1, len(highs))) and \
-           all(lows.iloc[i] > lows.iloc[i-1] for i in range(1, len(lows)))
+    return "neutral"
 
 
-# 🔥 NUEVO: evita entrar después de impulso fuerte
+# 🔥 FILTRO TENDENCIA FUERTE
+def tendencia_fuerte(df):
+    ultimas = df.iloc[-6:]
+
+    verdes = sum(v["close"] > v["open"] for _, v in ultimas.iterrows())
+    rojas = sum(v["close"] < v["open"] for _, v in ultimas.iterrows())
+
+    if verdes >= 5:
+        return "alcista"
+
+    if rojas >= 5:
+        return "bajista"
+
+    return "neutral"
+
+
+# 🔥 NUEVO: FILTRO ANTI IMPULSO (evita entrar tarde)
 def impulso_reciente(df):
-    v = df.iloc[-2]
-    if rango(v) == 0:
-        return False
-    return body(v) > rango(v) * 0.8
+    ultimas = df.iloc[-3:]
+
+    for _, v in ultimas.iterrows():
+        if rango(v) == 0:
+            continue
+        if body(v) > rango(v) * 0.7:
+            return True
+
+    return False
 
 
+# 🔥 NUEVO: FILTRO ANTI CONTINUACIÓN
+def continuidad_fuerte(df):
+    ultimas = df.iloc[-3:]
+
+    verdes = sum(es_alcista(v) for _, v in ultimas.iterrows())
+    rojas = sum(es_bajista(v) for _, v in ultimas.iterrows())
+
+    return verdes == 3 or rojas == 3
+
+
+# 🔥 CONFIRMACIÓN MEJORADA
 def confirmacion_fuerte(v):
     if rango(v) == 0:
         return False
     return body(v) > rango(v) * 0.6
 
 
-def ruptura_valida(v1, v2):
-    # rompe la dirección previa
-    return v2["close"] > v1["max"] or v2["close"] < v1["min"]
+def impulso_fuerte(v):
+    if rango(v) == 0:
+        return False
+    return body(v) > rango(v) * 0.7
 
 
 def rechazo_fuerte(v):
@@ -80,6 +111,20 @@ def rechazo_fuerte(v):
     )
 
 
+# 🔥 NUEVO: RUPTURA REAL (clave para evitar falsas entradas)
+def ruptura_valida(df, direccion):
+    v = df.iloc[-2]
+    prev = df.iloc[-3]
+
+    if direccion == "call":
+        return v["close"] > prev["max"]
+
+    if direccion == "put":
+        return v["close"] < prev["min"]
+
+    return False
+
+
 def zona_mala(df, soporte, resistencia):
     precio = df["close"].iloc[-1]
     rango_total = resistencia - soporte
@@ -90,13 +135,6 @@ def zona_mala(df, soporte, resistencia):
     distancia = min(abs(precio - soporte), abs(precio - resistencia))
 
     return distancia > rango_total * 0.6
-
-
-# 🔥 NUEVO: evita entrar tarde (vela ya movida)
-def entrada_limpia(v):
-    if rango(v) == 0:
-        return False
-    return abs(v["close"] - v["open"]) < (rango(v) * 0.2)
 
 
 def detectar_entrada_oculta(data):
@@ -111,15 +149,21 @@ def detectar_entrada_oculta(data):
 
         df = pd.DataFrame(velas)
 
+        # ❌ mercado malo
         if mercado_lateral(df):
             continue
 
-        # ❌ BLOQUEA CONTRA TENDENCIA REAL
-        if estructura_bajista(df) or estructura_alcista(df):
+        if tendencia_fuerte(df) != "neutral":
             continue
 
-        # ❌ BLOQUEA IMPULSOS
+        if continuidad_fuerte(df):
+            continue
+
         if impulso_reciente(df):
+            continue
+
+        tendencia = micro_tendencia(df)
+        if tendencia != "neutral":
             continue
 
         soporte, resistencia = niveles(df)
@@ -129,17 +173,12 @@ def detectar_entrada_oculta(data):
 
         v_confirmacion = df.iloc[-2]
         v_manipulacion = df.iloc[-3]
-        v_actual = df.iloc[-1]
-
-        # ❌ EVITA ENTRADAS TARDÍAS
-        if not entrada_limpia(v_actual):
-            continue
 
         score = 0
 
-        # =========================
-        # PUT
-        # =========================
+        # ========================
+        # 🔴 PUT
+        # ========================
         if v_manipulacion["max"] >= resistencia:
 
             if rechazo_fuerte(v_manipulacion):
@@ -148,19 +187,24 @@ def detectar_entrada_oculta(data):
             if es_bajista(v_confirmacion):
                 score += 2
 
-            if confirmacion_fuerte(v_confirmacion):
-                score += 2
+            if impulso_fuerte(v_confirmacion):
+                score += 3
 
-            if not ruptura_valida(v_manipulacion, v_confirmacion):
+            if not confirmacion_fuerte(v_confirmacion):
                 continue
 
-            if score >= 5 and score > mejor_score:
-                mejor = (par, "put", score)
-                mejor_score = score
+            # 🔥 VALIDACIÓN REAL
+            if not ruptura_valida(df, "put"):
+                continue
 
-        # =========================
-        # CALL
-        # =========================
+            if score >= 5:
+                if score > mejor_score:
+                    mejor_score = score
+                    mejor = (par, "put", score)
+
+        # ========================
+        # 🟢 CALL
+        # ========================
         if v_manipulacion["min"] <= soporte:
 
             if rechazo_fuerte(v_manipulacion):
@@ -169,14 +213,19 @@ def detectar_entrada_oculta(data):
             if es_alcista(v_confirmacion):
                 score += 2
 
-            if confirmacion_fuerte(v_confirmacion):
-                score += 2
+            if impulso_fuerte(v_confirmacion):
+                score += 3
 
-            if not ruptura_valida(v_manipulacion, v_confirmacion):
+            if not confirmacion_fuerte(v_confirmacion):
                 continue
 
-            if score >= 5 and score > mejor_score:
-                mejor = (par, "call", score)
-                mejor_score = score
+            # 🔥 VALIDACIÓN REAL
+            if not ruptura_valida(df, "call"):
+                continue
+
+            if score >= 5:
+                if score > mejor_score:
+                    mejor_score = score
+                    mejor = (par, "call", score)
 
     return mejor
