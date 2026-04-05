@@ -61,17 +61,17 @@ def conectar():
         time.sleep(5)
 
 
-# 🔥 ENTRADA PRECISA REAL
+# 🔥 FIX REAL DE TIMING
 def esperar_apertura_real():
     while True:
         ahora = time.time()
         segundos = int(ahora) % 60
         milisegundos = ahora - int(ahora)
 
-        if segundos == 59 and milisegundos > 0.80:
+        if segundos == 58 and milisegundos > 0.90:
             return
 
-        time.sleep(0.01)
+        time.sleep(0.005)
 
 
 def obtener_velas(iq, par):
@@ -108,7 +108,7 @@ Dirección: {direccion.upper()}
 Expiración: 3 MIN
 Monto: ${MONTO}
 
-⏱ Entrada EXACTA en apertura
+⏱ Entrada en apertura REAL
 """)
 
     except Exception as e:
