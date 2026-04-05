@@ -1,261 +1,316 @@
-import time
-import os
-import requests
 import pandas as pd
 import numpy as np
-from iqoptionapi.stable_api import IQ_Option
 
-# =========================
-# CONFIG
-# =========================
-EMAIL = os.getenv("IQ_EMAIL")
-PASSWORD = os.getenv("IQ_PASSWORD")
+# ==========================
+# UTILIDADES
+# ==========================
+def body(c):
+    return abs(c["close"] - c["open"])
 
-TOKEN = os.getenv("TELEGRAM_TOKEN")
-CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+def rango(c):
+    return c["max"] - c["min"]
 
-MONTO = 17500
-CUENTA = "PRACTICE"
+def mecha_sup(c):
+    return c["max"] - max(c["open"], c["close"])
 
-PARES = [
-    "EURUSD-OTC",
-    "GBPUSD-OTC",
-    "EURJPY-OTC",
-    "EURGBP-OTC",
-    "GBPJPY-OTC",
-    "USDCHF-OTC"
-]
+def mecha_inf(c):
+    return min(c["open"], c["close"]) - c["min"]
 
-# =========================
-# TELEGRAM
-# =========================
-def enviar_mensaje(texto):
-    try:
-        url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
-        requests.post(url, data={
-            "chat_id": CHAT_ID,
-            "text": texto
-        }, timeout=5)
-    except:
-        pass
+def es_alcista(c):
+    return c["close"] > c["open"]
+
+def es_bajista(c):
+    return c["close"] < c["open"]
 
 
-# =========================
-# CONEXIÓN
-# =========================
-def conectar():
-    while True:
-        try:
-            iq = IQ_Option(EMAIL, PASSWORD)
-            iq.connect()
+# ==========================
+# RSI
+# ==========================
+def calcular_rsi(df, periodo=14):
+    delta = df["close"].diff()
 
-            if iq.check_connect():
-                iq.change_balance(CUENTA)
-                print("✅ CONECTADO")
-                return iq
+    ganancia = np.where(delta > 0, delta, 0)
+    perdida = np.where(delta < 0, -delta, 0)
 
-        except:
-            pass
+    roll_up = pd.Series(ganancia).rolling(periodo).mean()
+    roll_down = pd.Series(perdida).rolling(periodo).mean()
 
-        time.sleep(5)
+    rs = roll_up / roll_down
+    return 100 - (100 / (1 + rs))
 
 
-# =========================
-# VELAS
-# =========================
-def obtener_velas(iq, par):
-    try:
-        velas = iq.get_candles(par, 60, 180, time.time())  # 🔥 40 → 180
-
-        return [{
-            "open": v["open"],
-            "close": v["close"],
-            "max": v["max"],
-            "min": v["min"]
-        } for v in velas]
-
-    except:
-        return []
+# ==========================
+# NIVELES
+# ==========================
+def niveles(df):
+    soporte = df["min"].rolling(20).min().iloc[-1]
+    resistencia = df["max"].rolling(20).max().iloc[-1]
+    return soporte, resistencia
 
 
-# =========================
-# ⏱️ EXPIRACIÓN DINÁMICA
-# =========================
-def calcular_expiracion(df):
+def cerca(valor, nivel, rango_total):
+    return abs(valor - nivel) < rango_total * 0.05
 
-    volatilidad = np.mean(df["max"].iloc[-5:] - df["min"].iloc[-5:])
 
-    if volatilidad > 0.0005:
-        return 2  # mercado rápido
+# ==========================
+# FILTROS PRO
+# ==========================
+def zona_sucia(df, rango_total):
+    precio = df["close"].iloc[-1]
+    centro = (max(df["max"][-20:]) + min(df["min"][-20:])) / 2
+    return abs(precio - centro) < rango_total * 0.2
+
+
+def entrada_tardia(df, rango_total):
+    mov = abs(df["close"].iloc[-1] - df["close"].iloc[-4])
+    return mov > rango_total * 0.5
+
+
+def impulso_reciente(df, rango_total):
+    mov = df["close"].iloc[-1] - df["close"].iloc[-3]
+    return abs(mov) > rango_total * 0.35
+
+
+def rango_muerto(df):
+    velas = df.iloc[-5:]
+    return all(body(v) < rango(v) * 0.4 for _, v in velas.iterrows())
+
+
+def posible_trampa(df):
+    v = df.iloc[-1]
+    prev = df.iloc[-2]
+    return (
+        body(v) > body(prev) * 1.5 and
+        (mecha_sup(v) > body(v) or mecha_inf(v) > body(v))
+    )
+
+
+# ==========================
+# 🔥 NUEVOS FILTROS PRO
+# ==========================
+def continuacion_activa(df):
+    ultimas = df.iloc[-4:]
+    verdes = sum(ultimas["close"] > ultimas["open"])
+    rojas = sum(ultimas["close"] < ultimas["open"])
+    return verdes >= 3 or rojas >= 3
+
+
+def agotamiento(df):
+    ultimas = df.iloc[-3:]
+    cuerpos = [body(v) for _, v in ultimas.iterrows()]
+    return cuerpos[0] > cuerpos[1] > cuerpos[2]
+
+
+def movimiento_limpio(df):
+    ultimas = df.iloc[-5:]
+    return all(v["close"] > v["open"] for _, v in ultimas.iterrows()) or \
+           all(v["close"] < v["open"] for _, v in ultimas.iterrows())
+
+
+def consolidacion(df):
+    ultimas = df.iloc[-5:]
+    rangos = [rango(v) for _, v in ultimas.iterrows()]
+    return np.mean(rangos) < (max(rangos) * 0.6)
+
+
+def inicio_reversa(df):
+    v = df.iloc[-1]
+    prev = df.iloc[-2]
+    return body(v) > body(prev) * 1.5
+
+
+# ==========================
+# ACCIÓN DE PRECIO
+# ==========================
+def hay_barrida(df):
+    v = df.iloc[-1]
+    prev = df.iloc[-2]
+    return v["min"] < prev["min"] or v["max"] > prev["max"]
+
+
+def hay_impulso(v):
+    return body(v) > rango(v) * 0.5
+
+
+def vela_fuerte(v):
+    return body(v) > rango(v) * 0.6
+
+
+def rechazo_pro(v, direccion):
+    cuerpo = body(v)
+
+    if direccion == "call":
+        return mecha_inf(v) > cuerpo * 2.5
     else:
-        return 3  # mercado lento
+        return mecha_sup(v) > cuerpo * 2.5
 
 
-# =========================
-# 🔥 ENTRADA MEJORADA
-# =========================
-def detectar_entrada(data):
+def fallo_continuacion(df, tipo):
+    v = df.iloc[-1]
+    prev = df.iloc[-2]
+
+    if tipo == "call":
+        return v["min"] < prev["min"] and v["close"] > prev["min"]
+    else:
+        return v["max"] > prev["max"] and v["close"] < prev["max"]
+
+
+def confirmacion_real(df, direccion):
+    v = df.iloc[-1]
+    prev = df.iloc[-2]
+
+    if direccion == "call":
+        return v["close"] > prev["max"]
+    else:
+        return v["close"] < prev["min"]
+
+
+def primer_toque(df, nivel, tipo):
+    if tipo == "soporte":
+        return df["min"].iloc[-2] > nivel
+    else:
+        return df["max"].iloc[-2] < nivel
+
+
+# ==========================
+# DIVERGENCIA
+# ==========================
+def divergencia_rsi(df):
+    precios = df["close"]
+    rsi = df["rsi"]
+
+    if precios.iloc[-1] < precios.iloc[-5] and rsi.iloc[-1] > rsi.iloc[-5]:
+        return "alcista"
+
+    if precios.iloc[-1] > precios.iloc[-5] and rsi.iloc[-1] < rsi.iloc[-5]:
+        return "bajista"
+
+    return None
+
+
+# ==========================
+# 🚀 ENTRADA FINAL PRO MAX
+# ==========================
+def detectar_entrada_oculta(data_por_par):
 
     mejor = None
     mejor_score = 0
-    mejor_df = None
 
-    for par, velas in data.items():
+    for par, velas in data_por_par.items():
 
         df = pd.DataFrame(velas)
 
         if len(df) < 30:
             continue
 
-        soporte = df["min"].rolling(20).min().iloc[-1]
-        resistencia = df["max"].rolling(20).max().iloc[-1]
+        df["rsi"] = calcular_rsi(df)
+        rsi_actual = df["rsi"].iloc[-1]
 
+        soporte, resistencia = niveles(df)
         rango_total = max(df["max"][-20:]) - min(df["min"][-20:])
 
         v = df.iloc[-1]
 
-        cuerpo = abs(v["close"] - v["open"])
-        rango = v["max"] - v["min"]
-
-        if rango == 0:
+        # ==========================
+        # FILTROS CRÍTICOS
+        # ==========================
+        if zona_sucia(df, rango_total):
             continue
 
-        mecha_sup = v["max"] - max(v["open"], v["close"])
-        mecha_inf = min(v["open"], v["close"]) - v["min"]
+        if entrada_tardia(df, rango_total):
+            continue
 
-        # =========================
-        # 🔥 FILTROS NUEVOS
-        # =========================
-        mov = abs(df["close"].iloc[-1] - df["close"].iloc[-5])
-        if mov > rango_total * 0.6:
-            continue  # mercado estirado
+        if impulso_reciente(df, rango_total):
+            continue
 
-        ultimas = df.iloc[-5:]
-        verdes = sum(ultimas["close"] > ultimas["open"])
-        rojas = sum(ultimas["close"] < ultimas["open"])
+        if rango_muerto(df):
+            continue
 
-        if verdes >= 4 or rojas >= 4:
-            continue  # secuencia fuerte (entrada tardía)
+        if posible_trampa(df):
+            continue
+
+        if continuacion_activa(df):
+            continue
+
+        if movimiento_limpio(df):
+            continue
+
+        if consolidacion(df):
+            continue
+
+        if not agotamiento(df):
+            continue
+
+        if not inicio_reversa(df):
+            continue
+
+        if not hay_barrida(df):
+            continue
+
+        if not hay_impulso(v):
+            continue
+
+        if not vela_fuerte(v):
+            continue
+
+        score = 0
+        direccion = None
+
+        div = divergencia_rsi(df)
 
         # ======================
-        # SOPORTE → CALL
+        # CALL
         # ======================
-        if abs(v["min"] - soporte) < rango_total * 0.05:
+        if cerca(v["min"], soporte, rango_total):
 
-            confirmaciones = 0
+            if not primer_toque(df, soporte, "soporte"):
+                continue
 
-            if mecha_inf > cuerpo:
-                confirmaciones += 1
+            if div == "alcista" and rsi_actual < 30:
 
-            if v["close"] > v["open"] and cuerpo > rango * 0.5:
-                confirmaciones += 1
+                if fallo_continuacion(df, "call"):
+                    score += 3
 
-            if v["close"] > df["close"].iloc[-2]:
-                confirmaciones += 1
+                if rechazo_pro(v, "call"):
+                    score += 2
 
-            if confirmaciones >= 2:
+                if confirmacion_real(df, "call"):
+                    score += 3
+
+                if es_alcista(v):
+                    score += 2
+
                 direccion = "call"
-                score = confirmaciones
 
-            else:
+        # ======================
+        # PUT
+        # ======================
+        if cerca(v["max"], resistencia, rango_total):
+
+            if not primer_toque(df, resistencia, "resistencia"):
                 continue
 
-        # ======================
-        # RESISTENCIA → PUT
-        # ======================
-        elif abs(v["max"] - resistencia) < rango_total * 0.05:
+            if div == "bajista" and rsi_actual > 70:
 
-            confirmaciones = 0
+                if fallo_continuacion(df, "put"):
+                    score += 3
 
-            if mecha_sup > cuerpo:
-                confirmaciones += 1
+                if rechazo_pro(v, "put"):
+                    score += 2
 
-            if v["close"] < v["open"] and cuerpo > rango * 0.5:
-                confirmaciones += 1
+                if confirmacion_real(df, "put"):
+                    score += 3
 
-            if v["close"] < df["close"].iloc[-2]:
-                confirmaciones += 1
+                if es_bajista(v):
+                    score += 2
 
-            if confirmaciones >= 2:
                 direccion = "put"
-                score = confirmaciones
 
-            else:
-                continue
-
-        else:
-            continue
-
-        if score > mejor_score:
+        if score > mejor_score and direccion:
             mejor_score = score
-            mejor = (par, direccion)
-            mejor_df = df
+            mejor = (par, direccion, score)
 
-    if mejor and mejor_score >= 2:
-        return mejor, mejor_df
+    if mejor and mejor_score >= 6:
+        return mejor
 
-    return None, None
-
-
-# =========================
-# OPERAR
-# =========================
-def operar(iq, par, direccion, df):
-
-    try:
-        expiracion = calcular_expiracion(df)
-
-        check, _ = iq.buy(MONTO, par, direccion, expiracion)
-
-        if check:
-            print(f"🚀 ENTRADA {par} {direccion}")
-
-            enviar_mensaje(f"""
-🚀 ENTRADA
-
-Par: {par}
-Dirección: {direccion.upper()}
-Expiración: {expiracion} MIN
-Monto: ${MONTO}
-""")
-
-    except:
-        pass
-
-
-# =========================
-# LOOP
-# =========================
-def run():
-
-    iq = conectar()
-
-    while True:
-        try:
-
-            data = {}
-
-            for par in PARES:
-                data[par] = obtener_velas(iq, par)
-
-            señal, df = detectar_entrada(data)
-
-            if señal:
-                par, direccion = señal
-
-                operar(iq, par, direccion, df)
-
-                time.sleep(180)
-
-            else:
-                time.sleep(1)
-
-        except:
-            time.sleep(5)
-
-
-# =========================
-# START
-# =========================
-if __name__ == "__main__":
-    run()
+    return None
