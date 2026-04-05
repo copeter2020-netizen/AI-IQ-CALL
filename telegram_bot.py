@@ -1,45 +1,83 @@
-import requests
-import os
+import time
+import threading
+from telegram import Bot
+from telegram.ext import Updater, CommandHandler
+from estrategia import detectar_entrada_oculta
 
-TOKEN = os.getenv("TELEGRAM_TOKEN")
-CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+TOKEN = "TU_TOKEN_AQUI"
+CHAT_ID = "TU_CHAT_ID"
+
+bot = Bot(token=TOKEN)
 
 bot_activo = False
-last_update = 0
 
-def enviar(msg):
-    try:
-        requests.post(
-            f"https://api.telegram.org/bot{TOKEN}/sendMessage",
-            data={"chat_id": CHAT_ID, "text": msg},
-            timeout=5
-        )
-    except:
-        pass
 
-def escuchar():
-    global bot_activo, last_update
+# ==========================
+# COMANDOS
+# ==========================
+def startbot(update, context):
+    global bot_activo
+    bot_activo = True
+    update.message.reply_text("✅ Bot ACTIVADO")
 
-    try:
-        r = requests.get(
-            f"https://api.telegram.org/bot{TOKEN}/getUpdates?offset={last_update + 1}",
-            timeout=5
-        ).json()
 
-        for update in r.get("result", []):
-            last_update = update["update_id"]
+def stopbot(update, context):
+    global bot_activo
+    bot_activo = False
+    update.message.reply_text("🛑 Bot DETENIDO")
 
-            msg = update.get("message", {}).get("text", "")
 
-            if msg == "/startbot":
-                bot_activo = True
-                enviar("✅ BOT ACTIVADO")
+# ==========================
+# LOOP DEL BOT
+# ==========================
+def ejecutar_bot():
 
-            elif msg == "/stopbot":
-                bot_activo = False
-                enviar("⛔ BOT DETENIDO")
+    global bot_activo
 
-    except:
-        pass
+    while True:
 
-    return bot_activo
+        if bot_activo:
+            try:
+                # 🔴 AQUÍ debes conectar tu data real
+                data = obtener_datos()  # <-- debes tener esta función
+
+                señal = detectar_entrada_oculta(data)
+
+                if señal:
+                    par, direccion, score = señal
+
+                    mensaje = f"""
+🔥 SEÑAL DETECTADA 🔥
+
+Par: {par}
+Dirección: {direccion.upper()}
+Score: {score}
+"""
+                    bot.send_message(chat_id=CHAT_ID, text=mensaje)
+
+            except Exception as e:
+                print("Error:", e)
+
+        time.sleep(10)
+
+
+# ==========================
+# MAIN
+# ==========================
+def main():
+
+    updater = Updater(TOKEN, use_context=True)
+    dp = updater.dispatcher
+
+    dp.add_handler(CommandHandler("startbot", startbot))
+    dp.add_handler(CommandHandler("stopbot", stopbot))
+
+    hilo = threading.Thread(target=ejecutar_bot)
+    hilo.start()
+
+    updater.start_polling()
+    updater.idle()
+
+
+if __name__ == "__main__":
+    main()
