@@ -71,45 +71,25 @@ def mercado_activo(df):
 
 
 # ==========================
-# 🔒 DIVERGENCIA + NIVEL
+# 🔒 DIVERGENCIA
 # ==========================
-def detectar_divergencia_nivel(df):
-    if len(df) < 20:
-        return None, None
-
+def divergencia_rsi(df):
     precios = df["close"]
     rsi = df["rsi"]
 
-    # Divergencia alcista → guardar mínimo
     if precios.iloc[-1] < precios.iloc[-5] and rsi.iloc[-1] > rsi.iloc[-5]:
-        nivel = df["min"].iloc[-1]
-        return "alcista", nivel
+        return "alcista"
 
-    # Divergencia bajista → guardar máximo
     if precios.iloc[-1] > precios.iloc[-5] and rsi.iloc[-1] < rsi.iloc[-5]:
-        nivel = df["max"].iloc[-1]
-        return "bajista", nivel
+        return "bajista"
 
-    return None, None
-
-
-# ==========================
-# 🔁 RETESTEO DE DIVERGENCIA
-# ==========================
-def retesteo_divergencia(v, nivel, tipo, rango_total):
-    if nivel is None:
-        return False
-
-    if tipo == "alcista":
-        return abs(v["min"] - nivel) < rango_total * 0.02
-    else:
-        return abs(v["max"] - nivel) < rango_total * 0.02
+    return None
 
 
 # ==========================
 # 🧠 FAKE BREAKOUT
 # ==========================
-def fake_breakout(v, nivel, tipo="soporte"):
+def fake_breakout(v, nivel, tipo):
     if tipo == "soporte":
         return v["min"] < nivel and v["close"] > nivel
     else:
@@ -131,7 +111,18 @@ def micro_retroceso(df):
 
 
 # ==========================
-# 🔥 ENTRADA PRO (MODIFICADA)
+# 🔥 VELA TRAMPA (NUEVO)
+# ==========================
+def vela_trampa(v):
+    # vela débil con rechazo → antes del impulso
+    return (
+        body(v) < rango(v) * 0.4 and
+        (mecha_inf(v) > body(v) or mecha_sup(v) > body(v))
+    )
+
+
+# ==========================
+# 🔥 ENTRADA SNIPER
 # ==========================
 def detectar_entrada_oculta(data_por_par):
 
@@ -154,58 +145,57 @@ def detectar_entrada_oculta(data_por_par):
         soporte, resistencia = niveles(df)
         rango_total = max(df["max"][-20:]) - min(df["min"][-20:])
 
-        v = df.iloc[-1]
+        v = df.iloc[-1]       # vela actual
+        prev = df.iloc[-2]    # 🔥 vela trampa
 
         score = 0
         direccion = None
 
-        div_tipo, div_nivel = detectar_divergencia_nivel(df)
+        div = divergencia_rsi(df)
 
         # ======================
-        # 🔥 CALL (OBLIGATORIO)
+        # 🔥 CALL (ANTES DEL IMPULSO)
         # ======================
-        if div_tipo == "alcista":
+        if cerca(v["min"], soporte, rango_total):
 
-            if retesteo_divergencia(v, div_nivel, "alcista", rango_total):
+            if div == "alcista":
+                score += 2
 
                 if rsi_actual < 30:
-                    score += 3
+                    score += 2
 
-                    if fake_breakout(v, div_nivel, "soporte"):
+                    # 🔥 clave: vela trampa
+                    if vela_trampa(prev):
+                        score += 3
+
+                    if fake_breakout(prev, soporte, "soporte"):
                         score += 2
 
                     if micro_retroceso(df):
                         score += 1
-
-                    if mecha_inf(v) > body(v):
-                        score += 2
-
-                    if es_alcista(v):
-                        score += 2
 
                     direccion = "call"
 
         # ======================
-        # 🔥 PUT (OBLIGATORIO)
+        # 🔥 PUT (ANTES DEL IMPULSO)
         # ======================
-        if div_tipo == "bajista":
+        if cerca(v["max"], resistencia, rango_total):
 
-            if retesteo_divergencia(v, div_nivel, "bajista", rango_total):
+            if div == "bajista":
+                score += 2
 
                 if rsi_actual > 70:
-                    score += 3
+                    score += 2
 
-                    if fake_breakout(v, div_nivel, "resistencia"):
+                    # 🔥 vela trampa arriba
+                    if vela_trampa(prev):
+                        score += 3
+
+                    if fake_breakout(prev, resistencia, "resistencia"):
                         score += 2
 
                     if micro_retroceso(df):
                         score += 1
-
-                    if mecha_sup(v) > body(v):
-                        score += 2
-
-                    if es_bajista(v):
-                        score += 2
 
                     direccion = "put"
 
