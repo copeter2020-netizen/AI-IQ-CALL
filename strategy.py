@@ -71,7 +71,53 @@ def mercado_activo(df):
 
 
 # ==========================
-# 🔥 ENTRADA OCULTA + RSI
+# 🔒 DIVERGENCIA RSI
+# ==========================
+def divergencia_rsi(df):
+    if len(df) < 20:
+        return None
+
+    precios = df["close"]
+    rsi = df["rsi"]
+
+    # mínimos
+    if precios.iloc[-1] < precios.iloc[-5] and rsi.iloc[-1] > rsi.iloc[-5]:
+        return "alcista"
+
+    # máximos
+    if precios.iloc[-1] > precios.iloc[-5] and rsi.iloc[-1] < rsi.iloc[-5]:
+        return "bajista"
+
+    return None
+
+
+# ==========================
+# 🧠 FAKE BREAKOUT
+# ==========================
+def fake_breakout(v, nivel, tipo="soporte"):
+    if tipo == "soporte":
+        return v["min"] < nivel and v["close"] > nivel
+    else:
+        return v["max"] > nivel and v["close"] < nivel
+
+
+# ==========================
+# 🎯 MICRO RETROCESO
+# ==========================
+def micro_retroceso(df):
+    if len(df) < 3:
+        return False
+
+    v1 = df.iloc[-3]
+    v2 = df.iloc[-2]
+    v3 = df.iloc[-1]
+
+    # pequeño retroceso antes de impulso
+    return body(v2) < body(v1) and body(v3) > body(v2)
+
+
+# ==========================
+# 🔥 ENTRADA PRO
 # ==========================
 def detectar_entrada_oculta(data_por_par):
 
@@ -88,7 +134,6 @@ def detectar_entrada_oculta(data_por_par):
         if not mercado_activo(df):
             continue
 
-        # RSI
         df["rsi"] = calcular_rsi(df)
         rsi_actual = df["rsi"].iloc[-1]
 
@@ -96,63 +141,75 @@ def detectar_entrada_oculta(data_por_par):
         rango_total = max(df["max"][-20:]) - min(df["min"][-20:])
 
         v = df.iloc[-1]
-        prev = df.iloc[-2]
 
         score = 0
         direccion = None
 
+        div = divergencia_rsi(df)
+
         # ======================
-        # 🔥 SOPORTE → CALL + RSI
+        # 🔥 CALL
         # ======================
         if cerca(v["min"], soporte, rango_total):
 
-            # RSI en sobreventa
             if rsi_actual < 30:
                 score += 2
-
-                # mejor punto (más extremo)
                 if rsi_actual < 25:
                     score += 1
                 if rsi_actual < 20:
                     score += 1
 
+            if div == "alcista":
+                score += 2
+
+            if fake_breakout(v, soporte, "soporte"):
+                score += 2
+
+            if micro_retroceso(df):
+                score += 1
+
             if mecha_inf(v) > body(v):
                 score += 2
 
-            if es_alcista(v) and body(v) > rango(v) * 0.4:
+            if es_alcista(v):
                 score += 2
 
             direccion = "call"
 
         # ======================
-        # 🔥 RESISTENCIA → PUT + RSI
+        # 🔥 PUT
         # ======================
         if cerca(v["max"], resistencia, rango_total):
 
-            # RSI en sobrecompra
             if rsi_actual > 70:
                 score += 2
-
-                # mejor punto (más extremo)
                 if rsi_actual > 75:
                     score += 1
                 if rsi_actual > 80:
                     score += 1
 
+            if div == "bajista":
+                score += 2
+
+            if fake_breakout(v, resistencia, "resistencia"):
+                score += 2
+
+            if micro_retroceso(df):
+                score += 1
+
             if mecha_sup(v) > body(v):
                 score += 2
 
-            if es_bajista(v) and body(v) > rango(v) * 0.4:
+            if es_bajista(v):
                 score += 2
 
             direccion = "put"
 
-        # Guardar mejor
-        if score > mejor_score and direccion is not None:
+        if score > mejor_score and direccion:
             mejor_score = score
             mejor = (par, direccion, score)
 
-    if mejor and mejor_score >= 4:  # subimos exigencia por RSI
+    if mejor and mejor_score >= 5:
         return mejor
 
     return None
