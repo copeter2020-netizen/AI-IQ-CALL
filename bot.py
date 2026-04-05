@@ -5,13 +5,8 @@ from telegram_bot import enviar, escuchar
 
 print("✅ BOT CONECTADO")
 
-# ==========================
-# SIMULACIÓN DE DATOS (IQ OPTION)
-# ==========================
 def obtener_datos():
-
-    # ⚠️ AQUÍ luego conectamos IQ Option real
-    pares = ["EURUSD", "GBPUSD", "USDJPY", "AUDUSD"]
+    pares = ["EURUSD", "GBPUSD", "USDJPY"]
 
     data = {}
 
@@ -39,9 +34,6 @@ def obtener_datos():
     return data
 
 
-# ==========================
-# LOOP PRINCIPAL
-# ==========================
 while True:
 
     activo = escuchar()
@@ -58,13 +50,10 @@ while True:
         if entrada:
             par, direccion, score = entrada
 
-            mensaje = f"📊 ENTRADA\n{par}\n{direccion.upper()}\nScore: {score}"
-
             print(f"Entrada: {par} {direccion} ⭐{score}")
-            enviar(mensaje)
+            enviar(f"📊 {par} {direccion.upper()} ⭐{score}")
 
-            time.sleep(60)  # evita spam
-
+            time.sleep(60)
         else:
             time.sleep(2)
 
