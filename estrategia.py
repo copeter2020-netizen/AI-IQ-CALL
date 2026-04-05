@@ -1,139 +1,189 @@
 import pandas as pd
-import numpy as np
 
-def body(c):
-    return abs(c["close"] - c["open"])
+# =========================
+# FUNCIONES BASE
+# =========================
 
-def rango(c):
-    return c["max"] - c["min"]
+def es_alcista(v):
+    return v["close"] > v["open"]
 
-def mecha_sup(c):
-    return c["max"] - max(c["open"], c["close"])
+def es_bajista(v):
+    return v["close"] < v["open"]
 
-def mecha_inf(c):
-    return min(c["open"], c["close"]) - c["min"]
+def cuerpo(v):
+    return abs(v["close"] - v["open"])
 
-def es_alcista(c):
-    return c["close"] > c["open"]
+# =========================
+# ZONAS
+# =========================
 
-def es_bajista(c):
-    return c["close"] < c["open"]
+def calcular_zonas(df, lookback=20):
+    resistencia = df["high"].tail(lookback).max()
+    soporte = df["low"].tail(lookback).min()
+    return soporte, resistencia
 
-def calcular_rsi(df, periodo=14):
-    delta = df["close"].diff()
-    gain = (delta.where(delta > 0, 0)).rolling(periodo).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(periodo).mean()
-    rs = gain / loss
-    return 100 - (100 / (1 + rs))
+def zona_valida(df, soporte, resistencia):
+    precio = df["close"].iloc[-1]
+    rango = resistencia - soporte
 
-def tendencia_fuerte(df):
-    ult = df.iloc[-6:]
-    verdes = sum(ult["close"] > ult["open"])
-    rojas = sum(ult["close"] < ult["open"])
-    return verdes >= 5 or rojas >= 5
+    if rango == 0:
+        return False
 
-def consolidacion(df):
-    ult = df.iloc[-5:]
-    rangos = [rango(v) for _, v in ult.iterrows()]
-    return np.mean(rangos) < (max(rangos) * 0.5)
+    return (
+        abs(precio - soporte) < rango * 0.25 or
+        abs(precio - resistencia) < rango * 0.25
+    )
 
-def barrida_liquidez(df):
-    v = df.iloc[-1]
-    prev = df.iloc[-2]
-    return v["max"] > prev["max"] or v["min"] < prev["min"]
+# =========================
+# FILTROS
+# =========================
 
-def rechazo(v, tipo):
-    if tipo == "call":
-        return mecha_inf(v) > body(v) * 2
-    else:
-        return mecha_sup(v) > body(v) * 2
+def movimiento_extendido(df, direccion):
+    ultimas = df.iloc[-4:]
 
-def confirmacion(df, tipo):
-    v = df.iloc[-1]
-    prev = df.iloc[-2]
-    if tipo == "call":
-        return v["close"] > prev["max"]
-    else:
-        return v["close"] < prev["min"]
+    if direccion == "call":
+        verdes = sum(es_alcista(v) for _, v in ultimas.iterrows())
+        return verdes >= 3
 
-def divergencia(df):
-    precio = df["close"]
-    rsi = df["rsi"]
+    if direccion == "put":
+        rojas = sum(es_bajista(v) for _, v in ultimas.iterrows())
+        return rojas >= 3
 
-    if precio.iloc[-1] < precio.iloc[-5] and rsi.iloc[-1] > rsi.iloc[-5]:
-        return "alcista"
+    return False
 
-    if precio.iloc[-1] > precio.iloc[-5] and rsi.iloc[-1] < rsi.iloc[-5]:
-        return "bajista"
+def frenado(df):
+    v1 = df.iloc[-2]
+    v2 = df.iloc[-3]
+    return cuerpo(v1) < cuerpo(v2)
+
+def zona_acumulacion(df):
+    ultimas = df.iloc[-5:]
+    cuerpos = [cuerpo(v) for _, v in ultimas.iterrows()]
+    promedio = sum(cuerpos) / len(cuerpos)
+    return max(cuerpos) < promedio * 1.5
+
+# =========================
+# TENDENCIA
+# =========================
+
+def tendencia_bajista(df):
+    return df["close"].iloc[-2] < df["close"].iloc[-5]
+
+def tendencia_alcista(df):
+    return df["close"].iloc[-2] > df["close"].iloc[-5]
+
+# =========================
+# CAMBIO DE COLOR
+# =========================
+
+def cambio_color_valido(df):
+    v1 = df.iloc[-2]
+    v2 = df.iloc[-3]
+
+    return es_alcista(v1) and es_bajista(v2) and cuerpo(v1) < cuerpo(v2)
+
+def cambio_color_valido_put(df):
+    v1 = df.iloc[-2]
+    v2 = df.iloc[-3]
+
+    return es_bajista(v1) and es_alcista(v2) and cuerpo(v1) < cuerpo(v2)
+
+# =========================
+# MANIPULACIÓN
+# =========================
+
+def manipulacion(df):
+    v = df.iloc[-2]
+    return {"min": v["low"], "max": v["high"]}
+
+# =========================
+# 🔥 FUNCIÓN QUE FALTABA
+# =========================
+
+def detectar_entrada_oculta(df):
+    """
+    Entrada anticipada cuando hay agotamiento + micro reversa
+    """
+
+    if len(df) < 10:
+        return None
+
+    v1 = df.iloc[-2]
+    v2 = df.iloc[-3]
+    v3 = df.iloc[-4]
+
+    # CALL oculto (rebote temprano)
+    if (
+        es_alcista(v1) and
+        es_bajista(v2) and
+        es_bajista(v3) and
+        cuerpo(v1) < cuerpo(v2)
+    ):
+        return "call"
+
+    # PUT oculto (rechazo temprano)
+    if (
+        es_bajista(v1) and
+        es_alcista(v2) and
+        es_alcista(v3) and
+        cuerpo(v1) < cuerpo(v2)
+    ):
+        return "put"
 
     return None
 
-def niveles(df):
-    soporte = df["min"].rolling(20).min().iloc[-1]
-    resistencia = df["max"].rolling(20).max().iloc[-1]
-    return soporte, resistencia
+# =========================
+# FUNCIÓN PRINCIPAL
+# =========================
 
-def detectar_entrada_oculta(data):
+def generar_senal(df, par):
 
-    mejor = None
-    mejor_score = 0
+    if len(df) < 30:
+        return None
 
-    for par, velas in data.items():
+    soporte, resistencia = calcular_zonas(df)
 
-        df = pd.DataFrame(velas)
+    if not zona_valida(df, soporte, resistencia):
+        return None
 
-        if len(df) < 30:
-            continue
+    zona_manip = manipulacion(df)
 
-        df["rsi"] = calcular_rsi(df)
-        rsi = df["rsi"].iloc[-1]
+    # =========================
+    # ENTRADA OCULTA (PRIORIDAD)
+    # =========================
 
-        soporte, resistencia = niveles(df)
-        rango_total = max(df["max"][-20:]) - min(df["min"][-20:])
+    entrada_oculta = detectar_entrada_oculta(df)
 
-        v = df.iloc[-1]
+    if entrada_oculta == "call":
+        return {"par": par, "direccion": "call", "expiracion": 1}
 
-        if tendencia_fuerte(df):
-            continue
+    if entrada_oculta == "put":
+        return {"par": par, "direccion": "put", "expiracion": 1}
 
-        if consolidacion(df):
-            continue
+    # =========================
+    # ENTRADA NORMAL
+    # =========================
 
-        if not barrida_liquidez(df):
-            continue
+    # CALL
+    if (
+        tendencia_bajista(df) and
+        zona_manip["min"] <= soporte and
+        cambio_color_valido(df) and
+        zona_acumulacion(df) and
+        frenado(df) and
+        not movimiento_extendido(df, "call")
+    ):
+        return {"par": par, "direccion": "call", "expiracion": 1}
 
-        score = 0
-        direccion = None
-
-        div = divergencia(df)
-
-        # CALL
-        if abs(v["min"] - soporte) < rango_total * 0.04:
-            if div == "alcista" and rsi < 35:
-                if rechazo(v, "call"):
-                    score += 3
-                if confirmacion(df, "call"):
-                    score += 3
-                if es_alcista(v):
-                    score += 2
-                direccion = "call"
-
-        # PUT
-        if abs(v["max"] - resistencia) < rango_total * 0.04:
-            if div == "bajista" and rsi > 65:
-                if rechazo(v, "put"):
-                    score += 3
-                if confirmacion(df, "put"):
-                    score += 3
-                if es_bajista(v):
-                    score += 2
-                direccion = "put"
-
-        if score > mejor_score and direccion:
-            mejor = (par, direccion, score)
-            mejor_score = score
-
-    if mejor and mejor_score >= 6:
-        return mejor
+    # PUT
+    if (
+        tendencia_alcista(df) and
+        zona_manip["max"] >= resistencia and
+        cambio_color_valido_put(df) and
+        zona_acumulacion(df) and
+        frenado(df) and
+        not movimiento_extendido(df, "put")
+    ):
+        return {"par": par, "direccion": "put", "expiracion": 1}
 
     return None
