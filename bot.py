@@ -40,10 +40,7 @@ PARES = [
     "CHFNOK-OTC",
     "CHFJPY-OTC",
     "GBPJPY-OTC",
-    "USDCHF-OTC",
-    "GBPUSD-OTC",
-    "NZDUSD-OTC",
-    "AUDCHF-OTC",
+    "USDCHF-OTC", 
     "AUDCAD-OTC"
 ]
 
