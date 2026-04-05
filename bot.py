@@ -34,11 +34,17 @@ CUENTA = "PRACTICE"
 
 PARES = [
     "EURUSD-OTC",
-    "GBPUSD-OTC",
     "EURJPY-OTC",
-    "EURGBP-OTC",
+    "EURCAD-OTC",
+    "EURAUD-OTC",
+    "CHFNOK-OTC",
+    "CHFJPY-OTC",
     "GBPJPY-OTC",
-    "USDCHF-OTC"
+    "USDCHF-OTC",
+    "GBPUSD-OTC",
+    "NZDUSD-OTC",
+    "AUDCHF-OTC",
+    "AUDCAD-OTC"
 ]
 
 # =========================
