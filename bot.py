@@ -1,96 +1,182 @@
 import time
-import json
 import os
-from estrategia import detectar_entrada_oculta
+import requests
+import sys
+from iqoptionapi.stable_api import IQ_Option
 
-HISTORIAL = "historial.json"
+# =========================
+# 🔥 FIX PATH (Railway)
+# =========================
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.append(BASE_DIR)
 
-def esperar_apertura():
+# =========================
+# 🔥 IMPORT SEGURO
+# =========================
+try:
+    from estrategia import detectar_entrada_oculta
+except Exception as e:
+    print("❌ Error importando estrategia:", e)
+    detectar_entrada_oculta = None
+
+
+# =========================
+# CONFIG
+# =========================
+EMAIL = os.getenv("IQ_EMAIL")
+PASSWORD = os.getenv("IQ_PASSWORD")
+
+TOKEN = os.getenv("TELEGRAM_TOKEN")
+CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+
+MONTO = 1750
+CUENTA = "PRACTICE"
+
+PARES = [
+    "EURUSD-OTC",
+    "GBPUSD-OTC",
+    "EURJPY-OTC",
+    "EURGBP-OTC",
+    "GBPJPY-OTC",
+    "USDCHF-OTC"
+]
+
+
+# =========================
+# TELEGRAM
+# =========================
+def enviar_mensaje(texto):
+    try:
+        url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
+        requests.post(url, data={
+            "chat_id": CHAT_ID,
+            "text": texto
+        }, timeout=5)
+    except:
+        pass
+
+
+# =========================
+# CONEXIÓN
+# =========================
+def conectar():
     while True:
-        if int(time.time()) % 60 == 0:
-            break
+        try:
+            iq = IQ_Option(EMAIL, PASSWORD)
+            iq.connect()
+
+            if iq.check_connect():
+                iq.change_balance(CUENTA)
+                print("✅ CONECTADO")
+                return iq
+
+        except Exception as e:
+            print("Error conexión:", e)
+
+        time.sleep(5)
+
+
+# =========================
+# ⏱️ ESPERAR APERTURA REAL
+# =========================
+def esperar_apertura_vela():
+    while True:
+        segundos = int(time.time()) % 60
+
+        # Entrada EXACTA en apertura
+        if segundos == 0:
+            return
+
         time.sleep(0.2)
 
-def guardar_trade(par, direccion, resultado, score):
-    data = []
 
-    if os.path.exists(HISTORIAL):
-        with open(HISTORIAL, "r") as f:
-            data = json.load(f)
+# =========================
+# VELAS
+# =========================
+def obtener_velas(iq, par):
+    try:
+        velas = iq.get_candles(par, 60, 40, time.time())
 
-    data.append({
-        "par": par,
-        "direccion": direccion,
-        "resultado": resultado,
-        "score": score
-    })
+        return [{
+            "open": v["open"],
+            "close": v["close"],
+            "max": v["max"],
+            "min": v["min"]
+        } for v in velas]
 
-    with open(HISTORIAL, "w") as f:
-        json.dump(data, f, indent=4)
-
-def analizar_historial():
-    if not os.path.exists(HISTORIAL):
-        return 6
-
-    with open(HISTORIAL, "r") as f:
-        data = json.load(f)
-
-    if len(data) < 20:
-        return 6
-
-    wins = len([d for d in data if d["resultado"] == "win"])
-    total = len(data)
-
-    winrate = wins / total
-
-    if winrate < 0.5:
-        return 8
-    elif winrate > 0.7:
-        return 5
-
-    return 6
+    except Exception as e:
+        print("Error velas:", e)
+        return []
 
 
-# ==========================
-# SIMULACIÓN (CÁMBIALO POR API REAL)
-# ==========================
-def obtener_datos():
-    return {}  # aquí conectas IQ Option
+# =========================
+# OPERAR
+# =========================
+def operar(iq, par, direccion):
+
+    try:
+        esperar_apertura_vela()
+
+        check, _ = iq.buy(MONTO, par, direccion, 3)
+
+        if check:
+            print(f"🚀 ENTRADA {par} {direccion}")
+
+            enviar_mensaje(f"""
+🚀 ENTRADA PRO
+
+Par: {par}
+Dirección: {direccion.upper()}
+Expiración: 3 MIN
+Monto: ${MONTO}
+
+⏱ Entrada en apertura REAL
+""")
+
+    except Exception as e:
+        print("Error operar:", e)
 
 
-def ejecutar_trade(par, direccion):
-    print(f"📊 Ejecutando {direccion} en {par}")
-    return "win"  # simulación
+# =========================
+# LOOP
+# =========================
+def run():
 
+    if detectar_entrada_oculta is None:
+        print("❌ No se puede ejecutar sin estrategia.py")
+        return
 
-# ==========================
-# LOOP PRINCIPAL
-# ==========================
-def main():
-    print("🤖 BOT SNIPER IA INICIADO")
+    iq = conectar()
 
     while True:
+        try:
 
-        data = obtener_datos()
+            data = {}
 
-        entrada = detectar_entrada_oculta(data)
+            for par in PARES:
+                data[par] = obtener_velas(iq, par)
 
-        if entrada:
-            par, direccion, score = entrada
+            señal = detectar_entrada_oculta(data)
 
-            min_score = analizar_historial()
+            if señal:
+                par, direccion, score = señal
 
-            if score >= min_score:
-                print(f"🎯 Señal detectada {par} {direccion} score={score}")
+                print(f"🎯 Señal {par} {direccion} Score:{score}")
 
-                esperar_apertura()
+                operar(iq, par, direccion)
 
-                resultado = ejecutar_trade(par, direccion)
+                time.sleep(180)
 
-                guardar_trade(par, direccion, resultado, score)
+            else:
+                time.sleep(0.5)
 
-        time.sleep(1)
+        except Exception as e:
+            print("Error loop:", e)
+            time.sleep(5)
 
 
+# =========================
+# START
+# =========================
 if __name__ == "__main__":
-    main()
+    run()
