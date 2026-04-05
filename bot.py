@@ -11,7 +11,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(BASE_DIR)
 
 # =========================
-# 🔥 IMPORT SEGURO
+# IMPORT
 # =========================
 try:
     from estrategia import detectar_entrada_oculta
@@ -40,7 +40,6 @@ PARES = [
     "GBPJPY-OTC",
     "USDCHF-OTC"
 ]
-
 
 # =========================
 # TELEGRAM
@@ -77,17 +76,16 @@ def conectar():
 
 
 # =========================
-# ⏱️ ESPERAR APERTURA REAL
+# 🔥 SEGUNDO 58 (SNIPER)
 # =========================
-def esperar_apertura_vela():
+def esperar_segundo_58():
     while True:
         segundos = int(time.time()) % 60
 
-        # Entrada EXACTA en apertura
-        if segundos == 0:
+        if segundos >= 58:
             return
 
-        time.sleep(0.2)
+        time.sleep(0.1)
 
 
 # =========================
@@ -110,35 +108,43 @@ def obtener_velas(iq, par):
 
 
 # =========================
-# OPERAR
+# 🔥 OPERAR (MEJORADO)
 # =========================
 def operar(iq, par, direccion):
 
     try:
-        esperar_apertura_vela()
+        if not iq.check_connect():
+            print("⚠️ Reconectando...")
+            iq.connect()
 
-        check, _ = iq.buy(MONTO, par, direccion, 3)
+        # ⏱️ Entrada SNIPER
+        esperar_segundo_58()
+
+        check, id = iq.buy(MONTO, par, direccion, 3)
 
         if check:
             print(f"🚀 ENTRADA {par} {direccion}")
 
             enviar_mensaje(f"""
-🚀 ENTRADA PRO
+🚀 ENTRADA SNIPER
 
 Par: {par}
 Dirección: {direccion.upper()}
 Expiración: 3 MIN
 Monto: ${MONTO}
 
-⏱ Entrada en apertura REAL
+⏱ Entrada en segundo 58
 """)
+
+        else:
+            print("❌ Falló ejecución")
 
     except Exception as e:
         print("Error operar:", e)
 
 
 # =========================
-# LOOP
+# LOOP PRINCIPAL
 # =========================
 def run():
 
@@ -148,24 +154,36 @@ def run():
 
     iq = conectar()
 
+    ultima_operacion = 0  # 🔥 evita duplicar
+
     while True:
         try:
 
             data = {}
 
             for par in PARES:
-                data[par] = obtener_velas(iq, par)
+                velas = obtener_velas(iq, par)
+
+                if len(velas) < 30:
+                    continue
+
+                data[par] = velas
 
             señal = detectar_entrada_oculta(data)
 
-            if señal:
+            ahora = time.time()
+
+            if señal and (ahora - ultima_operacion > 180):
+
                 par, direccion, score = señal
 
                 print(f"🎯 Señal {par} {direccion} Score:{score}")
 
                 operar(iq, par, direccion)
 
-                time.sleep(180)
+                ultima_operacion = ahora
+
+                time.sleep(5)
 
             else:
                 time.sleep(0.5)
