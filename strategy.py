@@ -71,24 +71,39 @@ def mercado_activo(df):
 
 
 # ==========================
-# 🔒 DIVERGENCIA RSI
+# 🔒 DIVERGENCIA + NIVEL
 # ==========================
-def divergencia_rsi(df):
+def detectar_divergencia_nivel(df):
     if len(df) < 20:
-        return None
+        return None, None
 
     precios = df["close"]
     rsi = df["rsi"]
 
-    # mínimos
+    # Divergencia alcista → guardar mínimo
     if precios.iloc[-1] < precios.iloc[-5] and rsi.iloc[-1] > rsi.iloc[-5]:
-        return "alcista"
+        nivel = df["min"].iloc[-1]
+        return "alcista", nivel
 
-    # máximos
+    # Divergencia bajista → guardar máximo
     if precios.iloc[-1] > precios.iloc[-5] and rsi.iloc[-1] < rsi.iloc[-5]:
-        return "bajista"
+        nivel = df["max"].iloc[-1]
+        return "bajista", nivel
 
-    return None
+    return None, None
+
+
+# ==========================
+# 🔁 RETESTEO DE DIVERGENCIA
+# ==========================
+def retesteo_divergencia(v, nivel, tipo, rango_total):
+    if nivel is None:
+        return False
+
+    if tipo == "alcista":
+        return abs(v["min"] - nivel) < rango_total * 0.02
+    else:
+        return abs(v["max"] - nivel) < rango_total * 0.02
 
 
 # ==========================
@@ -112,12 +127,11 @@ def micro_retroceso(df):
     v2 = df.iloc[-2]
     v3 = df.iloc[-1]
 
-    # pequeño retroceso antes de impulso
     return body(v2) < body(v1) and body(v3) > body(v2)
 
 
 # ==========================
-# 🔥 ENTRADA PRO
+# 🔥 ENTRADA PRO (MODIFICADA)
 # ==========================
 def detectar_entrada_oculta(data_por_par):
 
@@ -145,65 +159,55 @@ def detectar_entrada_oculta(data_por_par):
         score = 0
         direccion = None
 
-        div = divergencia_rsi(df)
+        div_tipo, div_nivel = detectar_divergencia_nivel(df)
 
         # ======================
-        # 🔥 CALL
+        # 🔥 CALL (OBLIGATORIO)
         # ======================
-        if cerca(v["min"], soporte, rango_total):
+        if div_tipo == "alcista":
 
-            if rsi_actual < 30:
-                score += 2
-                if rsi_actual < 25:
-                    score += 1
-                if rsi_actual < 20:
-                    score += 1
+            if retesteo_divergencia(v, div_nivel, "alcista", rango_total):
 
-            if div == "alcista":
-                score += 2
+                if rsi_actual < 30:
+                    score += 3
 
-            if fake_breakout(v, soporte, "soporte"):
-                score += 2
+                    if fake_breakout(v, div_nivel, "soporte"):
+                        score += 2
 
-            if micro_retroceso(df):
-                score += 1
+                    if micro_retroceso(df):
+                        score += 1
 
-            if mecha_inf(v) > body(v):
-                score += 2
+                    if mecha_inf(v) > body(v):
+                        score += 2
 
-            if es_alcista(v):
-                score += 2
+                    if es_alcista(v):
+                        score += 2
 
-            direccion = "call"
+                    direccion = "call"
 
         # ======================
-        # 🔥 PUT
+        # 🔥 PUT (OBLIGATORIO)
         # ======================
-        if cerca(v["max"], resistencia, rango_total):
+        if div_tipo == "bajista":
 
-            if rsi_actual > 70:
-                score += 2
-                if rsi_actual > 75:
-                    score += 1
-                if rsi_actual > 80:
-                    score += 1
+            if retesteo_divergencia(v, div_nivel, "bajista", rango_total):
 
-            if div == "bajista":
-                score += 2
+                if rsi_actual > 70:
+                    score += 3
 
-            if fake_breakout(v, resistencia, "resistencia"):
-                score += 2
+                    if fake_breakout(v, div_nivel, "resistencia"):
+                        score += 2
 
-            if micro_retroceso(df):
-                score += 1
+                    if micro_retroceso(df):
+                        score += 1
 
-            if mecha_sup(v) > body(v):
-                score += 2
+                    if mecha_sup(v) > body(v):
+                        score += 2
 
-            if es_bajista(v):
-                score += 2
+                    if es_bajista(v):
+                        score += 2
 
-            direccion = "put"
+                    direccion = "put"
 
         if score > mejor_score and direccion:
             mejor_score = score
