@@ -7,7 +7,6 @@ CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 bot_activo = False
 last_update = 0
 
-
 def enviar(msg):
     try:
         requests.post(
@@ -17,7 +16,6 @@ def enviar(msg):
         )
     except:
         pass
-
 
 def escuchar():
     global bot_activo, last_update
