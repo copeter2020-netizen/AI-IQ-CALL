@@ -46,7 +46,21 @@ def micro_tendencia(df):
     return "neutral"
 
 
-# 🔥 TENDENCIA FUERTE
+def tendencia_real(df):
+    ultimas = df.iloc[-10:]
+
+    maximos = [v["max"] for _, v in ultimas.iterrows()]
+    minimos = [v["min"] for _, v in ultimas.iterrows()]
+
+    if maximos[-1] < maximos[0] and minimos[-1] < minimos[0]:
+        return "bajista"
+
+    if maximos[-1] > maximos[0] and minimos[-1] > minimos[0]:
+        return "alcista"
+
+    return "neutral"
+
+
 def tendencia_fuerte(df):
     ultimas = df.iloc[-6:]
 
@@ -62,39 +76,14 @@ def tendencia_fuerte(df):
     return "neutral"
 
 
-# 🔥 IMPULSO RECIENTE (ANTI ENTRADA TARDE)
-def impulso_reciente(df):
-    ultimas = df.iloc[-3:]
-
-    for _, v in ultimas.iterrows():
-        if rango(v) == 0:
-            continue
-        if body(v) > rango(v) * 0.8:
-            return True
-
-    return False
-
-
-# 🔥 CONTINUIDAD (ANTI FALSA REVERSA)
-def continuidad_fuerte(df):
-    ultimas = df.iloc[-3:]
-
-    verdes = sum(es_alcista(v) for _, v in ultimas.iterrows())
-    rojas = sum(es_bajista(v) for _, v in ultimas.iterrows())
-
-    return verdes >= 4 or rojas >= 4
-
-
-# 🔥 CONFIRMACIÓN
 def confirmacion_fuerte(v):
-    if rango(v) == 0:
-        return False
-    return body(v) > rango(v) * 0.5
+    return body(v) > rango(v) * 0.6
 
 
 def impulso_fuerte(v):
     if rango(v) == 0:
         return False
+
     return body(v) > rango(v) * 0.7
 
 
@@ -111,32 +100,64 @@ def rechazo_fuerte(v):
     )
 
 
-# 🔥 NUEVO: DETECCIÓN DE LIQUIDEZ (CLAVE PRO)
-def barrido_liquidez(df, direccion):
-    v = df.iloc[-3]
-    prev = df.iloc[-4]
+# 🔥 NUEVO — DOBLE CONFIRMACIÓN
+def doble_confirmacion(df, direccion):
+    v1 = df.iloc[-2]
+    v2 = df.iloc[-3]
 
     if direccion == "call":
-        return v["min"] < prev["min"]
+        return es_alcista(v1) and es_alcista(v2)
 
     if direccion == "put":
-        return v["max"] > prev["max"]
+        return es_bajista(v1) and es_bajista(v2)
 
     return False
 
 
-# 🔥 RUPTURA REAL
-def ruptura_valida(df, direccion):
+# 🔥 NUEVO — FUERZA REAL
+def fuerza_movimiento(df, direccion):
     v = df.iloc[-2]
-    prev = df.iloc[-3]
 
     if direccion == "call":
-        return v["close"] > prev["max"] * 0.999
+        return body(v) > rango(v) * 0.6 and es_alcista(v)
 
     if direccion == "put":
-        return v["close"] < prev["min"] * 1.001
+        return body(v) > rango(v) * 0.6 and es_bajista(v)
 
     return False
+
+
+# 🔥 NUEVO — ANTI PULLBACK
+def pullback_debil(df):
+    ultimas = df.iloc[-4:]
+
+    cambios = [v["close"] - v["open"] for _, v in ultimas.iterrows()]
+
+    verdes = sum(c > 0 for c in cambios)
+    rojas = sum(c < 0 for c in cambios)
+
+    return verdes == 1 or rojas == 1
+
+
+# 🔥 NUEVO — ACUMULACIÓN (ENTRADA TEMPRANA)
+def zona_acumulacion(df):
+    ultimas = df.iloc[-5:]
+
+    rangos = [rango(v) for _, v in ultimas.iterrows()]
+
+    if max(rangos) == 0:
+        return False
+
+    return np.mean(rangos) < (max(rangos) * 0.5)
+
+
+# 🔥 NUEVO — FRENADO
+def frenado(df):
+    ultimas = df.iloc[-4:]
+
+    cambios = [abs(v["close"] - v["open"]) for _, v in ultimas.iterrows()]
+
+    return cambios[-1] < cambios[0]
 
 
 def zona_mala(df, soporte, resistencia):
@@ -169,14 +190,10 @@ def detectar_entrada_oculta(data):
         if tendencia_fuerte(df) != "neutral":
             continue
 
-        if continuidad_fuerte(df):
+        if tendencia_real(df) != "neutral":
             continue
 
-        if impulso_reciente(df):
-            continue
-
-        tendencia = micro_tendencia(df)
-        if tendencia != "neutral":
+        if micro_tendencia(df) != "neutral":
             continue
 
         soporte, resistencia = niveles(df)
@@ -184,18 +201,29 @@ def detectar_entrada_oculta(data):
         if zona_mala(df, soporte, resistencia):
             continue
 
+        if pullback_debil(df):
+            continue
+
         v_confirmacion = df.iloc[-2]
         v_manipulacion = df.iloc[-3]
 
+        # =========================
+        # 🔥 ENTRADA TEMPRANA (SNIPER)
+        # =========================
+        if zona_acumulacion(df) and frenado(df):
+
+            if v_manipulacion["min"] <= soporte:
+                return (par, "call", 10)
+
+            if v_manipulacion["max"] >= resistencia:
+                return (par, "put", 10)
+
         score = 0
 
-        # ========================
-        # 🔴 PUT
-        # ========================
+        # =====================
+        # PUT
+        # =====================
         if v_manipulacion["max"] >= resistencia:
-
-            if barrido_liquidez(df, "put"):
-                score += 2
 
             if rechazo_fuerte(v_manipulacion):
                 score += 2
@@ -209,21 +237,21 @@ def detectar_entrada_oculta(data):
             if not confirmacion_fuerte(v_confirmacion):
                 continue
 
-            if not ruptura_valida(df, "put"):
+            if not doble_confirmacion(df, "put"):
                 continue
 
-            if score >= 6:
+            if not fuerza_movimiento(df, "put"):
+                continue
+
+            if score >= 5:
                 if score > mejor_score:
                     mejor_score = score
                     mejor = (par, "put", score)
 
-        # ========================
-        # 🟢 CALL
-        # ========================
+        # =====================
+        # CALL
+        # =====================
         if v_manipulacion["min"] <= soporte:
-
-            if barrido_liquidez(df, "call"):
-                score += 2
 
             if rechazo_fuerte(v_manipulacion):
                 score += 2
@@ -237,10 +265,13 @@ def detectar_entrada_oculta(data):
             if not confirmacion_fuerte(v_confirmacion):
                 continue
 
-            if not ruptura_valida(df, "call"):
+            if not doble_confirmacion(df, "call"):
                 continue
 
-            if score >= 6:
+            if not fuerza_movimiento(df, "call"):
+                continue
+
+            if score >= 5:
                 if score > mejor_score:
                     mejor_score = score
                     mejor = (par, "call", score)
