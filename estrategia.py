@@ -68,7 +68,6 @@ def confirmacion_fuerte(v):
 def impulso_fuerte(v):
     if rango(v) == 0:
         return False
-
     return body(v) > rango(v) * 0.7
 
 
@@ -97,20 +96,29 @@ def zona_mala(df, soporte, resistencia):
     return distancia > rango_total * 0.6
 
 
-# 🔥 NUEVO → evita entrar contra tendencia reciente
-def continuidad_contra(df, direccion):
-    ultimas = df.iloc[-5:]
+# 🔥 NUEVO
+def continuidad_real(df, direccion):
+    ultimas = df.iloc[-6:]
+    closes = [v["close"] for _, v in ultimas.iterrows()]
 
-    verdes = sum(v["close"] > v["open"] for _, v in ultimas.iterrows())
-    rojas = sum(v["close"] < v["open"] for _, v in ultimas.iterrows())
+    if direccion == "put":
+        if all(closes[i] >= closes[i-1] for i in range(1, len(closes))):
+            return True
 
-    if direccion == "put" and verdes >= 4:
-        return True
-
-    if direccion == "call" and rojas >= 4:
-        return True
+    if direccion == "call":
+        if all(closes[i] <= closes[i-1] for i in range(1, len(closes))):
+            return True
 
     return False
+
+
+# 🔥 NUEVO
+def sobreextension(df):
+    ultimas = df.iloc[-5:]
+    verdes = sum(es_alcista(v) for _, v in ultimas.iterrows())
+    rojas = sum(es_bajista(v) for _, v in ultimas.iterrows())
+
+    return verdes >= 4 or rojas >= 4
 
 
 def detectar_entrada_oculta(data):
@@ -131,6 +139,9 @@ def detectar_entrada_oculta(data):
         if tendencia_fuerte(df) != "neutral":
             continue
 
+        if sobreextension(df):
+            continue
+
         tendencia = micro_tendencia(df)
         if tendencia != "neutral":
             continue
@@ -140,18 +151,15 @@ def detectar_entrada_oculta(data):
         if zona_mala(df, soporte, resistencia):
             continue
 
-        v_manipulacion = df.iloc[-3]
         v_confirmacion = df.iloc[-2]
-        v_siguiente = df.iloc[-1]  # 🔥 NUEVO
+        v_manipulacion = df.iloc[-3]
 
         score = 0
 
-        # =========================
         # PUT
-        # =========================
         if v_manipulacion["max"] >= resistencia:
 
-            if continuidad_contra(df, "put"):
+            if continuidad_real(df, "put"):
                 continue
 
             if rechazo_fuerte(v_manipulacion):
@@ -166,20 +174,14 @@ def detectar_entrada_oculta(data):
             if not confirmacion_fuerte(v_confirmacion):
                 continue
 
-            # 🔥 CONFIRMACIÓN REAL
-            if v_siguiente["close"] > v_confirmacion["close"]:
-                continue
-
             if score >= 5 and score > mejor_score:
-                mejor_score = score
                 mejor = (par, "put", score)
+                mejor_score = score
 
-        # =========================
         # CALL
-        # =========================
         if v_manipulacion["min"] <= soporte:
 
-            if continuidad_contra(df, "call"):
+            if continuidad_real(df, "call"):
                 continue
 
             if rechazo_fuerte(v_manipulacion):
@@ -194,12 +196,8 @@ def detectar_entrada_oculta(data):
             if not confirmacion_fuerte(v_confirmacion):
                 continue
 
-            # 🔥 CONFIRMACIÓN REAL
-            if v_siguiente["close"] < v_confirmacion["close"]:
-                continue
-
             if score >= 5 and score > mejor_score:
-                mejor_score = score
                 mejor = (par, "call", score)
+                mejor_score = score
 
     return mejor
