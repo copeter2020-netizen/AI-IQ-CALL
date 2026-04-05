@@ -111,10 +111,9 @@ def micro_retroceso(df):
 
 
 # ==========================
-# 🔥 VELA TRAMPA (NUEVO)
+# 🔥 VELA TRAMPA
 # ==========================
 def vela_trampa(v):
-    # vela débil con rechazo → antes del impulso
     return (
         body(v) < rango(v) * 0.4 and
         (mecha_inf(v) > body(v) or mecha_sup(v) > body(v))
@@ -122,7 +121,59 @@ def vela_trampa(v):
 
 
 # ==========================
-# 🔥 ENTRADA SNIPER
+# 🔥 BARRIDA
+# ==========================
+def hay_barrida(df):
+    v = df.iloc[-1]
+    prev = df.iloc[-2]
+    return v["min"] < prev["min"] or v["max"] > prev["max"]
+
+
+# ==========================
+# 🔥 LATERAL
+# ==========================
+def mercado_lateral(df, rango_total):
+    velas = df.iloc[-5:]
+    rango_prom = np.mean(velas["max"] - velas["min"])
+    return rango_prom < rango_total * 0.2
+
+
+# ==========================
+# 🔥 IMPULSO
+# ==========================
+def hay_impulso(v):
+    return body(v) > rango(v) * 0.5
+
+
+# ==========================
+# 🔥 FILTRO TENDENCIA FUERTE
+# ==========================
+def tendencia_fuerte(df):
+    ultimas = df.iloc[-4:]
+    alcistas = sum(ultimas["close"] > ultimas["open"])
+    bajistas = sum(ultimas["close"] < ultimas["open"])
+
+    return alcistas == 4 or bajistas == 4
+
+
+# ==========================
+# 🔥 FILTRO AGOTAMIENTO
+# ==========================
+def hay_agotamiento(df):
+    velas = df.iloc[-3:]
+    return all(body(v) < rango(v) * 0.5 for _, v in velas.iterrows())
+
+
+# ==========================
+# 🔥 SOBREEXTENSIÓN
+# ==========================
+def sobre_extension(df, rango_total):
+    mov = df["close"].iloc[-1] - df["close"].iloc[-5]
+    return abs(mov) > rango_total * 0.4
+
+
+# ==========================
+# 🔥 ENTRADA FINAL PRO
 # ==========================
 def detectar_entrada_oculta(data_por_par):
 
@@ -145,8 +196,27 @@ def detectar_entrada_oculta(data_por_par):
         soporte, resistencia = niveles(df)
         rango_total = max(df["max"][-20:]) - min(df["min"][-20:])
 
-        v = df.iloc[-1]       # vela actual
-        prev = df.iloc[-2]    # 🔥 vela trampa
+        v = df.iloc[-1]
+        prev = df.iloc[-2]
+
+        # ❌ filtros duros
+        if mercado_lateral(df, rango_total):
+            continue
+
+        if not hay_barrida(df):
+            continue
+
+        if not hay_impulso(v):
+            continue
+
+        if tendencia_fuerte(df):
+            continue
+
+        if not hay_agotamiento(df):
+            continue
+
+        if sobre_extension(df, rango_total):
+            continue
 
         score = 0
         direccion = None
@@ -154,56 +224,52 @@ def detectar_entrada_oculta(data_por_par):
         div = divergencia_rsi(df)
 
         # ======================
-        # 🔥 CALL (ANTES DEL IMPULSO)
+        # CALL
         # ======================
         if cerca(v["min"], soporte, rango_total):
 
-            if div == "alcista":
-                score += 2
+            if div == "alcista" and rsi_actual < 30:
 
-                if rsi_actual < 30:
+                if vela_trampa(prev):
+                    score += 3
+
+                if fake_breakout(prev, soporte, "soporte"):
                     score += 2
 
-                    # 🔥 clave: vela trampa
-                    if vela_trampa(prev):
-                        score += 3
+                if micro_retroceso(df):
+                    score += 1
 
-                    if fake_breakout(prev, soporte, "soporte"):
-                        score += 2
+                if es_alcista(v):  # confirmación giro
+                    score += 2
 
-                    if micro_retroceso(df):
-                        score += 1
-
-                    direccion = "call"
+                direccion = "call"
 
         # ======================
-        # 🔥 PUT (ANTES DEL IMPULSO)
+        # PUT
         # ======================
         if cerca(v["max"], resistencia, rango_total):
 
-            if div == "bajista":
-                score += 2
+            if div == "bajista" and rsi_actual > 70:
 
-                if rsi_actual > 70:
+                if vela_trampa(prev):
+                    score += 3
+
+                if fake_breakout(prev, resistencia, "resistencia"):
                     score += 2
 
-                    # 🔥 vela trampa arriba
-                    if vela_trampa(prev):
-                        score += 3
+                if micro_retroceso(df):
+                    score += 1
 
-                    if fake_breakout(prev, resistencia, "resistencia"):
-                        score += 2
+                if es_bajista(v):  # confirmación giro
+                    score += 2
 
-                    if micro_retroceso(df):
-                        score += 1
-
-                    direccion = "put"
+                direccion = "put"
 
         if score > mejor_score and direccion:
             mejor_score = score
             mejor = (par, direccion, score)
 
-    if mejor and mejor_score >= 5:
+    if mejor and mejor_score >= 6:
         return mejor
 
     return None
