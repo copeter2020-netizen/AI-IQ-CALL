@@ -14,7 +14,7 @@ PASSWORD = os.getenv("IQ_PASSWORD")
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-MONTO = 6000
+MONTO = 17500
 CUENTA = "PRACTICE"
 
 PARES = [
@@ -65,7 +65,7 @@ def conectar():
 # =========================
 def obtener_velas(iq, par):
     try:
-        velas = iq.get_candles(par, 60, 180, time.time())  # 🔥 40 → 180
+        velas = iq.get_candles(par, 60, 40, time.time())
 
         return [{
             "open": v["open"],
@@ -79,26 +79,56 @@ def obtener_velas(iq, par):
 
 
 # =========================
-# ⏱️ EXPIRACIÓN DINÁMICA
+# UTILIDADES
 # =========================
-def calcular_expiracion(df):
+def body(c):
+    return abs(c["close"] - c["open"])
 
-    volatilidad = np.mean(df["max"].iloc[-5:] - df["min"].iloc[-5:])
+def rango(c):
+    return c["max"] - c["min"]
 
-    if volatilidad > 0.0005:
-        return 2  # mercado rápido
-    else:
-        return 3  # mercado lento
+def vela_fuerte(c):
+    return body(c) > rango(c) * 0.6
 
 
 # =========================
-# 🔥 ENTRADA MEJORADA
+# FILTROS PRO
+# =========================
+def rechazo_fuerte(v):
+    return (
+        (v["max"] - max(v["open"], v["close"])) > body(v) * 1.2 and
+        v["close"] < v["open"]
+    )
+
+def agotamiento_previo(df):
+    v1 = df.iloc[-2]
+    v2 = df.iloc[-3]
+
+    return (
+        body(v1) < body(v2) and
+        (
+            (v1["max"] - max(v1["open"], v1["close"])) > body(v1) or
+            (min(v1["open"], v1["close"]) - v1["min"]) > body(v1)
+        )
+    )
+
+def entrada_explotada(df, rango_total):
+    mov = abs(df["close"].iloc[-1] - df["close"].iloc[-2])
+    return mov > rango_total * 0.25
+
+
+# 🔥 NUEVO: FILTRO DE TENDENCIA
+def tendencia_general(df):
+    return df["close"].iloc[-1] > df["close"].iloc[-5]
+
+
+# =========================
+# ESTRATEGIA SNIPER
 # =========================
 def detectar_entrada(data):
 
     mejor = None
     mejor_score = 0
-    mejor_df = None
 
     for par, velas in data.items():
 
@@ -112,76 +142,74 @@ def detectar_entrada(data):
 
         rango_total = max(df["max"][-20:]) - min(df["min"][-20:])
 
+        prev = df.iloc[-2]
         v = df.iloc[-1]
 
-        cuerpo = abs(v["close"] - v["open"])
-        rango = v["max"] - v["min"]
-
-        if rango == 0:
+        if rango(v) == 0:
             continue
 
-        mecha_sup = v["max"] - max(v["open"], v["close"])
-        mecha_inf = min(v["open"], v["close"]) - v["min"]
+        score = 0
 
-        # =========================
-        # 🔥 FILTROS NUEVOS
-        # =========================
-        mov = abs(df["close"].iloc[-1] - df["close"].iloc[-5])
-        if mov > rango_total * 0.6:
-            continue  # mercado estirado
+        # ======================
+        # FILTROS CLAVE
+        # ======================
+        if entrada_explotada(df, rango_total):
+            continue
 
-        ultimas = df.iloc[-5:]
-        verdes = sum(ultimas["close"] > ultimas["open"])
-        rojas = sum(ultimas["close"] < ultimas["open"])
-
-        if verdes >= 4 or rojas >= 4:
-            continue  # secuencia fuerte (entrada tardía)
+        if rechazo_fuerte(v):
+            continue
 
         # ======================
         # SOPORTE → CALL
         # ======================
-        if abs(v["min"] - soporte) < rango_total * 0.05:
+        if abs(prev["min"] - soporte) < rango_total * 0.05:
 
-            confirmaciones = 0
-
-            if mecha_inf > cuerpo:
-                confirmaciones += 1
-
-            if v["close"] > v["open"] and cuerpo > rango * 0.5:
-                confirmaciones += 1
-
-            if v["close"] > df["close"].iloc[-2]:
-                confirmaciones += 1
-
-            if confirmaciones >= 2:
-                direccion = "call"
-                score = confirmaciones
-
-            else:
+            # filtro tendencia (solo compras en tendencia alcista)
+            if not tendencia_general(df):
                 continue
+
+            if vela_fuerte(v):
+                continue
+
+            if body(prev) < rango(prev) * 0.4:
+                score += 2
+
+            if v["close"] > v["open"] and body(v) > rango(v) * 0.4:
+                score += 2
+
+            if v["close"] > prev["close"]:
+                score += 1
+
+            if agotamiento_previo(df):
+                score += 2
+
+            direccion = "call"
 
         # ======================
         # RESISTENCIA → PUT
         # ======================
-        elif abs(v["max"] - resistencia) < rango_total * 0.05:
+        elif abs(prev["max"] - resistencia) < rango_total * 0.05:
 
-            confirmaciones = 0
-
-            if mecha_sup > cuerpo:
-                confirmaciones += 1
-
-            if v["close"] < v["open"] and cuerpo > rango * 0.5:
-                confirmaciones += 1
-
-            if v["close"] < df["close"].iloc[-2]:
-                confirmaciones += 1
-
-            if confirmaciones >= 2:
-                direccion = "put"
-                score = confirmaciones
-
-            else:
+            # filtro tendencia (solo ventas en tendencia bajista)
+            if tendencia_general(df):
                 continue
+
+            if vela_fuerte(v):
+                continue
+
+            if body(prev) < rango(prev) * 0.4:
+                score += 2
+
+            if v["close"] < v["open"] and body(v) > rango(v) * 0.4:
+                score += 2
+
+            if v["close"] < prev["close"]:
+                score += 1
+
+            if agotamiento_previo(df):
+                score += 2
+
+            direccion = "put"
 
         else:
             continue
@@ -189,33 +217,30 @@ def detectar_entrada(data):
         if score > mejor_score:
             mejor_score = score
             mejor = (par, direccion)
-            mejor_df = df
 
-    if mejor and mejor_score >= 2:
-        return mejor, mejor_df
+    if mejor and mejor_score >= 4:
+        return mejor
 
-    return None, None
+    return None
 
 
 # =========================
 # OPERAR
 # =========================
-def operar(iq, par, direccion, df):
+def operar(iq, par, direccion):
 
     try:
-        expiracion = calcular_expiracion(df)
-
-        check, _ = iq.buy(MONTO, par, direccion, expiracion)
+        check, _ = iq.buy(MONTO, par, direccion, 3)
 
         if check:
             print(f"🚀 ENTRADA {par} {direccion}")
 
             enviar_mensaje(f"""
-🚀 ENTRADA
+🚀 ENTRADA SNIPER
 
 Par: {par}
 Dirección: {direccion.upper()}
-Expiración: {expiracion} MIN
+Expiración: 3 MIN
 Monto: ${MONTO}
 """)
 
@@ -238,12 +263,12 @@ def run():
             for par in PARES:
                 data[par] = obtener_velas(iq, par)
 
-            señal, df = detectar_entrada(data)
+            señal = detectar_entrada(data)
 
             if señal:
                 par, direccion = señal
 
-                operar(iq, par, direccion, df)
+                operar(iq, par, direccion)
 
                 time.sleep(180)
 
