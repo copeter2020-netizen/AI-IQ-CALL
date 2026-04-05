@@ -24,6 +24,24 @@ def es_bajista(c):
 
 
 # ==========================
+# RSI
+# ==========================
+def calcular_rsi(df, periodo=14):
+    delta = df["close"].diff()
+
+    ganancia = np.where(delta > 0, delta, 0)
+    perdida = np.where(delta < 0, -delta, 0)
+
+    roll_up = pd.Series(ganancia).rolling(periodo).mean()
+    roll_down = pd.Series(perdida).rolling(periodo).mean()
+
+    rs = roll_up / roll_down
+    rsi = 100 - (100 / (1 + rs))
+
+    return rsi
+
+
+# ==========================
 # SOPORTE / RESISTENCIA
 # ==========================
 def niveles(df):
@@ -53,7 +71,7 @@ def mercado_activo(df):
 
 
 # ==========================
-# 🔥 ENTRADA OCULTA
+# 🔥 ENTRADA OCULTA + RSI
 # ==========================
 def detectar_entrada_oculta(data_por_par):
 
@@ -70,18 +88,33 @@ def detectar_entrada_oculta(data_por_par):
         if not mercado_activo(df):
             continue
 
+        # RSI
+        df["rsi"] = calcular_rsi(df)
+        rsi_actual = df["rsi"].iloc[-1]
+
         soporte, resistencia = niveles(df)
         rango_total = max(df["max"][-20:]) - min(df["min"][-20:])
 
-        v = df.iloc[-1]  # vela ACTUAL (clave)
+        v = df.iloc[-1]
         prev = df.iloc[-2]
 
         score = 0
+        direccion = None
 
         # ======================
-        # 🔥 SOPORTE → CALL
+        # 🔥 SOPORTE → CALL + RSI
         # ======================
         if cerca(v["min"], soporte, rango_total):
+
+            # RSI en sobreventa
+            if rsi_actual < 30:
+                score += 2
+
+                # mejor punto (más extremo)
+                if rsi_actual < 25:
+                    score += 1
+                if rsi_actual < 20:
+                    score += 1
 
             if mecha_inf(v) > body(v):
                 score += 2
@@ -89,10 +122,22 @@ def detectar_entrada_oculta(data_por_par):
             if es_alcista(v) and body(v) > rango(v) * 0.4:
                 score += 2
 
+            direccion = "call"
+
         # ======================
-        # 🔥 RESISTENCIA → PUT
+        # 🔥 RESISTENCIA → PUT + RSI
         # ======================
         if cerca(v["max"], resistencia, rango_total):
+
+            # RSI en sobrecompra
+            if rsi_actual > 70:
+                score += 2
+
+                # mejor punto (más extremo)
+                if rsi_actual > 75:
+                    score += 1
+                if rsi_actual > 80:
+                    score += 1
 
             if mecha_sup(v) > body(v):
                 score += 2
@@ -100,12 +145,14 @@ def detectar_entrada_oculta(data_por_par):
             if es_bajista(v) and body(v) > rango(v) * 0.4:
                 score += 2
 
-        if score > mejor_score:
-            direccion = "call" if es_alcista(v) else "put"
+            direccion = "put"
+
+        # Guardar mejor
+        if score > mejor_score and direccion is not None:
             mejor_score = score
             mejor = (par, direccion, score)
 
-    if mejor and mejor_score >= 3:
+    if mejor and mejor_score >= 4:  # subimos exigencia por RSI
         return mejor
 
     return None
