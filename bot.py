@@ -29,18 +29,16 @@ PASSWORD = os.getenv("IQ_PASSWORD")
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-MONTO = 1750
+MONTO = 3000
 CUENTA = "PRACTICE"
 
 PARES = [
     "EURUSD-OTC",
     "EURJPY-OTC",
     "EURCAD-OTC",
-    "EURAUD-OTC",
-    "CHFNOK-OTC",
-    "CHFJPY-OTC",
-    "GBPJPY-OTC",
+    "EURGBP-OTC",
     "USDCHF-OTC", 
+    "GBPJPY-OTC", 
     "AUDCAD-OTC"
 ]
 
