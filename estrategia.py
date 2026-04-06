@@ -1,14 +1,8 @@
-import numpy as np
 import pandas as pd
 
 # =========================
-# UTILIDADES
+# FUNCIONES BASE
 # =========================
-def body(v):
-    return abs(v["close"] - v["open"])
-
-def rango(v):
-    return v["max"] - v["min"]
 
 def es_alcista(v):
     return v["close"] > v["open"]
@@ -16,189 +10,154 @@ def es_alcista(v):
 def es_bajista(v):
     return v["close"] < v["open"]
 
+def cuerpo(v):
+    return abs(v["close"] - v["open"])
 
 # =========================
-# TENDENCIA REAL
+# ZONAS (SOPORTE/RESISTENCIA)
 # =========================
-def tendencia_real(df):
-    ma20 = df["close"].rolling(20).mean()
-    ma50 = df["close"].rolling(50).mean()
 
-    if ma20.iloc[-1] > ma50.iloc[-1]:
-        return "alcista"
+def calcular_zonas(df, lookback=20):
+    resistencia = df["high"].tail(lookback).max()
+    soporte = df["low"].tail(lookback).min()
+    return soporte, resistencia
 
-    if ma20.iloc[-1] < ma50.iloc[-1]:
-        return "bajista"
+def zona_valida(df, soporte, resistencia):
+    precio = df["close"].iloc[-1]
+    rango = resistencia - soporte
 
-    return "neutral"
-
-
-# =========================
-# FILTRO LATERAL
-# =========================
-def mercado_lateral(df):
-    ultimas = df.iloc[-6:]
-    rangos = [rango(v) for _, v in ultimas.iterrows()]
-
-    if len(rangos) == 0:
-        return True
-
-    return np.mean(rangos) < (max(rangos) * 0.5)
-
-
-# =========================
-# IMPULSO FUERTE
-# =========================
-def impulso_fuerte(v):
-    if rango(v) == 0:
+    if rango == 0:
         return False
 
-    return body(v) > rango(v) * 0.7
-
-
-# =========================
-# EXTENSIÓN (NO ENTRAR TARDE)
-# =========================
-def sobre_extension(df):
-    ultimas = df.iloc[-5:]
-
-    fuertes = sum(
-        body(v) > rango(v) * 0.7
-        for _, v in ultimas.iterrows()
+    # Solo zonas extremas (no zona media)
+    return (
+        abs(precio - soporte) < rango * 0.25 or
+        abs(precio - resistencia) < rango * 0.25
     )
 
-    return fuertes >= 3
-
-
 # =========================
-# RSI FILTRO 🔥
+# FILTROS DE MERCADO
 # =========================
-def calcular_rsi(df):
-    delta = df["close"].diff()
 
-    gain = delta.clip(lower=0).rolling(14).mean()
-    loss = -delta.clip(upper=0).rolling(14).mean()
+def movimiento_extendido(df, direccion):
+    ultimas = df.iloc[-4:]
 
-    rs = gain / loss
-    rsi = 100 - (100 / (1 + rs))
+    if direccion == "call":
+        verdes = sum(es_alcista(v) for _, v in ultimas.iterrows())
+        return verdes >= 3
 
-    return rsi.iloc[-1]
+    if direccion == "put":
+        rojas = sum(es_bajista(v) for _, v in ultimas.iterrows())
+        return rojas >= 3
 
+    return False
 
-# =========================
-# SOPORTE / RESISTENCIA
-# =========================
-def cerca_resistencia(df):
-    maximo = df["max"].rolling(20).max().iloc[-2]
-    precio = df["close"].iloc[-2]
+def frenado(df):
+    v1 = df.iloc[-2]
+    v2 = df.iloc[-3]
+    return cuerpo(v1) < cuerpo(v2)
 
-    return abs(precio - maximo) < (maximo * 0.001)
-
-
-def cerca_soporte(df):
-    minimo = df["min"].rolling(20).min().iloc[-2]
-    precio = df["close"].iloc[-2]
-
-    return abs(precio - minimo) < (minimo * 0.001)
-
-
-# =========================
-# PULLBACK REAL
-# =========================
-def pullback_real_alcista(df):
+def zona_acumulacion(df):
     ultimas = df.iloc[-5:]
-
-    impulso = sum(es_alcista(v) for _, v in ultimas.iloc[:3].iterrows()) >= 2
-    retroceso = sum(es_bajista(v) for _, v in ultimas.iloc[3:5].iterrows()) >= 2
-
-    return impulso and retroceso
-
-
-def pullback_real_bajista(df):
-    ultimas = df.iloc[-5:]
-
-    impulso = sum(es_bajista(v) for _, v in ultimas.iloc[:3].iterrows()) >= 2
-    retroceso = sum(es_alcista(v) for _, v in ultimas.iloc[3:5].iterrows()) >= 2
-
-    return impulso and retroceso
-
+    cuerpos = [cuerpo(v) for _, v in ultimas.iterrows()]
+    promedio = sum(cuerpos) / len(cuerpos)
+    return max(cuerpos) < promedio * 1.5
 
 # =========================
-# RUPTURA
+# DETECCIÓN DE TENDENCIA
 # =========================
-def ruptura_alcista(df):
-    return df.iloc[-2]["close"] > df.iloc[-3]["max"]
 
+def tendencia_bajista(df):
+    return df["close"].iloc[-2] < df["close"].iloc[-5]
 
-def ruptura_bajista(df):
-    return df.iloc[-2]["close"] < df.iloc[-3]["min"]
-
+def tendencia_alcista(df):
+    return df["close"].iloc[-2] > df["close"].iloc[-5]
 
 # =========================
-# DETECTOR PRINCIPAL
+# CAMBIO DE COLOR (REVERSAL)
 # =========================
-def detectar_entrada_oculta(data):
 
-    for par, velas in data.items():
+def cambio_color_valido(df):
+    v1 = df.iloc[-2]
+    v2 = df.iloc[-3]
 
-        if len(velas) < 50:
-            continue
+    return (
+        es_alcista(v1) and
+        es_bajista(v2) and
+        cuerpo(v1) < cuerpo(v2)  # 🔥 frenado
+    )
 
-        df = pd.DataFrame(velas)
+def cambio_color_valido_put(df):
+    v1 = df.iloc[-2]
+    v2 = df.iloc[-3]
 
-        if mercado_lateral(df):
-            continue
+    return (
+        es_bajista(v1) and
+        es_alcista(v2) and
+        cuerpo(v1) < cuerpo(v2)
+    )
 
-        if sobre_extension(df):
-            continue
+# =========================
+# MANIPULACIÓN (MECHA)
+# =========================
 
-        tendencia = tendencia_real(df)
-        rsi = calcular_rsi(df)
+def manipulacion(df):
+    v = df.iloc[-2]
+    return {
+        "min": v["low"],
+        "max": v["high"]
+    }
 
-        v_confirmacion = df.iloc[-2]
+# =========================
+# FUNCIÓN PRINCIPAL
+# =========================
 
-        # =========================
-        # 🟢 CALL
-        # =========================
-        if tendencia == "alcista":
+def generar_senal(df, par):
 
-            if rsi > 65:
-                continue
+    if len(df) < 30:
+        return None
 
-            if cerca_resistencia(df):
-                continue
+    soporte, resistencia = calcular_zonas(df)
 
-            if not pullback_real_alcista(df):
-                continue
+    if not zona_valida(df, soporte, resistencia):
+        return None
 
-            if not ruptura_alcista(df):
-                continue
+    zona_manip = manipulacion(df)
 
-            if not impulso_fuerte(v_confirmacion):
-                continue
+    # =========================
+    # ENTRADA CALL (REBOTE)
+    # =========================
 
-            return (par, "call", 1)
+    if (
+        tendencia_bajista(df) and
+        zona_manip["min"] <= soporte and
+        cambio_color_valido(df) and
+        zona_acumulacion(df) and
+        frenado(df) and
+        not movimiento_extendido(df, "call")
+    ):
+        return {
+            "par": par,
+            "direccion": "call",
+            "expiracion": 1
+        }
 
-        # =========================
-        # 🔴 PUT
-        # =========================
-        if tendencia == "bajista":
+    # =========================
+    # ENTRADA PUT (RECHAZO)
+    # =========================
 
-            if rsi < 35:
-                continue
-
-            if cerca_soporte(df):
-                continue
-
-            if not pullback_real_bajista(df):
-                continue
-
-            if not ruptura_bajista(df):
-                continue
-
-            if not impulso_fuerte(v_confirmacion):
-                continue
-
-            return (par, "put", 1)
+    if (
+        tendencia_alcista(df) and
+        zona_manip["max"] >= resistencia and
+        cambio_color_valido_put(df) and
+        zona_acumulacion(df) and
+        frenado(df) and
+        not movimiento_extendido(df, "put")
+    ):
+        return {
+            "par": par,
+            "direccion": "put",
+            "expiracion": 1
+        }
 
     return None
