@@ -18,6 +18,22 @@ def es_bajista(v):
 
 
 # =========================
+# TENDENCIA REAL (NUEVO 🔥)
+# =========================
+def tendencia_real(df):
+    ma20 = df["close"].rolling(20).mean()
+    ma50 = df["close"].rolling(50).mean()
+
+    if ma20.iloc[-1] < ma50.iloc[-1]:
+        return "bajista"
+
+    if ma20.iloc[-1] > ma50.iloc[-1]:
+        return "alcista"
+
+    return "neutral"
+
+
+# =========================
 # NIVELES REALES
 # =========================
 def niveles(df):
@@ -27,7 +43,7 @@ def niveles(df):
 
 
 # =========================
-# FILTRO LATERAL (NO OPERAR)
+# FILTRO LATERAL
 # =========================
 def mercado_lateral(df):
     ultimas = df.iloc[-6:]
@@ -58,7 +74,7 @@ def micro_tendencia(df):
 
 
 # =========================
-# IMPULSO FUERTE (CLAVE)
+# IMPULSO FUERTE
 # =========================
 def impulso_fuerte(v):
     if rango(v) == 0:
@@ -68,7 +84,7 @@ def impulso_fuerte(v):
 
 
 # =========================
-# RECHAZO REAL (CLAVE)
+# RECHAZO FUERTE
 # =========================
 def rechazo_fuerte(v):
     if rango(v) == 0:
@@ -84,7 +100,25 @@ def rechazo_fuerte(v):
 
 
 # =========================
-# ZONA BASURA (EVITAR)
+# VELA REVERSIÓN (NUEVO 🔥)
+# =========================
+def vela_reversion_alcista(v):
+    return (
+        es_alcista(v) and
+        rechazo_fuerte(v) and
+        body(v) > rango(v) * 0.5
+    )
+
+def vela_reversion_bajista(v):
+    return (
+        es_bajista(v) and
+        rechazo_fuerte(v) and
+        body(v) > rango(v) * 0.5
+    )
+
+
+# =========================
+# ZONA MALA
 # =========================
 def zona_mala(df, soporte, resistencia):
     precio = df["close"].iloc[-1]
@@ -99,15 +133,30 @@ def zona_mala(df, soporte, resistencia):
 
 
 # =========================
-# FILTRO ANTI ENTRADA TARDE 🔥
+# ENTRADA TARDE (MEJORADO 🔥)
 # =========================
 def entrada_tarde(df):
+    ultimas = df.iloc[-5:]
+
+    cuerpos = [body(v) for _, v in ultimas.iterrows()]
+    rangos = [rango(v) for _, v in ultimas.iterrows()]
+
+    velas_fuertes = sum(c > r * 0.6 for c, r in zip(cuerpos, rangos))
+
+    return velas_fuertes >= 3
+
+
+# =========================
+# RUPTURA FUERTE (NUEVO 🔥)
+# =========================
+def ruptura_fuerte(df, nivel):
     ultimas = df.iloc[-3:]
 
-    verdes = sum(v["close"] > v["open"] for _, v in ultimas.iterrows())
-    rojas = sum(v["close"] < v["open"] for _, v in ultimas.iterrows())
+    for _, v in ultimas.iterrows():
+        if v["close"] < nivel and impulso_fuerte(v):
+            return True
 
-    return verdes == 3 or rojas == 3
+    return False
 
 
 # =========================
@@ -120,7 +169,7 @@ def detectar_entrada_oculta(data):
 
     for par, velas in data.items():
 
-        if len(velas) < 30:
+        if len(velas) < 50:
             continue
 
         df = pd.DataFrame(velas)
@@ -134,59 +183,79 @@ def detectar_entrada_oculta(data):
         if entrada_tarde(df):
             continue
 
-        tendencia = micro_tendencia(df)
-        if tendencia != "neutral":
-            continue
+        tendencia_macro = tendencia_real(df)
+        tendencia_micro = micro_tendencia(df)
 
         soporte, resistencia = niveles(df)
 
         if zona_mala(df, soporte, resistencia):
             continue
 
-        # =========================
-        # VELAS CLAVE
-        # =========================
-        v_confirmacion = df.iloc[-2]  # vela buena
-        v_manipulacion = df.iloc[-3]  # barrida
+        v_confirmacion = df.iloc[-2]
+        v_manipulacion = df.iloc[-3]
 
         score = 0
 
         # =========================
-        # SETUP PUT
-        # =========================
-        if v_manipulacion["max"] >= resistencia:
-
-            if rechazo_fuerte(v_manipulacion):
-                score += 2
-
-            if es_bajista(v_confirmacion):
-                score += 2
-
-            if impulso_fuerte(v_confirmacion):
-                score += 3
-
-            if score >= 10:
-                if score > mejor_score:
-                    mejor_score = score
-                    mejor = (par, "put", score)
-
-        # =========================
-        # SETUP CALL
+        # SETUP CALL (COMPRA)
         # =========================
         if v_manipulacion["min"] <= soporte:
 
+            # ❌ evitar contra tendencia fuerte
+            if tendencia_macro == "bajista":
+                continue
+
+            # ❌ evitar ruptura real
+            if ruptura_fuerte(df, soporte):
+                continue
+
+            # confirmaciones
             if rechazo_fuerte(v_manipulacion):
                 score += 2
 
-            if es_alcista(v_confirmacion):
+            if vela_reversion_alcista(v_confirmacion):
+                score += 3
+
+            if tendencia_micro == "alcista":
                 score += 2
 
             if impulso_fuerte(v_confirmacion):
-                score += 3
+                score += 2
 
-            if score >= 5:
+            if score >= 6:
                 if score > mejor_score:
                     mejor_score = score
                     mejor = (par, "call", score)
+
+        # =========================
+        # SETUP PUT (VENTA)
+        # =========================
+        if v_manipulacion["max"] >= resistencia:
+
+            # ❌ evitar contra tendencia fuerte
+            if tendencia_macro == "alcista":
+                continue
+
+            # ❌ evitar ruptura real
+            if ruptura_fuerte(df, resistencia):
+                continue
+
+            # confirmaciones
+            if rechazo_fuerte(v_manipulacion):
+                score += 2
+
+            if vela_reversion_bajista(v_confirmacion):
+                score += 3
+
+            if tendencia_micro == "bajista":
+                score += 2
+
+            if impulso_fuerte(v_confirmacion):
+                score += 2
+
+            if score >= 6:
+                if score > mejor_score:
+                    mejor_score = score
+                    mejor = (par, "put", score)
 
     return mejor
