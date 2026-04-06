@@ -46,7 +46,7 @@ def micro_tendencia(df):
     return "neutral"
 
 
-# 🔥 FILTRO TENDENCIA FUERTE
+# 🔥 TENDENCIA FUERTE
 def tendencia_fuerte(df):
     ultimas = df.iloc[-6:]
 
@@ -62,34 +62,34 @@ def tendencia_fuerte(df):
     return "neutral"
 
 
-# 🔥 NUEVO: FILTRO ANTI IMPULSO (evita entrar tarde)
+# 🔥 IMPULSO RECIENTE (ANTI ENTRADA TARDE)
 def impulso_reciente(df):
     ultimas = df.iloc[-3:]
 
     for _, v in ultimas.iterrows():
         if rango(v) == 0:
             continue
-        if body(v) > rango(v) * 0.7:
+        if body(v) > rango(v) * 0.8:
             return True
 
     return False
 
 
-# 🔥 NUEVO: FILTRO ANTI CONTINUACIÓN
+# 🔥 CONTINUIDAD (ANTI FALSA REVERSA)
 def continuidad_fuerte(df):
     ultimas = df.iloc[-3:]
 
     verdes = sum(es_alcista(v) for _, v in ultimas.iterrows())
     rojas = sum(es_bajista(v) for _, v in ultimas.iterrows())
 
-    return verdes == 3 or rojas == 3
+    return verdes >= 4 or rojas >= 4
 
 
-# 🔥 CONFIRMACIÓN MEJORADA
+# 🔥 CONFIRMACIÓN
 def confirmacion_fuerte(v):
     if rango(v) == 0:
         return False
-    return body(v) > rango(v) * 0.6
+    return body(v) > rango(v) * 0.5
 
 
 def impulso_fuerte(v):
@@ -111,16 +111,30 @@ def rechazo_fuerte(v):
     )
 
 
-# 🔥 NUEVO: RUPTURA REAL (clave para evitar falsas entradas)
+# 🔥 NUEVO: DETECCIÓN DE LIQUIDEZ (CLAVE PRO)
+def barrido_liquidez(df, direccion):
+    v = df.iloc[-3]
+    prev = df.iloc[-4]
+
+    if direccion == "call":
+        return v["min"] < prev["min"]
+
+    if direccion == "put":
+        return v["max"] > prev["max"]
+
+    return False
+
+
+# 🔥 RUPTURA REAL
 def ruptura_valida(df, direccion):
     v = df.iloc[-2]
     prev = df.iloc[-3]
 
     if direccion == "call":
-        return v["close"] > prev["max"]
+        return v["close"] > prev["max"] * 0.999
 
     if direccion == "put":
-        return v["close"] < prev["min"]
+        return v["close"] < prev["min"] * 1.001
 
     return False
 
@@ -149,7 +163,6 @@ def detectar_entrada_oculta(data):
 
         df = pd.DataFrame(velas)
 
-        # ❌ mercado malo
         if mercado_lateral(df):
             continue
 
@@ -181,6 +194,9 @@ def detectar_entrada_oculta(data):
         # ========================
         if v_manipulacion["max"] >= resistencia:
 
+            if barrido_liquidez(df, "put"):
+                score += 2
+
             if rechazo_fuerte(v_manipulacion):
                 score += 2
 
@@ -193,11 +209,10 @@ def detectar_entrada_oculta(data):
             if not confirmacion_fuerte(v_confirmacion):
                 continue
 
-            # 🔥 VALIDACIÓN REAL
             if not ruptura_valida(df, "put"):
                 continue
 
-            if score >= 5:
+            if score >= 6:
                 if score > mejor_score:
                     mejor_score = score
                     mejor = (par, "put", score)
@@ -206,6 +221,9 @@ def detectar_entrada_oculta(data):
         # 🟢 CALL
         # ========================
         if v_manipulacion["min"] <= soporte:
+
+            if barrido_liquidez(df, "call"):
+                score += 2
 
             if rechazo_fuerte(v_manipulacion):
                 score += 2
@@ -219,11 +237,10 @@ def detectar_entrada_oculta(data):
             if not confirmacion_fuerte(v_confirmacion):
                 continue
 
-            # 🔥 VALIDACIÓN REAL
             if not ruptura_valida(df, "call"):
                 continue
 
-            if score >= 5:
+            if score >= 6:
                 if score > mejor_score:
                     mejor_score = score
                     mejor = (par, "call", score)
