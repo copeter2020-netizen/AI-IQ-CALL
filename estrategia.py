@@ -18,7 +18,7 @@ def es_bajista(v):
 
 
 # =========================
-# TENDENCIA REAL (BASE)
+# TENDENCIA REAL
 # =========================
 def tendencia_real(df):
     ma20 = df["close"].rolling(20).mean()
@@ -53,60 +53,80 @@ def impulso_fuerte(v):
     if rango(v) == 0:
         return False
 
-    return body(v) > rango(v) * 0.6
+    return body(v) > rango(v) * 0.7
 
 
 # =========================
-# PULLBACK DETECTOR 🔥
+# DETECTAR SOBRE-EXTENSIÓN 🔥
 # =========================
-def es_pullback_alcista(df):
-    ultimas = df.iloc[-4:]
+def sobre_extension(df):
+    ultimas = df.iloc[-5:]
 
-    # tendencia previa alcista
-    impulso = es_alcista(ultimas.iloc[0]) and es_alcista(ultimas.iloc[1])
+    fuertes = sum(
+        body(v) > rango(v) * 0.6
+        for _, v in ultimas.iterrows()
+    )
 
-    # retroceso
-    retroceso = es_bajista(ultimas.iloc[2])
+    return fuertes >= 3
+
+
+# =========================
+# DETECTAR TECHO / SUELO 🔥
+# =========================
+def cerca_resistencia(df):
+    maximo = df["max"].rolling(20).max().iloc[-2]
+    precio = df["close"].iloc[-2]
+
+    return abs(precio - maximo) < (maximo * 0.001)
+
+
+def cerca_soporte(df):
+    minimo = df["min"].rolling(20).min().iloc[-2]
+    precio = df["close"].iloc[-2]
+
+    return abs(precio - minimo) < (minimo * 0.001)
+
+
+# =========================
+# PULLBACK REAL 🔥
+# =========================
+def pullback_real_alcista(df):
+    ultimas = df.iloc[-5:]
+
+    impulso = sum(es_alcista(v) for _, v in ultimas.iloc[:3].iterrows()) >= 2
+    retroceso = sum(es_bajista(v) for _, v in ultimas.iloc[3:5].iterrows()) >= 2
 
     return impulso and retroceso
 
 
-def es_pullback_bajista(df):
-    ultimas = df.iloc[-4:]
+def pullback_real_bajista(df):
+    ultimas = df.iloc[-5:]
 
-    impulso = es_bajista(ultimas.iloc[0]) and es_bajista(ultimas.iloc[1])
-    retroceso = es_alcista(ultimas.iloc[2])
+    impulso = sum(es_bajista(v) for _, v in ultimas.iloc[:3].iterrows()) >= 2
+    retroceso = sum(es_alcista(v) for _, v in ultimas.iloc[3:5].iterrows()) >= 2
 
     return impulso and retroceso
 
 
 # =========================
-# CONFIRMACIÓN DE ENTRADA 🔥
+# RUPTURA DEL PULLBACK 🔥
 # =========================
-def confirmacion_alcista(v):
-    return es_alcista(v) and impulso_fuerte(v)
+def ruptura_alcista(df):
+    v = df.iloc[-2]
+    prev = df.iloc[-3]
+
+    return v["close"] > prev["max"]
 
 
-def confirmacion_bajista(v):
-    return es_bajista(v) and impulso_fuerte(v)
+def ruptura_bajista(df):
+    v = df.iloc[-2]
+    prev = df.iloc[-3]
 
-
-# =========================
-# ENTRADA TARDE (CLAVE)
-# =========================
-def entrada_tarde(df):
-    ultimas = df.iloc[-3:]
-
-    cuerpos = [body(v) for _, v in ultimas.iterrows()]
-    rangos = [rango(v) for _, v in ultimas.iterrows()]
-
-    velas_fuertes = sum(c > r * 0.6 for c, r in zip(cuerpos, rangos))
-
-    return velas_fuertes >= 2
+    return v["close"] < prev["min"]
 
 
 # =========================
-# DETECTOR PRINCIPAL (NUEVO)
+# DETECTOR PRINCIPAL
 # =========================
 def detectar_entrada_oculta(data):
 
@@ -125,37 +145,47 @@ def detectar_entrada_oculta(data):
         if mercado_lateral(df):
             continue
 
-        if entrada_tarde(df):
+        if sobre_extension(df):
             continue
 
         tendencia = tendencia_real(df)
 
-        v_confirmacion = df.iloc[-2]  # vela donde entras
-        v_pullback = df.iloc[-3]      # retroceso
+        v_confirmacion = df.iloc[-2]
 
         # =========================
-        # 🟢 SETUP CALL (CONTINUACIÓN ALCISTA)
+        # 🟢 CALL
         # =========================
         if tendencia == "alcista":
 
-            if not es_pullback_alcista(df):
+            if cerca_resistencia(df):
                 continue
 
-            if not confirmacion_alcista(v_confirmacion):
+            if not pullback_real_alcista(df):
                 continue
 
-            # entrada EXACTA binarias
+            if not ruptura_alcista(df):
+                continue
+
+            if not impulso_fuerte(v_confirmacion):
+                continue
+
             return (par, "call", 1)
 
         # =========================
-        # 🔴 SETUP PUT (CONTINUACIÓN BAJISTA)
+        # 🔴 PUT
         # =========================
         if tendencia == "bajista":
 
-            if not es_pullback_bajista(df):
+            if cerca_soporte(df):
                 continue
 
-            if not confirmacion_bajista(v_confirmacion):
+            if not pullback_real_bajista(df):
+                continue
+
+            if not ruptura_bajista(df):
+                continue
+
+            if not impulso_fuerte(v_confirmacion):
                 continue
 
             return (par, "put", 1)
