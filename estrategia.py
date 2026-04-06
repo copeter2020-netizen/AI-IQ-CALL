@@ -15,6 +15,9 @@ def es_bajista(v):
     return v["close"] < v["open"]
 
 
+# =========================
+# ESTRUCTURA
+# =========================
 def niveles(df):
     soporte = df["min"].rolling(20).min().iloc[-2]
     resistencia = df["max"].rolling(20).max().iloc[-2]
@@ -46,7 +49,6 @@ def micro_tendencia(df):
     return "neutral"
 
 
-# ✅ NUEVO FILTRO (EXPLICADO)
 def tendencia_fuerte(df):
     ultimas = df.iloc[-6:]
 
@@ -62,16 +64,63 @@ def tendencia_fuerte(df):
     return "neutral"
 
 
-# ✅ NUEVO FILTRO (EXPLICADO)
-def confirmacion_fuerte(v):
-    return body(v) > rango(v) * 0.6
-
-
+# =========================
+# IMPULSO (NUEVO 🔥)
+# =========================
 def impulso_fuerte(v):
     if rango(v) == 0:
         return False
-
     return body(v) > rango(v) * 0.7
+
+
+def impulso_reciente_fuerte(df):
+    ultimas = df.iloc[-5:]
+
+    alcistas = 0
+    bajistas = 0
+
+    for _, v in ultimas.iterrows():
+        if impulso_fuerte(v) and es_alcista(v):
+            alcistas += 1
+        if impulso_fuerte(v) and es_bajista(v):
+            bajistas += 1
+
+    if alcistas >= 3:
+        return "alcista"
+
+    if bajistas >= 3:
+        return "bajista"
+
+    return "neutral"
+
+
+# =========================
+# VELA DOMINANTE (NUEVO 💣)
+# =========================
+def direccion_ultima_fuerte(df):
+    ultimas = df.iloc[-10:]
+    cuerpos = [body(v) for _, v in ultimas.iterrows()]
+    promedio = np.mean(cuerpos)
+
+    v = df.iloc[-2]
+
+    if body(v) > promedio * 2:
+        if es_alcista(v):
+            return "alcista"
+        elif es_bajista(v):
+            return "bajista"
+
+    return "neutral"
+
+
+# =========================
+# VALIDACIONES
+# =========================
+def confirmacion_fuerte(v):
+    if rango(v) == 0:
+        return False
+
+    return body(v) > rango(v) * 0.55
 
 
 def rechazo_fuerte(v):
@@ -82,8 +131,8 @@ def rechazo_fuerte(v):
     mecha_inf = min(v["open"], v["close"]) - v["min"]
 
     return (
-        mecha_sup > body(v) * 1.2 or
-        mecha_inf > body(v) * 1.2
+        mecha_sup > body(v) * 1.3 or
+        mecha_inf > body(v) * 1.3
     )
 
 
@@ -99,6 +148,9 @@ def zona_mala(df, soporte, resistencia):
     return distancia > rango_total * 0.6
 
 
+# =========================
+# MAIN
+# =========================
 def detectar_entrada_oculta(data):
 
     mejor = None
@@ -114,12 +166,10 @@ def detectar_entrada_oculta(data):
         if mercado_lateral(df):
             continue
 
-        # ✅ BLOQUEA TENDENCIA FUERTE
         if tendencia_fuerte(df) != "neutral":
             continue
 
-        tendencia = micro_tendencia(df)
-        if tendencia != "neutral":
+        if micro_tendencia(df) != "neutral":
             continue
 
         soporte, resistencia = niveles(df)
@@ -127,51 +177,19 @@ def detectar_entrada_oculta(data):
         if zona_mala(df, soporte, resistencia):
             continue
 
+        # 🔥 NUEVOS FILTROS CLAVE
+        impulso = impulso_reciente_fuerte(df)
+        direccion_fuerte = direccion_ultima_fuerte(df)
+
+        bloquear_put = impulso == "alcista" or direccion_fuerte == "alcista"
+        bloquear_call = impulso == "bajista" or direccion_fuerte == "bajista"
+
         v_confirmacion = df.iloc[-2]
         v_manipulacion = df.iloc[-3]
 
         score = 0
 
+        # =========================
         # PUT
-        if v_manipulacion["max"] >= resistencia:
-
-            if rechazo_fuerte(v_manipulacion):
-                score += 2
-
-            if es_bajista(v_confirmacion):
-                score += 2
-
-            if impulso_fuerte(v_confirmacion):
-                score += 3
-
-            # ✅ CONFIRMACIÓN REAL
-            if not confirmacion_fuerte(v_confirmacion):
-                continue
-
-            if score >= 5:
-                if score > mejor_score:
-                    mejor_score = score
-                    mejor = (par, "put", score)
-
-        # CALL
-        if v_manipulacion["min"] <= soporte:
-
-            if rechazo_fuerte(v_manipulacion):
-                score += 2
-
-            if es_alcista(v_confirmacion):
-                score += 2
-
-            if impulso_fuerte(v_confirmacion):
-                score += 3
-
-            # ✅ CONFIRMACIÓN REAL
-            if not confirmacion_fuerte(v_confirmacion):
-                continue
-
-            if score >= 8:
-                if score > mejor_score:
-                    mejor_score = score
-                    mejor = (par, "call", score)
-
-    return mejor
+        # =========================
+        if not bloquear_put and v_manipulacion["max"] >= resistencia:
