@@ -169,7 +169,7 @@ def detectar_entrada_oculta(data):
             if not confirmacion_fuerte(v_confirmacion):
                 continue
 
-            if score >= 7:
+            if score >= 8:
                 if score > mejor_score:
                     mejor_score = score
                     mejor = (par, "call", score)
