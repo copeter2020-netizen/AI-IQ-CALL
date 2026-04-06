@@ -20,7 +20,7 @@ PASSWORD = os.getenv("IQ_PASSWORD")
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-MONTO = 3000
+MONTO = 300
 CUENTA = "PRACTICE"
 
 PARES = [
@@ -95,7 +95,7 @@ def operar(iq, par, direccion):
     try:
         esperar_apertura_real()
 
-        check, _ = iq.buy(MONTO, par, direccion, 1)
+        check, _ = iq.buy(MONTO, par, direccion, 3)
 
         if check:
             print(f"🚀 ENTRADA {par} {direccion}")
