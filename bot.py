@@ -32,9 +32,7 @@ PARES = [
     "USDCHF-OTC"
 ]
 
-# =========================
-# TELEGRAM
-# =========================
+
 def enviar_mensaje(texto):
     try:
         url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
@@ -46,9 +44,6 @@ def enviar_mensaje(texto):
         pass
 
 
-# =========================
-# CONEXIÓN
-# =========================
 def conectar():
     while True:
         try:
@@ -66,24 +61,19 @@ def conectar():
         time.sleep(5)
 
 
-# =========================
-# TIMING PERFECTO
-# =========================
+# 🔥 FIX REAL DE TIMING
 def esperar_apertura_real():
     while True:
         ahora = time.time()
         segundos = int(ahora) % 60
         milisegundos = ahora - int(ahora)
 
-        if segundos == 59 and milisegundos > 0.90:
+        if segundos == 58 and milisegundos > 0.90:
             return
 
-        time.sleep(0.002)
+        time.sleep(0.005)
 
 
-# =========================
-# DATOS
-# =========================
 def obtener_velas(iq, par):
     try:
         velas = iq.get_candles(par, 60, 40, time.time())
@@ -100,9 +90,6 @@ def obtener_velas(iq, par):
         return []
 
 
-# =========================
-# OPERACIÓN
-# =========================
 def operar(iq, par, direccion):
 
     try:
@@ -128,9 +115,6 @@ Monto: ${MONTO}
         print("Error operar:", e)
 
 
-# =========================
-# LOOP ULTRA RÁPIDO 🔥
-# =========================
 def run():
 
     if detectar_entrada_oculta is None:
@@ -139,12 +123,8 @@ def run():
 
     iq = conectar()
 
-    operados = {}  # 🔥 evita duplicar entradas por vela
-
     while True:
         try:
-            ahora = int(time.time())
-            vela_actual = ahora // 60
 
             data = {}
 
@@ -156,26 +136,19 @@ def run():
             if señal:
                 par, direccion, score = señal
 
-                # 🔥 evitar repetir en misma vela
-                if operados.get(par) == vela_actual:
-                    time.sleep(0.2)
-                    continue
-
-                operados[par] = vela_actual
-
                 print(f"🎯 Señal {par} {direccion} Score:{score}")
 
                 operar(iq, par, direccion)
 
-            time.sleep(0.2)
+                time.sleep(180)
+
+            else:
+                time.sleep(0.5)
 
         except Exception as e:
             print("Error loop:", e)
-            time.sleep(3)
+            time.sleep(5)
 
 
-# =========================
-# START
-# =========================
 if __name__ == "__main__":
     run()
