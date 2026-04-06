@@ -57,13 +57,13 @@ def impulso_fuerte(v):
 
 
 # =========================
-# DETECTAR SOBRE-EXTENSIÓN 🔥
+# EXTENSIÓN (NO ENTRAR TARDE)
 # =========================
 def sobre_extension(df):
     ultimas = df.iloc[-5:]
 
     fuertes = sum(
-        body(v) > rango(v) * 0.6
+        body(v) > rango(v) * 0.7
         for _, v in ultimas.iterrows()
     )
 
@@ -71,7 +71,22 @@ def sobre_extension(df):
 
 
 # =========================
-# DETECTAR TECHO / SUELO 🔥
+# RSI FILTRO 🔥
+# =========================
+def calcular_rsi(df):
+    delta = df["close"].diff()
+
+    gain = delta.clip(lower=0).rolling(14).mean()
+    loss = -delta.clip(upper=0).rolling(14).mean()
+
+    rs = gain / loss
+    rsi = 100 - (100 / (1 + rs))
+
+    return rsi.iloc[-1]
+
+
+# =========================
+# SOPORTE / RESISTENCIA
 # =========================
 def cerca_resistencia(df):
     maximo = df["max"].rolling(20).max().iloc[-2]
@@ -88,7 +103,7 @@ def cerca_soporte(df):
 
 
 # =========================
-# PULLBACK REAL 🔥
+# PULLBACK REAL
 # =========================
 def pullback_real_alcista(df):
     ultimas = df.iloc[-5:]
@@ -109,28 +124,20 @@ def pullback_real_bajista(df):
 
 
 # =========================
-# RUPTURA DEL PULLBACK 🔥
+# RUPTURA
 # =========================
 def ruptura_alcista(df):
-    v = df.iloc[-2]
-    prev = df.iloc[-3]
-
-    return v["close"] > prev["max"]
+    return df.iloc[-2]["close"] > df.iloc[-3]["max"]
 
 
 def ruptura_bajista(df):
-    v = df.iloc[-2]
-    prev = df.iloc[-3]
-
-    return v["close"] < prev["min"]
+    return df.iloc[-2]["close"] < df.iloc[-3]["min"]
 
 
 # =========================
 # DETECTOR PRINCIPAL
 # =========================
 def detectar_entrada_oculta(data):
-
-    mejor = None
 
     for par, velas in data.items():
 
@@ -139,9 +146,6 @@ def detectar_entrada_oculta(data):
 
         df = pd.DataFrame(velas)
 
-        # =========================
-        # FILTROS BASE
-        # =========================
         if mercado_lateral(df):
             continue
 
@@ -149,6 +153,7 @@ def detectar_entrada_oculta(data):
             continue
 
         tendencia = tendencia_real(df)
+        rsi = calcular_rsi(df)
 
         v_confirmacion = df.iloc[-2]
 
@@ -156,6 +161,9 @@ def detectar_entrada_oculta(data):
         # 🟢 CALL
         # =========================
         if tendencia == "alcista":
+
+            if rsi > 65:
+                continue
 
             if cerca_resistencia(df):
                 continue
@@ -176,6 +184,9 @@ def detectar_entrada_oculta(data):
         # =========================
         if tendencia == "bajista":
 
+            if rsi < 35:
+                continue
+
             if cerca_soporte(df):
                 continue
 
@@ -190,4 +201,4 @@ def detectar_entrada_oculta(data):
 
             return (par, "put", 1)
 
-    return mejor
+    return None
