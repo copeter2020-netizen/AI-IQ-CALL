@@ -58,14 +58,13 @@ def conectar():
         time.sleep(5)
 
 
-# 🔥 FIX REAL DE TIMING
-def esperar_apertura_real():
+# 🔥 ENTRADA ANTICIPADA (48–52 segundos)
+def esperar_entrada_anticipada():
     while True:
         ahora = time.time()
         segundos = int(ahora) % 60
-        milisegundos = ahora - int(ahora)
 
-        if segundos == 1 and milisegundos > 0.90:
+        if 48 <= segundos <= 52:
             return
 
         time.sleep(0.005)
@@ -90,7 +89,7 @@ def obtener_velas(iq, par):
 def operar(iq, par, direccion):
 
     try:
-        esperar_apertura_real()
+        esperar_entrada_anticipada()
 
         check, _ = iq.buy(MONTO, par, direccion, 1)
 
@@ -98,14 +97,14 @@ def operar(iq, par, direccion):
             print(f"🚀 ENTRADA {par} {direccion}")
 
             enviar_mensaje(f"""
-🚀 ENTRADA PRO
+🚀 ENTRADA PRO (ANTICIPADA)
 
 Par: {par}
 Dirección: {direccion.upper()}
-Expiración: 2 MIN
+Expiración: 1 MIN
 Monto: ${MONTO}
 
-⏱ Entrada en apertura REAL
+⏱ Entrada anticipada (seg 48–52)
 """)
 
     except Exception as e:
@@ -137,10 +136,10 @@ def run():
 
                 operar(iq, par, direccion)
 
-                time.sleep(180)
+                time.sleep(60)
 
             else:
-                time.sleep(0.5)
+                time.sleep(0.3)
 
         except Exception as e:
             print("Error loop:", e)
