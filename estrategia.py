@@ -2,6 +2,9 @@ import numpy as np
 import pandas as pd
 
 
+# =========================
+# UTILIDADES
+# =========================
 def body(v):
     return abs(v["close"] - v["open"])
 
@@ -95,7 +98,7 @@ def zona_mala(df, soporte, resistencia):
 
 
 # =========================
-# MAIN
+# MAIN (SEÑALES INVERTIDAS)
 # =========================
 def detectar_entrada_oculta(data):
 
@@ -109,6 +112,7 @@ def detectar_entrada_oculta(data):
 
         df = pd.DataFrame(velas)
 
+        # Evitar mercado muerto
         if mercado_lateral(df):
             continue
 
@@ -119,6 +123,7 @@ def detectar_entrada_oculta(data):
 
         tendencia = tendencia_fuerte(df)
 
+        # Bloqueo inteligente
         bloquear_put = tendencia == "alcista"
         bloquear_call = tendencia == "bajista"
 
@@ -128,7 +133,8 @@ def detectar_entrada_oculta(data):
         score = 0
 
         # =========================
-        # PUT
+        # PUT (LÓGICA ORIGINAL)
+        # 👉 AHORA SE CONVIERTE EN CALL
         # =========================
         if not bloquear_put and v_manipulacion["max"] >= resistencia * 0.998:
 
@@ -146,10 +152,11 @@ def detectar_entrada_oculta(data):
 
             if score >= 5 and score > mejor_score:
                 mejor_score = score
-                mejor = (par, "put", score)
+                mejor = (par, "call", score)  # 🔥 INVERTIDO
 
         # =========================
-        # CALL
+        # CALL (LÓGICA ORIGINAL)
+        # 👉 AHORA SE CONVIERTE EN PUT
         # =========================
         if not bloquear_call and v_manipulacion["min"] <= soporte * 1.002:
 
@@ -167,6 +174,6 @@ def detectar_entrada_oculta(data):
 
             if score >= 5 and score > mejor_score:
                 mejor_score = score
-                mejor = (par, "call", score)
+                mejor = (par, "put", score)  # 🔥 INVERTIDO
 
     return mejor
