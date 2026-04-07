@@ -59,7 +59,7 @@ def impulso_fuerte(v):
 
 
 # =========================
-# VELA DOMINANTE (CLAVE 🔥)
+# VELA DOMINANTE
 # =========================
 def direccion_ultima_fuerte(df):
     ultimas = df.iloc[-10:]
@@ -83,7 +83,6 @@ def direccion_ultima_fuerte(df):
 def confirmacion_fuerte(v):
     if rango(v) == 0:
         return False
-
     return body(v) > rango(v) * 0.55
 
 
@@ -139,7 +138,7 @@ def detectar_entrada_oculta(data):
         if zona_mala(df, soporte, resistencia):
             continue
 
-        # 🔥 FILTRO MÁS IMPORTANTE
+        # FILTRO CLAVE
         direccion_fuerte = direccion_ultima_fuerte(df)
 
         bloquear_put = direccion_fuerte == "alcista"
