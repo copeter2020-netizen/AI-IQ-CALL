@@ -24,14 +24,66 @@ MONTO = 358
 CUENTA = "PRACTICE"
 
 PARES = [
+    
     "EURUSD-OTC",
     "EURJPY-OTC",
-    "GBPJPY-OTC",
+    "EURGBP-OTC",
     "USDCHF-OTC",
     "GBPUSD-OTC",
+    "AUDUSD-OTC",
+    "USDCAD-OTC",
+    "NZDUSD-OTC",
+
+    "USDJPY-OTC",
+    "GBPJPY-OTC",
+    "EURCHF-OTC",
+    "AUDJPY-OTC",
+    "CADJPY-OTC",
+    "CHFJPY-OTC",
+
+    "EURAUD-OTC",
+    "EURNZD-OTC",
+    "GBPAUD-OTC",
+    "GBPNZD-OTC",
+
+    "AUDCAD-OTC",
+    "AUDCHF-OTC",
+    "AUDNZD-OTC",
+
+    "CADCHF-OTC",
+    "NZDJPY-OTC",
+    "NZDCHF-OTC",
+    "NZDCAD-OTC",
+
+    "USDNOK-OTC",
+    "USDSEK-OTC",
+    "USDDKK-OTC",
     "USDZAR-OTC",
+    "USDSGD-OTC",
+    "USDHKD-OTC",
+
+    "USDTRY-OTC",
     "USDTHB-OTC",
-    "EURGBP-OTC"
+    "USDMXN-OTC",
+    "USDPLN-OTC",
+    "USDINR-OTC",
+    "USDPHP-OTC",
+
+    "EURTRY-OTC",
+    "EURZAR-OTC",
+    "EURSGD-OTC",
+
+    "GBPCHF-OTC",
+    "GBPCHF-OTC",
+
+    "CHFSGD-OTC",
+    "AUDSGD-OTC",
+    "CADSGD-OTC",
+    "EURNOK-OTC",
+    "EURSEK-OTC",
+    "GBPNOK-OTC",
+    "GBPSEK-OTC"
+
 ]
 
 
