@@ -1,5 +1,4 @@
-
- import time
+import time
 import os
 import requests
 import sys
@@ -20,11 +19,9 @@ PASSWORD = os.getenv("IQ_PASSWORD")
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-MONTO = 358
+MONTO = 359
 CUENTA = "PRACTICE"
 
-
-# 🔥 SOLO PARES BASE (SIN ERRORES)
 PARES = [
     "EURUSD-OTC",
     "EURJPY-OTC",
@@ -77,6 +74,7 @@ PARES = [
     "GBPSEK-OTC"
 ]
 
+
 # =========================
 # TELEGRAM
 # =========================
@@ -124,7 +122,7 @@ def esperar_entrada():
 
 
 # =========================
-# VELAS (SIN ERRORES)
+# VELAS
 # =========================
 def obtener_velas(iq, par):
     try:
@@ -156,14 +154,9 @@ def operar(iq, par, direccion):
         if check:
             print(f"🚀 ENTRADA {par} {direccion.upper()}")
 
-            enviar_mensaje(f"""
-🚀 ENTRADA PRO
-
-Par: {par}
-Dirección: {direccion.upper()}
-Monto: ${MONTO}
-Exp: 1 MIN
-""")
+            enviar_mensaje(
+                f"🚀 ENTRADA\nPar: {par}\nDirección: {direccion.upper()}\nMonto: ${MONTO}"
+            )
 
     except:
         pass
@@ -187,7 +180,6 @@ def run():
             for par in PARES:
                 velas = obtener_velas(iq, par)
 
-                # 🔥 FILTRO ANTI-ERROR
                 if velas is not None:
                     data[par] = velas
 
