@@ -147,7 +147,7 @@ def operar(iq, par, direccion):
     try:
         esperar_cierre_m5()
 
-        check, _ = iq.buy(MONTO, par, direccion, 5)
+        check, _ = iq.buy(MONTO, par, direccion, 2)
 
         if check:
             print(f"🚀 ENTRADA {par} {direccion.upper()}")
