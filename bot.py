@@ -20,7 +20,7 @@ PASSWORD = os.getenv("IQ_PASSWORD")
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-MONTO = 350
+MONTO = 358
 CUENTA = "PRACTICE"
 
 PARES = [
@@ -64,7 +64,7 @@ def esperar_entrada_anticipada():
         ahora = time.time()
         segundos = int(ahora) % 60
 
-        if 48 <= segundos <= 52:
+        if 38 <= segundos <= 42:
             return
 
         time.sleep(0.005)
