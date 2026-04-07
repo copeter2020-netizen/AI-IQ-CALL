@@ -1,4 +1,5 @@
-import time
+
+ import time
 import os
 import requests
 import sys
@@ -9,8 +10,7 @@ sys.path.append(BASE_DIR)
 
 try:
     from estrategia import detectar_entrada_oculta
-except Exception as e:
-    print("❌ Error importando estrategia:", e)
+except:
     detectar_entrada_oculta = None
 
 
@@ -23,8 +23,9 @@ CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 MONTO = 358
 CUENTA = "PRACTICE"
 
+
+# 🔥 SOLO PARES BASE (SIN ERRORES)
 PARES = [
-    
     "EURUSD-OTC",
     "EURJPY-OTC",
     "EURGBP-OTC",
@@ -33,49 +34,40 @@ PARES = [
     "AUDUSD-OTC",
     "USDCAD-OTC",
     "NZDUSD-OTC",
-
     "USDJPY-OTC",
     "GBPJPY-OTC",
     "EURCHF-OTC",
     "AUDJPY-OTC",
     "CADJPY-OTC",
     "CHFJPY-OTC",
-
     "EURAUD-OTC",
     "EURNZD-OTC",
     "GBPAUD-OTC",
     "GBPNZD-OTC",
-
     "AUDCAD-OTC",
     "AUDCHF-OTC",
     "AUDNZD-OTC",
-
     "CADCHF-OTC",
     "NZDJPY-OTC",
     "NZDCHF-OTC",
     "NZDCAD-OTC",
-
     "USDNOK-OTC",
     "USDSEK-OTC",
     "USDDKK-OTC",
     "USDZAR-OTC",
     "USDSGD-OTC",
     "USDHKD-OTC",
-
     "USDTRY-OTC",
     "USDTHB-OTC",
     "USDMXN-OTC",
     "USDPLN-OTC",
     "USDINR-OTC",
     "USDPHP-OTC",
-
     "EURTRY-OTC",
     "EURZAR-OTC",
     "EURSGD-OTC",
-
     "GBPCHF-OTC",
     "GBPCHF-OTC",
-
     "CHFSGD-OTC",
     "AUDSGD-OTC",
     "CADSGD-OTC",
@@ -83,21 +75,25 @@ PARES = [
     "EURSEK-OTC",
     "GBPNOK-OTC",
     "GBPSEK-OTC"
-
 ]
 
-
+# =========================
+# TELEGRAM
+# =========================
 def enviar_mensaje(texto):
     try:
-        url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
-        requests.post(url, data={
-            "chat_id": CHAT_ID,
-            "text": texto
-        }, timeout=5)
+        requests.post(
+            f"https://api.telegram.org/bot{TOKEN}/sendMessage",
+            data={"chat_id": CHAT_ID, "text": texto},
+            timeout=5
+        )
     except:
         pass
 
 
+# =========================
+# CONEXIÓN
+# =========================
 def conectar():
     while True:
         try:
@@ -108,28 +104,34 @@ def conectar():
                 iq.change_balance(CUENTA)
                 print("✅ CONECTADO")
                 return iq
-
-        except Exception as e:
-            print("Error conexión:", e)
+        except:
+            pass
 
         time.sleep(5)
 
 
-# 🔥 ENTRADA ANTICIPADA (48–52 segundos)
-def esperar_entrada_anticipada():
+# =========================
+# TIMING
+# =========================
+def esperar_entrada():
     while True:
-        ahora = time.time()
-        segundos = int(ahora) % 60
+        segundos = int(time.time()) % 60
 
         if 38 <= segundos <= 42:
             return
 
-        time.sleep(0.005)
+        time.sleep(0.01)
 
 
+# =========================
+# VELAS (SIN ERRORES)
+# =========================
 def obtener_velas(iq, par):
     try:
         velas = iq.get_candles(par, 60, 40, time.time())
+
+        if not velas:
+            return None
 
         return [{
             "open": v["open"],
@@ -138,58 +140,67 @@ def obtener_velas(iq, par):
             "min": v["min"]
         } for v in velas]
 
-    except Exception as e:
-        print("Error velas:", e)
-        return []
+    except:
+        return None
 
 
+# =========================
+# OPERAR
+# =========================
 def operar(iq, par, direccion):
-
     try:
-        esperar_entrada_anticipada()
+        esperar_entrada()
 
         check, _ = iq.buy(MONTO, par, direccion, 1)
 
         if check:
-            print(f"🚀 ENTRADA {par} {direccion}")
+            print(f"🚀 ENTRADA {par} {direccion.upper()}")
 
             enviar_mensaje(f"""
-🚀 ENTRADA PRO (ANTICIPADA)
+🚀 ENTRADA PRO
 
 Par: {par}
 Dirección: {direccion.upper()}
-Expiración: 1 MIN
 Monto: ${MONTO}
-
-⏱ Entrada anticipada (seg 48–52)
+Exp: 1 MIN
 """)
 
-    except Exception as e:
-        print("Error operar:", e)
+    except:
+        pass
 
 
+# =========================
+# MAIN
+# =========================
 def run():
 
     if detectar_entrada_oculta is None:
-        print("❌ No se puede ejecutar sin estrategia.py")
+        print("❌ Falta estrategia.py")
         return
 
     iq = conectar()
 
     while True:
         try:
-
             data = {}
 
             for par in PARES:
-                data[par] = obtener_velas(iq, par)
+                velas = obtener_velas(iq, par)
+
+                # 🔥 FILTRO ANTI-ERROR
+                if velas is not None:
+                    data[par] = velas
+
+            if not data:
+                time.sleep(1)
+                continue
 
             señal = detectar_entrada_oculta(data)
 
             if señal:
                 par, direccion, score = señal
 
-                print(f"🎯 Señal {par} {direccion} Score:{score}")
+                print(f"🎯 Señal {par} {direccion.upper()} Score:{score}")
 
                 operar(iq, par, direccion)
 
@@ -198,9 +209,8 @@ def run():
             else:
                 time.sleep(0.3)
 
-        except Exception as e:
-            print("Error loop:", e)
-            time.sleep(5)
+        except:
+            time.sleep(1)
 
 
 if __name__ == "__main__":
