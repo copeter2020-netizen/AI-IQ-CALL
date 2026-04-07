@@ -68,13 +68,39 @@ def direccion_ultima_fuerte(df):
 
     v = df.iloc[-2]
 
-    if body(v) > promedio * 2:
+    if body(v) > promedio * 1.8:
         if es_alcista(v):
             return "alcista"
         elif es_bajista(v):
             return "bajista"
 
     return "neutral"
+
+
+# =========================
+# CONTINUACIÓN
+# =========================
+def continuacion_alcista(df):
+    ultimas = df.iloc[-4:]
+    return sum(es_alcista(v) for _, v in ultimas.iterrows()) >= 3
+
+
+def continuacion_bajista(df):
+    ultimas = df.iloc[-4:]
+    return sum(es_bajista(v) for _, v in ultimas.iterrows()) >= 3
+
+
+# =========================
+# MICRO ESTRUCTURA (NUEVO)
+# =========================
+def mini_giro_alcista(df):
+    ultimas = df.iloc[-3:]
+    return all(es_alcista(v) for _, v in ultimas.iterrows())
+
+
+def mini_giro_bajista(df):
+    ultimas = df.iloc[-3:]
+    return all(es_bajista(v) for _, v in ultimas.iterrows())
 
 
 # =========================
@@ -107,7 +133,6 @@ def zona_mala(df, soporte, resistencia):
         return True
 
     distancia = min(abs(precio - soporte), abs(precio - resistencia))
-
     return distancia > rango_total * 0.6
 
 
@@ -130,19 +155,38 @@ def detectar_entrada_oculta(data):
         if mercado_lateral(df):
             continue
 
-        if tendencia_fuerte(df) != "neutral":
-            continue
-
         soporte, resistencia = niveles(df)
 
         if zona_mala(df, soporte, resistencia):
             continue
 
-        # FILTRO CLAVE
+        tendencia = tendencia_fuerte(df)
         direccion_fuerte = direccion_ultima_fuerte(df)
 
-        bloquear_put = direccion_fuerte == "alcista"
-        bloquear_call = direccion_fuerte == "bajista"
+        # BLOQUEOS INTELIGENTES
+        bloquear_put = False
+        bloquear_call = False
+
+        # 🚫 CONTINUACIÓN
+        if continuacion_alcista(df):
+            bloquear_put = True
+
+        if continuacion_bajista(df):
+            bloquear_call = True
+
+        # 🚫 VELA DOMINANTE
+        if direccion_fuerte == "alcista":
+            bloquear_put = True
+
+        if direccion_fuerte == "bajista":
+            bloquear_call = True
+
+        # 🚫 TENDENCIA
+        if tendencia == "alcista":
+            bloquear_put = True
+
+        if tendencia == "bajista":
+            bloquear_call = True
 
         v_confirmacion = df.iloc[-2]
         v_manipulacion = df.iloc[-3]
@@ -154,8 +198,13 @@ def detectar_entrada_oculta(data):
         # =========================
         if not bloquear_put and v_manipulacion["max"] >= resistencia:
 
-            if rechazo_fuerte(v_manipulacion):
-                score += 2
+            if not rechazo_fuerte(v_manipulacion):
+                continue
+
+            if not mini_giro_bajista(df):
+                continue
+
+            score += 2
 
             if es_bajista(v_confirmacion):
                 score += 2
@@ -175,8 +224,13 @@ def detectar_entrada_oculta(data):
         # =========================
         if not bloquear_call and v_manipulacion["min"] <= soporte:
 
-            if rechazo_fuerte(v_manipulacion):
-                score += 2
+            if not rechazo_fuerte(v_manipulacion):
+                continue
+
+            if not mini_giro_alcista(df):
+                continue
+
+            score += 2
 
             if es_alcista(v_confirmacion):
                 score += 2
