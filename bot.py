@@ -65,7 +65,7 @@ def esperar_apertura_real():
         segundos = int(ahora) % 60
         milisegundos = ahora - int(ahora)
 
-        if segundos == 58 and milisegundos > 0.90:
+        if segundos == 1 and milisegundos > 0.90:
             return
 
         time.sleep(0.005)
@@ -92,7 +92,7 @@ def operar(iq, par, direccion):
     try:
         esperar_apertura_real()
 
-        check, _ = iq.buy(MONTO, par, direccion, 2)
+        check, _ = iq.buy(MONTO, par, direccion, 1)
 
         if check:
             print(f"🚀 ENTRADA {par} {direccion}")
