@@ -19,7 +19,7 @@ PASSWORD = os.getenv("IQ_PASSWORD")
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-MONTO = 359
+MONTO = 360
 CUENTA = "PRACTICE"
 
 PARES = [
@@ -69,9 +69,7 @@ PARES = [
     "AUDSGD-OTC",
     "CADSGD-OTC",
     "EURNOK-OTC",
-    "EURSEK-OTC",
-    "GBPNOK-OTC",
-    "GBPSEK-OTC"
+    "EURSEK-OTC"
 ]
 
 
@@ -109,24 +107,24 @@ def conectar():
 
 
 # =========================
-# TIMING
+# 🔥 ESPERAR CIERRE REAL M5
 # =========================
-def esperar_entrada():
+def esperar_cierre_m5():
     while True:
-        segundos = int(time.time()) % 60
+        t = time.localtime()
 
-        if 38 <= segundos <= 42:
+        if t.tm_min % 5 == 0 and t.tm_sec == 0:
             return
 
-        time.sleep(0.01)
+        time.sleep(0.2)
 
 
 # =========================
-# VELAS
+# VELAS M5
 # =========================
 def obtener_velas(iq, par):
     try:
-        velas = iq.get_candles(par, 60, 40, time.time())
+        velas = iq.get_candles(par, 300, 40, time.time())
 
         if not velas:
             return None
@@ -143,19 +141,19 @@ def obtener_velas(iq, par):
 
 
 # =========================
-# OPERAR
+# OPERAR M5
 # =========================
 def operar(iq, par, direccion):
     try:
-        esperar_entrada()
+        esperar_cierre_m5()
 
-        check, _ = iq.buy(MONTO, par, direccion, 1)
+        check, _ = iq.buy(MONTO, par, direccion, 5)
 
         if check:
             print(f"🚀 ENTRADA {par} {direccion.upper()}")
 
             enviar_mensaje(
-                f"🚀 ENTRADA\nPar: {par}\nDirección: {direccion.upper()}\nMonto: ${MONTO}"
+                f"🚀 ENTRADA M5\nPar: {par}\nDirección: {direccion.upper()}\nMonto: ${MONTO}"
             )
 
     except:
@@ -196,13 +194,13 @@ def run():
 
                 operar(iq, par, direccion)
 
-                time.sleep(60)
+                time.sleep(300)  # esperar siguiente vela
 
             else:
-                time.sleep(0.3)
+                time.sleep(1)
 
         except:
-            time.sleep(1)
+            time.sleep(2)
 
 
 if __name__ == "__main__":
