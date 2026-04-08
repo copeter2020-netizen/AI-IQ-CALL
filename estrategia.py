@@ -2,67 +2,73 @@ import pandas as pd
 import numpy as np
 
 
-def es_alcista(v):
-    return v["close"] > v["open"]
-
-def es_bajista(v):
-    return v["close"] < v["open"]
-
+# =========================
+# UTILIDADES
+# =========================
 def body(v):
     return abs(v["close"] - v["open"])
+
 
 def rango(v):
     return v["max"] - v["min"]
 
 
+def es_alcista(v):
+    return v["close"] > v["open"]
+
+
+def es_bajista(v):
+    return v["close"] < v["open"]
+
+
 # =========================
-# 🔥 TENDENCIA REAL
+# FILTRO LATERAL
 # =========================
-def tendencia(df):
+def mercado_lateral(df):
     ultimas = df.iloc[-6:]
+    rangos = [rango(v) for _, v in ultimas.iterrows()]
 
-    alcistas = sum(es_alcista(v) for _, v in ultimas.iterrows())
-    bajistas = sum(es_bajista(v) for _, v in ultimas.iterrows())
+    if len(rangos) == 0:
+        return True
 
-    if alcistas >= 4:
-        return "alcista"
-
-    if bajistas >= 4:
-        return "bajista"
-
-    return "lateral"
+    return np.mean(rangos) < (max(rangos) * 0.5)
 
 
 # =========================
-# 🔥 IMPULSO REAL
+# IMPULSO
 # =========================
-def impulso(df):
-    ultimas = df.iloc[-3:]
-
-    fuertes = 0
-
-    for _, v in ultimas.iterrows():
-        if rango(v) == 0:
-            continue
-
-        if body(v) > rango(v) * 0.6:
-            fuertes += 1
-
-    return fuertes >= 2
-
-
-# =========================
-# 🔥 FILTRO DE ENTRADA
-# =========================
-def buena_entrada(v):
+def impulso(v):
     if rango(v) == 0:
         return False
-
-    return body(v) > rango(v) * 0.5
+    return body(v) > rango(v) * 0.6
 
 
 # =========================
-# 🚀 MAIN
+# BREAKOUT
+# =========================
+def breakout_alcista(df):
+    resistencia = df["max"].rolling(15).max().iloc[-3]
+    return df["close"].iloc[-2] > resistencia
+
+
+def breakout_bajista(df):
+    soporte = df["min"].rolling(15).min().iloc[-3]
+    return df["close"].iloc[-2] < soporte
+
+
+# =========================
+# CONFIRMACIÓN
+# =========================
+def confirmacion_alcista(v):
+    return es_alcista(v) and impulso(v)
+
+
+def confirmacion_bajista(v):
+    return es_bajista(v) and impulso(v)
+
+
+# =========================
+# MAIN
 # =========================
 def detectar_entrada_oculta(data):
 
@@ -76,12 +82,7 @@ def detectar_entrada_oculta(data):
 
         df = pd.DataFrame(velas)
 
-        dir_tendencia = tendencia(df)
-
-        if dir_tendencia == "lateral":
-            continue
-
-        if not impulso(df):
+        if mercado_lateral(df):
             continue
 
         v = df.iloc[-2]
@@ -89,36 +90,21 @@ def detectar_entrada_oculta(data):
         score = 0
 
         # =========================
-        # CALL (continuidad alcista)
+        # CALL
         # =========================
-        if dir_tendencia == "alcista":
+        if breakout_alcista(df):
 
-            if es_alcista(v):
-                score += 2
+            if confirmacion_alcista(v):
+                score += 6
 
-            if buena_entrada(v):
-                score += 2
-
-            if score >= 3 and score > mejor_score:
+            if score >= 6 and score > mejor_score:
                 mejor_score = score
                 mejor = (par, "call", score)
 
         # =========================
-        # PUT (continuidad bajista)
+        # PUT
         # =========================
-        if dir_tendencia == "bajista":
-
-            if es_bajista(v):
-                score += 2
-
-            if buena_entrada(v):
-                score += 2
-
-            if score >= 3 and score > mejor_score:
-                mejor_score = score
-                mejor = (par, "put", score)
-
-    return mejor        if breakout_bajista(df):
+        if breakout_bajista(df):
 
             if confirmacion_bajista(v):
                 score += 6
