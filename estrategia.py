@@ -23,7 +23,6 @@ def mercado_lateral(df):
     ultimas = df.tail(10)
     maximo = ultimas["max"].max()
     minimo = ultimas["min"].min()
-
     return (maximo - minimo) < 0.0008
 
 # =========================
@@ -51,16 +50,12 @@ def detectar_entrada(df):
     vela = df.iloc[-1]
 
     soporte, resistencia = niveles(df)
-
     lateral = mercado_lateral(df)
 
-    # =========================
-    # VELA FUERTE
-    # =========================
     vela_fuerte = body(vela) > (rango(vela) * 0.6)
 
     # =========================
-    # CONDICIONES CALL
+    # CALL
     # =========================
     if (
         vela["close"] > vela["ema20"] and
@@ -74,7 +69,7 @@ def detectar_entrada(df):
         return "call"
 
     # =========================
-    # CONDICIONES PUT
+    # PUT
     # =========================
     if (
         vela["close"] < vela["ema20"] and
