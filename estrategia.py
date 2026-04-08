@@ -22,78 +22,73 @@ def es_bajista(v):
 
 
 # =========================
-# FILTRO LATERAL
+# DETECTAR CONSOLIDACIÓN
 # =========================
-def mercado_lateral(df):
-    ultimas = df.iloc[-6:]
+def es_consolidacion(df):
+    ultimas = df.iloc[-10:]
+
+    maximo = ultimas["max"].max()
+    minimo = ultimas["min"].min()
+
+    rango_total = maximo - minimo
+
+    # evitar rango muerto
+    if rango_total == 0:
+        return False
+
+    # medir estabilidad del rango
     rangos = [rango(v) for _, v in ultimas.iterrows()]
 
-    if len(rangos) == 0:
-        return True
-
-    return np.mean(rangos) < (max(rangos) * 0.4)  # 🔥 más preciso
+    return np.mean(rangos) < (rango_total * 0.4)
 
 
 # =========================
-# IMPULSO REAL
+# SOPORTE Y RESISTENCIA
 # =========================
-def impulso(v):
+def niveles(df):
+    ultimas = df.iloc[-10:]
+
+    soporte = ultimas["min"].min()
+    resistencia = ultimas["max"].max()
+
+    return soporte, resistencia
+
+
+# =========================
+# FILTRO VELA FUERTE ❌
+# =========================
+def vela_fuerte(v):
     if rango(v) == 0:
         return False
-    return body(v) > rango(v) * 0.6
 
-
-def impulso_previo(df):
-    ultimas = df.iloc[-5:]
-
-    fuertes = 0
-
-    for _, v in ultimas.iterrows():
-        if impulso(v):
-            fuertes += 1
-
-    return fuertes >= 3
+    return body(v) > rango(v) * 0.7
 
 
 # =========================
-# BREAKOUT REAL
+# ZONA DE ENTRADA
 # =========================
-def breakout_alcista(df):
-    resistencia = df["max"].rolling(15).max().iloc[-3]
-    return df["close"].iloc[-2] > resistencia
+def cerca_resistencia(precio, resistencia, rango_total):
+    return abs(precio - resistencia) < (rango_total * 0.2)
 
 
-def breakout_bajista(df):
-    soporte = df["min"].rolling(15).min().iloc[-3]
-    return df["close"].iloc[-2] < soporte
+def cerca_soporte(precio, soporte, rango_total):
+    return abs(precio - soporte) < (rango_total * 0.2)
 
 
 # =========================
-# FILTRO ANTI FAKE
+# RECHAZO (CLAVE 🔥)
 # =========================
-def fake_breakout(v):
-    # mecha grande = posible manipulación
+def rechazo(v):
     if rango(v) == 0:
-        return True
+        return False
 
     mecha_sup = v["max"] - max(v["open"], v["close"])
     mecha_inf = min(v["open"], v["close"]) - v["min"]
 
     return (
-        mecha_sup > body(v) * 1.5 or
-        mecha_inf > body(v) * 1.5
+        mecha_sup > body(v) * 1.2 or
+        mecha_inf > body(v) * 1.2
     )
-
-
-# =========================
-# CONFIRMACIÓN
-# =========================
-def confirmacion_alcista(v):
-    return es_alcista(v) and impulso(v)
-
-
-def confirmacion_bajista(v):
-    return es_bajista(v) and impulso(v)
 
 
 # =========================
@@ -111,51 +106,54 @@ def detectar_entrada_oculta(data):
 
         df = pd.DataFrame(velas)
 
-        if mercado_lateral(df):
+        # 🔥 SOLO CONSOLIDACIÓN
+        if not es_consolidacion(df):
             continue
 
-        # 🔥 nuevo filtro clave
-        if not impulso_previo(df):
+        soporte, resistencia = niveles(df)
+
+        rango_total = resistencia - soporte
+        if rango_total == 0:
             continue
 
-        v = df.iloc[-2]
+        precio = df["close"].iloc[-1]
+
+        v_confirmacion = df.iloc[-2]
+
+        # ❌ evitar velas fuertes
+        if vela_fuerte(v_confirmacion):
+            continue
 
         score = 0
 
         # =========================
-        # CALL
+        # VENTA (arriba)
         # =========================
-        if breakout_alcista(df):
+        if cerca_resistencia(precio, resistencia, rango_total):
 
-            if fake_breakout(v):
-                continue  # 🚫 evita trampas
-
-            if confirmacion_alcista(v):
-                score += 3
-
-            if impulso_previo(df):
+            if es_bajista(v_confirmacion):
                 score += 2
 
-            if score >= 4 and score > mejor_score:
-                mejor_score = score
-                mejor = (par, "call", score)
-
-        # =========================
-        # PUT
-        # =========================
-        if breakout_bajista(df):
-
-            if fake_breakout(v):
-                continue
-
-            if confirmacion_bajista(v):
+            if rechazo(v_confirmacion):
                 score += 3
-
-            if impulso_previo(df):
-                score += 2
 
             if score >= 4 and score > mejor_score:
                 mejor_score = score
                 mejor = (par, "put", score)
+
+        # =========================
+        # COMPRA (abajo)
+        # =========================
+        if cerca_soporte(precio, soporte, rango_total):
+
+            if es_alcista(v_confirmacion):
+                score += 2
+
+            if rechazo(v_confirmacion):
+                score += 3
+
+            if score >= 4 and score > mejor_score:
+                mejor_score = score
+                mejor = (par, "call", score)
 
     return mejor
