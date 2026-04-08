@@ -25,6 +25,9 @@ PARES = [
 ]
 
 
+# =========================
+# TELEGRAM
+# =========================
 def enviar_mensaje(texto):
     try:
         url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
@@ -36,6 +39,9 @@ def enviar_mensaje(texto):
         pass
 
 
+# =========================
+# CONEXIÓN
+# =========================
 def conectar():
     while True:
         try:
@@ -45,24 +51,34 @@ def conectar():
             if iq.check_connect():
                 iq.change_balance(CUENTA)
                 print("✅ CONECTADO")
+                enviar_mensaje("✅ BOT CONECTADO")
                 return iq
 
-        except Exception:
-            time.sleep(5)
+        except:
+            pass
+
+        time.sleep(5)
 
 
-# ⏱ Entrada EXACTA en apertura de vela
+# =========================
+# ⏱ ENTRADA EXACTA
+# =========================
 def esperar_cierre():
     while True:
         ahora = time.time()
-        if int(ahora) % 60 == 0:
+
+        if int(ahora) % 60 == 59 and (ahora - int(ahora)) > 0.8:
             return
+
         time.sleep(0.01)
 
 
+# =========================
+# DATOS
+# =========================
 def obtener_velas(iq, par):
     try:
-        velas = iq.get_candles(par, 60, 50, time.time())
+        velas = iq.get_candles(par, 60, 50, time.time() - 2)
 
         return [{
             "open": v["open"],
@@ -75,33 +91,45 @@ def obtener_velas(iq, par):
         return []
 
 
+# =========================
+# OPERAR
+# =========================
 def operar(iq, par, direccion):
 
     esperar_cierre()
 
-    check, _ = iq.buy(MONTO, par, direccion, 3)  # 🔥 3 MIN
+    check, _ = iq.buy(MONTO, par, direccion, 3)
 
     if check:
         print(f"🚀 {par} {direccion}")
 
         enviar_mensaje(f"""
-🚀 ENTRADA CONTINUIDAD
+🚀 ENTRADA CONSOLIDACIÓN
 
 Par: {par}
 Dirección: {direccion.upper()}
 Expiración: 3 MIN
 Monto: ${MONTO}
 
-📈 Estrategia: Continuidad de tendencia
+📊 Estrategia: Rango + Reversión
 """)
 
 
+# =========================
+# MAIN
+# =========================
 def run():
 
     iq = conectar()
 
+    ultima_operacion = 0
+
     while True:
         try:
+            if time.time() - ultima_operacion < 60:
+                time.sleep(0.2)
+                continue
+
             data = {}
 
             for par in PARES:
@@ -115,6 +143,8 @@ def run():
                 print(f"🎯 {par} {direccion} Score:{score}")
 
                 operar(iq, par, direccion)
+
+                ultima_operacion = time.time()
 
                 time.sleep(180)
 
