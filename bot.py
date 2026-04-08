@@ -1,13 +1,9 @@
 import time
 import os
 import requests
-import sys
 from iqoptionapi.stable_api import IQ_Option
-
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-sys.path.append(BASE_DIR)
-
 from estrategia import detectar_entrada_oculta
+
 
 EMAIL = os.getenv("IQ_EMAIL")
 PASSWORD = os.getenv("IQ_PASSWORD")
@@ -21,10 +17,15 @@ CUENTA = "PRACTICE"
 PARES = [
     "EURUSD-OTC",
     "EURJPY-OTC",
-    "EURGBP-OTC"
+    "EURGBP-OTC",
+    "GBPUSD-OTC",
+    "USDJPY-OTC"
 ]
 
 
+# =========================
+# TELEGRAM
+# =========================
 def enviar_mensaje(texto):
     try:
         url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
@@ -36,6 +37,9 @@ def enviar_mensaje(texto):
         pass
 
 
+# =========================
+# CONEXIÓN
+# =========================
 def conectar():
     while True:
         try:
@@ -47,12 +51,14 @@ def conectar():
                 print("✅ CONECTADO")
                 return iq
 
-        except Exception:
+        except:
             time.sleep(5)
 
 
-# ⏱ Entrada EXACTA en apertura de vela
-def esperar_cierre():
+# =========================
+# TIEMPO EXACTO
+# =========================
+def esperar_cierre_vela():
     while True:
         ahora = time.time()
         if int(ahora) % 60 == 0:
@@ -60,6 +66,9 @@ def esperar_cierre():
         time.sleep(0.01)
 
 
+# =========================
+# DATOS
+# =========================
 def obtener_velas(iq, par):
     try:
         velas = iq.get_candles(par, 60, 50, time.time())
@@ -75,27 +84,31 @@ def obtener_velas(iq, par):
         return []
 
 
+# =========================
+# OPERAR
+# =========================
 def operar(iq, par, direccion):
 
-    esperar_cierre()
+    esperar_cierre_vela()
 
-    check, _ = iq.buy(MONTO, par, direccion, 3)  # 🔥 3 MIN
+    check, _ = iq.buy(MONTO, par, direccion, 3)
 
     if check:
         print(f"🚀 {par} {direccion}")
 
         enviar_mensaje(f"""
-🚀 ENTRADA CONTINUIDAD
+🚀 ENTRADA BREAKOUT
 
 Par: {par}
 Dirección: {direccion.upper()}
 Expiración: 3 MIN
 Monto: ${MONTO}
-
-📈 Estrategia: Continuidad de tendencia
 """)
 
 
+# =========================
+# LOOP
+# =========================
 def run():
 
     iq = conectar()
@@ -119,7 +132,7 @@ def run():
                 time.sleep(180)
 
             else:
-                time.sleep(0.3)
+                time.sleep(0.5)
 
         except Exception as e:
             print("Error:", e)
