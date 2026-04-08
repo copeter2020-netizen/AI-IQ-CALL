@@ -21,7 +21,43 @@ CUENTA = "PRACTICE"
 PARES = [
     "EURUSD-OTC",
     "EURJPY-OTC",
-    "EURGBP-OTC"
+    "EURGBP-OTC",
+    "EURCHF-OTC",
+    "EURAUD-OTC",
+    "EURCAD-OTC",
+
+    "GBPUSD-OTC",
+    "GBPJPY-OTC",
+    "GBPAUD-OTC",
+    "GBPCAD-OTC",
+    "GBPCHF-OTC",
+
+    "USDJPY-OTC",
+    "USDCHF-OTC",
+    "USDCAD-OTC",
+
+    "AUDUSD-OTC",
+    "AUDJPY-OTC",
+    "AUDCAD-OTC",
+    "AUDCHF-OTC",
+
+    "NZDUSD-OTC",
+    "NZDJPY-OTC",
+    "NZDCAD-OTC",
+
+    "CADJPY-OTC",
+    "CHFJPY-OTC",
+
+    # 🔥 EXTRAS OTC
+    "USDNOK-OTC",
+    "USDSEK-OTC",
+    "USDTRY-OTC",
+    "USDZAR-OTC",
+
+    # 💣 CRYPTO OTC (si tu broker los tiene)
+    "BTCUSD-OTC",
+    "ETHUSD-OTC",
+    "LTCUSD-OTC"
 ]
 
 
