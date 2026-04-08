@@ -1,6 +1,5 @@
-import numpy as np
 import pandas as pd
-
+import numpy as np
 
 # =========================
 # UTILIDADES
@@ -8,172 +7,93 @@ import pandas as pd
 def body(v):
     return abs(v["close"] - v["open"])
 
-
 def rango(v):
     return v["max"] - v["min"]
-
 
 def es_alcista(v):
     return v["close"] > v["open"]
 
-
 def es_bajista(v):
     return v["close"] < v["open"]
 
+# =========================
+# DETECTAR MERCADO LATERAL
+# =========================
+def mercado_lateral(df):
+    ultimas = df.tail(10)
+    maximo = ultimas["max"].max()
+    minimo = ultimas["min"].min()
+
+    rango_total = maximo - minimo
+
+    return rango_total < 0.0008  # ajustable
 
 # =========================
-# ESTRUCTURA
+# DETECTAR SOPORTE / RESISTENCIA
 # =========================
 def niveles(df):
-    soporte = df["min"].rolling(15).min().iloc[-2]
-    resistencia = df["max"].rolling(15).max().iloc[-2]
+    ultimas = df.tail(20)
+    soporte = ultimas["min"].min()
+    resistencia = ultimas["max"].max()
     return soporte, resistencia
 
-
-def mercado_lateral(df):
-    ultimas = df.iloc[-5:]
-    rangos = [rango(v) for _, v in ultimas.iterrows()]
-
-    if not rangos:
-        return True
-
-    return np.mean(rangos) < (max(rangos) * 0.4)
-
-
-def tendencia_fuerte(df):
-    ultimas = df.iloc[-5:]
-
-    verdes = sum(es_alcista(v) for _, v in ultimas.iterrows())
-    rojas = sum(es_bajista(v) for _, v in ultimas.iterrows())
-
-    if verdes >= 4:
-        return "alcista"
-
-    if rojas >= 4:
-        return "bajista"
-
-    return "neutral"
-
-
 # =========================
-# VALIDACIONES
+# DETECTAR ENTRADA
 # =========================
-def confirmacion_fuerte(v):
-    if rango(v) == 0:
-        return False
+def detectar_entrada(df):
 
-    return body(v) > rango(v) * 0.5
+    if len(df) < 30:
+        return None
 
+    df = df.copy()
 
-def impulso_fuerte(v):
-    if rango(v) == 0:
-        return False
+    # EMA 20
+    df["ema20"] = df["close"].ewm(span=20).mean()
 
-    return body(v) > rango(v) * 0.65
+    vela = df.iloc[-1]
+    anterior = df.iloc[-2]
 
+    soporte, resistencia = niveles(df)
 
-def rechazo_fuerte(v):
-    if rango(v) == 0:
-        return False
+    # =========================
+    # FILTRO: NO OPERAR EN RANGO MEDIO
+    # =========================
+    if mercado_lateral(df):
+        # SOLO operar en extremos del rango
+        if vela["close"] < soporte + 0.0002:
+            zona = "soporte"
+        elif vela["close"] > resistencia - 0.0002:
+            zona = "resistencia"
+        else:
+            return None
+    else:
+        zona = None
 
-    mecha_sup = v["max"] - max(v["open"], v["close"])
-    mecha_inf = min(v["open"], v["close"]) - v["min"]
+    # =========================
+    # CONFIRMACIÓN DE VELA FUERTE
+    # =========================
+    vela_fuerte = body(vela) > (rango(vela) * 0.6)
 
-    return (
-        mecha_sup > body(v) * 1.3 or
-        mecha_inf > body(v) * 1.3
-    )
+    # =========================
+    # SEÑALES
+    # =========================
 
+    # CALL
+    if (
+        vela["close"] > vela["ema20"] and
+        es_alcista(vela) and
+        vela_fuerte and
+        (zona == "soporte" or not mercado_lateral(df))
+    ):
+        return "call"
 
-def zona_mala(df, soporte, resistencia):
-    precio = df["close"].iloc[-1]
-    rango_total = resistencia - soporte
+    # PUT
+    if (
+        vela["close"] < vela["ema20"] and
+        es_bajista(vela) and
+        vela_fuerte and
+        (zona == "resistencia" or not mercado_lateral(df))
+    ):
+        return "put"
 
-    if rango_total == 0:
-        return True
-
-    distancia = min(abs(precio - soporte), abs(precio - resistencia))
-
-    return distancia > rango_total * 0.8
-
-
-# =========================
-# MAIN (SEÑALES INVERTIDAS)
-# =========================
-def detectar_entrada_oculta(data):
-
-    mejor = None
-    mejor_score = 0
-
-    for par, velas in data.items():
-
-        if len(velas) < 20:
-            continue
-
-        df = pd.DataFrame(velas)
-
-        # Evitar mercado muerto
-        if mercado_lateral(df):
-            continue
-
-        soporte, resistencia = niveles(df)
-
-        if zona_mala(df, soporte, resistencia):
-            continue
-
-        tendencia = tendencia_fuerte(df)
-
-        # Bloqueo inteligente
-        bloquear_put = tendencia == "alcista"
-        bloquear_call = tendencia == "bajista"
-
-        v_confirmacion = df.iloc[-2]
-        v_manipulacion = df.iloc[-3]
-
-        score = 0
-
-        # =========================
-        # PUT (LÓGICA ORIGINAL)
-        # 👉 AHORA SE CONVIERTE EN CALL
-        # =========================
-        if not bloquear_put and v_manipulacion["max"] >= resistencia * 0.998:
-
-            if rechazo_fuerte(v_manipulacion):
-                score += 2
-
-            if es_bajista(v_confirmacion):
-                score += 2
-
-            if impulso_fuerte(v_confirmacion):
-                score += 2
-
-            if not confirmacion_fuerte(v_confirmacion):
-                continue
-
-            if score >= 5 and score > mejor_score:
-                mejor_score = score
-                mejor = (par, "call", score)  # 🔥 INVERTIDO
-
-        # =========================
-        # CALL (LÓGICA ORIGINAL)
-        # 👉 AHORA SE CONVIERTE EN PUT
-        # =========================
-        if not bloquear_call and v_manipulacion["min"] <= soporte * 1.002:
-
-            if rechazo_fuerte(v_manipulacion):
-                score += 2
-
-            if es_alcista(v_confirmacion):
-                score += 2
-
-            if impulso_fuerte(v_confirmacion):
-                score += 2
-
-            if not confirmacion_fuerte(v_confirmacion):
-                continue
-
-            if score >= 5 and score > mejor_score:
-                mejor_score = score
-                mejor = (par, "put", score)  # 🔥 INVERTIDO
-
-    return mejor
+    return None
