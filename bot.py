@@ -1,30 +1,25 @@
-
-  
 import time
 import os
-import requests
 import sys
+import pandas as pd
 from iqoptionapi.stable_api import IQ_Option
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-sys.path.append(BASE_DIR)
-
+# =========================
+# IMPORTAR ESTRATEGIA
+# =========================
 try:
-    from estrategia import detectar_entrada_oculta
+    from estrategia import detectar_entrada
 except:
-    detectar_entrada_oculta = None
+    print("❌ Falta estrategia.py")
+    sys.exit()
 
-
+# =========================
+# CONFIG
+# =========================
 EMAIL = os.getenv("IQ_EMAIL")
 PASSWORD = os.getenv("IQ_PASSWORD")
 
-TOKEN = os.getenv("TELEGRAM_TOKEN")
-CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
-
-MONTO = 20000
-CUENTA = "PRACTICE"
-
-PARES = [
+PARIDADES = [
     "EURUSD-OTC",
     "EURJPY-OTC",
     "EURGBP-OTC",
@@ -74,126 +69,63 @@ PARES = [
     "EURSEK-OTC"
 ]
 
-
-# =========================
-# TELEGRAM
-# =========================
-def enviar_mensaje(texto):
-    try:
-        requests.post(
-            f"https://api.telegram.org/bot{TOKEN}/sendMessage",
-            data={"chat_id": CHAT_ID, "text": texto},
-            timeout=5
-        )
-    except:
-        pass
-
+MONTO = 1
+TIEMPO = 4  # 4 minuto
 
 # =========================
 # CONEXIÓN
 # =========================
-def conectar():
-    while True:
-        try:
-            iq = IQ_Option(EMAIL, PASSWORD)
-            iq.connect()
+Iq = IQ_Option(EMAIL, PASSWORD)
+Iq.connect()
 
-            if iq.check_connect():
-                iq.change_balance(CUENTA)
-                print("✅ CONECTADO")
-                return iq
-        except:
-            pass
-
-        time.sleep(5)
-
+if not Iq.check_connect():
+    print("❌ Error conectando")
+    sys.exit()
+else:
+    print("✅ Conectado")
 
 # =========================
-# VELAS M5
+# OBTENER DATOS
 # =========================
-def obtener_velas(iq, par):
+def obtener_candles(par):
     try:
-        velas = iq.get_candles(par, 300, 40, time.time())
-
-        if not velas:
-            return None
-
-        return [{
-            "open": v["open"],
-            "close": v["close"],
-            "max": v["max"],
-            "min": v["min"]
-        } for v in velas]
-
+        candles = Iq.get_candles(par, 60, 50, time.time())
+        df = pd.DataFrame(candles)
+        df.rename(columns={
+            "min": "min",
+            "max": "max",
+            "open": "open",
+            "close": "close"
+        }, inplace=True)
+        return df
     except:
         return None
 
-
 # =========================
-# OPERAR INMEDIATO 🔥
+# EJECUTAR TRADE
 # =========================
-def operar(iq, par, direccion):
+def ejecutar_trade(par, direccion):
     try:
-        check, _ = iq.buy(MONTO, par, direccion, 4)
-
-        if check:
+        status, id = Iq.buy(MONTO, par, direccion, TIEMPO)
+        if status:
             print(f"🚀 ENTRADA {par} {direccion.upper()}")
-
-            enviar_mensaje(
-                f"🚀 ENTRADA INMEDIATA\nPar: {par}\nDirección: {direccion.upper()}\nMonto: ${MONTO}"
-            )
-
     except:
         pass
 
-
 # =========================
-# MAIN
+# LOOP PRINCIPAL
 # =========================
-def run():
+while True:
+    for par in PARIDADES:
+        df = obtener_candles(par)
 
-    if detectar_entrada_oculta is None:
-        print("❌ Falta estrategia.py")
-        return
+        if df is None:
+            continue
 
-    iq = conectar()
+        señal = detectar_entrada(df)
 
-    while True:
-        try:
-            data = {}
+        if señal:
+            print(f"📊 Señal {par} {señal.upper()}")
+            ejecutar_trade(par, señal)
 
-            for par in PARES:
-                velas = obtener_velas(iq, par)
-
-                if velas is not None:
-                    data[par] = velas
-
-            if not data:
-                time.sleep(1)
-                continue
-
-            señal = detectar_entrada_oculta(data)
-
-            if señal:
-                par, direccion, score = señal
-
-                print(f"🎯 Señal {par} {direccion.upper()} Score:{score}")
-
-                enviar_mensaje(
-                    f"🎯 SEÑAL\nPar: {par}\nDirección: {direccion.upper()}\nScore: {score}"
-                )
-
-                operar(iq, par, direccion)
-
-                # evitar múltiples entradas en la misma vela
-                time.sleep(300)
-
-            else:
-                time.sleep(0.5)
-
-        except:
-            time.sleep(2)
-
-
-if __name__ == "__main__":
-    run()
+    time.sleep(10)
