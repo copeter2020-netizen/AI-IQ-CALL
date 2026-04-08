@@ -1,3 +1,5 @@
+
+  
 import time
 import os
 import requests
@@ -19,7 +21,7 @@ PASSWORD = os.getenv("IQ_PASSWORD")
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-MONTO = 8000
+MONTO = 20000
 CUENTA = "PRACTICE"
 
 PARES = [
@@ -107,19 +109,6 @@ def conectar():
 
 
 # =========================
-# 🔥 ESPERAR CIERRE REAL M5
-# =========================
-def esperar_cierre_m5():
-    while True:
-        t = time.localtime()
-
-        if t.tm_min % 5 == 0 and t.tm_sec == 0:
-            return
-
-        time.sleep(0.2)
-
-
-# =========================
 # VELAS M5
 # =========================
 def obtener_velas(iq, par):
@@ -141,19 +130,17 @@ def obtener_velas(iq, par):
 
 
 # =========================
-# OPERAR M5
+# OPERAR INMEDIATO 🔥
 # =========================
 def operar(iq, par, direccion):
     try:
-        esperar_cierre_m5()
-
         check, _ = iq.buy(MONTO, par, direccion, 4)
 
         if check:
             print(f"🚀 ENTRADA {par} {direccion.upper()}")
 
             enviar_mensaje(
-                f"🚀 ENTRADA M5\nPar: {par}\nDirección: {direccion.upper()}\nMonto: ${MONTO}"
+                f"🚀 ENTRADA INMEDIATA\nPar: {par}\nDirección: {direccion.upper()}\nMonto: ${MONTO}"
             )
 
     except:
@@ -192,12 +179,17 @@ def run():
 
                 print(f"🎯 Señal {par} {direccion.upper()} Score:{score}")
 
+                enviar_mensaje(
+                    f"🎯 SEÑAL\nPar: {par}\nDirección: {direccion.upper()}\nScore: {score}"
+                )
+
                 operar(iq, par, direccion)
 
-                time.sleep(300)  # esperar siguiente vela
+                # evitar múltiples entradas en la misma vela
+                time.sleep(300)
 
             else:
-                time.sleep(1)
+                time.sleep(0.5)
 
         except:
             time.sleep(2)
