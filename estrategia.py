@@ -1,5 +1,6 @@
-import numpy as np
 import pandas as pd
+import numpy as np
+
 
 # =========================
 # UTILIDADES
@@ -7,118 +8,109 @@ import pandas as pd
 def body(v):
     return abs(v["close"] - v["open"])
 
+
 def rango(v):
     return v["max"] - v["min"]
+
 
 def es_alcista(v):
     return v["close"] > v["open"]
 
+
 def es_bajista(v):
     return v["close"] < v["open"]
 
-# =========================
-# INDICADORES
-# =========================
-def calcular_rsi(df, periodos=14):
-    delta = df["close"].diff()
-    subida = delta.clip(lower=0)
-    bajada = -1 * delta.clip(upper=0)
-
-    media_subida = subida.rolling(periodos).mean()
-    media_bajada = bajada.rolling(periodos).mean()
-
-    rs = media_subida / media_bajada
-    rsi = 100 - (100 / (1 + rs))
-
-    return rsi
 
 # =========================
-# DETECCIÓN DE SEÑAL
+# FILTRO LATERAL
 # =========================
-def detectar_entrada(df):
-    if len(df) < 20:
-        return None
+def mercado_lateral(df):
+    ultimas = df.iloc[-6:]
+    rangos = [rango(v) for _, v in ultimas.iterrows()]
 
-    df["rsi"] = calcular_rsi(df)
+    if len(rangos) == 0:
+        return True
 
-    ultima = df.iloc[-1]
-    anterior = df.iloc[-2]
+    return np.mean(rangos) < (max(rangos) * 0.5)
 
-    score = 0
-    direccion = None
-
-    # =========================
-    # CONDICIONES DE COMPRA (CALL)
-    # =========================
-    if es_alcista(ultima):
-        score += 2
-
-    if ultima["rsi"] < 30:
-        score += 2
-
-    if body(ultima) > body(anterior):
-        score += 1
-
-    if score >= 4:
-        direccion = "call"
-
-    # =========================
-    # CONDICIONES DE VENTA (PUT)
-    # =========================
-    score_put = 0
-
-    if es_bajista(ultima):
-        score_put += 2
-
-    if ultima["rsi"] > 70:
-        score_put += 2
-
-    if body(ultima) > body(anterior):
-        score_put += 1
-
-    if score_put > score:
-        score = score_put
-        direccion = "put"
-
-    if direccion:
-        return {
-            "direccion": direccion,
-            "score": score
-        }
-
-    return None
 
 # =========================
-# FUNCIÓN PRINCIPAL
+# IMPULSO
 # =========================
-def detectar_mejor_entrada(lista_pares, obtener_velas):
-    """
-    lista_pares: lista de activos
-    obtener_velas: función que devuelve dataframe de velas
-    """
+def impulso(v):
+    if rango(v) == 0:
+        return False
+    return body(v) > rango(v) * 0.6
+
+
+# =========================
+# BREAKOUT
+# =========================
+def breakout_alcista(df):
+    resistencia = df["max"].rolling(15).max().iloc[-3]
+    return df["close"].iloc[-2] > resistencia
+
+
+def breakout_bajista(df):
+    soporte = df["min"].rolling(15).min().iloc[-3]
+    return df["close"].iloc[-2] < soporte
+
+
+# =========================
+# CONFIRMACIÓN
+# =========================
+def confirmacion_alcista(v):
+    return es_alcista(v) and impulso(v)
+
+
+def confirmacion_bajista(v):
+    return es_bajista(v) and impulso(v)
+
+
+# =========================
+# MAIN
+# =========================
+def detectar_entrada_oculta(data):
 
     mejor = None
+    mejor_score = 0
 
-    for par in lista_pares:
-        try:
-            df = obtener_velas(par)
+    for par, velas in data.items():
 
-            if df is None or df.empty:
-                continue
-
-            señal = detectar_entrada(df)
-
-            if señal:
-                print(f"📊 Señal {par} {señal['direccion'].upper()} Score:{señal['score']}")
-
-                if (mejor is None) or (señal["score"] > mejor["score"]):
-                    mejor = {
-                        "par": par,
-                        "direccion": señal["direccion"],
-                        "score": señal["score"]
-                    }
-
-        except Exception as e:
+        if len(velas) < 30:
             continue
+
+        df = pd.DataFrame(velas)
+
+        if mercado_lateral(df):
+            continue
+
+        v = df.iloc[-2]
+
+        score = 0
+
+        # =========================
+        # CALL
+        # =========================
+        if breakout_alcista(df):
+
+            if confirmacion_alcista(v):
+                score += 6
+
+            if score >= 6 and score > mejor_score:
+                mejor_score = score
+                mejor = (par, "call", score)
+
+        # =========================
+        # PUT
+        # =========================
+        if breakout_bajista(df):
+
+            if confirmacion_bajista(v):
+                score += 6
+
+            if score >= 6 and score > mejor_score:
+                mejor_score = score
+                mejor = (par, "put", score)
 
     return mejor
