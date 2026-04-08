@@ -17,19 +17,17 @@ def es_bajista(v):
     return v["close"] < v["open"]
 
 # =========================
-# DETECTAR MERCADO LATERAL
+# MERCADO LATERAL
 # =========================
 def mercado_lateral(df):
     ultimas = df.tail(10)
     maximo = ultimas["max"].max()
     minimo = ultimas["min"].min()
 
-    rango_total = maximo - minimo
-
-    return rango_total < 0.0008  # ajustable
+    return (maximo - minimo) < 0.0008
 
 # =========================
-# DETECTAR SOPORTE / RESISTENCIA
+# SOPORTE / RESISTENCIA
 # =========================
 def niveles(df):
     ultimas = df.tail(20)
@@ -42,7 +40,7 @@ def niveles(df):
 # =========================
 def detectar_entrada(df):
 
-    if len(df) < 30:
+    if df is None or len(df) < 30:
         return None
 
     df = df.copy()
@@ -51,48 +49,41 @@ def detectar_entrada(df):
     df["ema20"] = df["close"].ewm(span=20).mean()
 
     vela = df.iloc[-1]
-    anterior = df.iloc[-2]
 
     soporte, resistencia = niveles(df)
 
-    # =========================
-    # FILTRO: NO OPERAR EN RANGO MEDIO
-    # =========================
-    if mercado_lateral(df):
-        # SOLO operar en extremos del rango
-        if vela["close"] < soporte + 0.0002:
-            zona = "soporte"
-        elif vela["close"] > resistencia - 0.0002:
-            zona = "resistencia"
-        else:
-            return None
-    else:
-        zona = None
+    lateral = mercado_lateral(df)
 
     # =========================
-    # CONFIRMACIÓN DE VELA FUERTE
+    # VELA FUERTE
     # =========================
     vela_fuerte = body(vela) > (rango(vela) * 0.6)
 
     # =========================
-    # SEÑALES
+    # CONDICIONES CALL
     # =========================
-
-    # CALL
     if (
         vela["close"] > vela["ema20"] and
         es_alcista(vela) and
         vela_fuerte and
-        (zona == "soporte" or not mercado_lateral(df))
+        (
+            not lateral or
+            vela["close"] <= soporte + 0.0002
+        )
     ):
         return "call"
 
-    # PUT
+    # =========================
+    # CONDICIONES PUT
+    # =========================
     if (
         vela["close"] < vela["ema20"] and
         es_bajista(vela) and
         vela_fuerte and
-        (zona == "resistencia" or not mercado_lateral(df))
+        (
+            not lateral or
+            vela["close"] >= resistencia - 0.0002
+        )
     ):
         return "put"
 
