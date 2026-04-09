@@ -3,7 +3,25 @@ import numpy as np
 
 
 # =========================
-# UTILIDADES
+# RSI
+# =========================
+def calcular_rsi(df, period=14):
+    delta = df["close"].diff()
+
+    gain = np.where(delta > 0, delta, 0)
+    loss = np.where(delta < 0, -delta, 0)
+
+    gain_avg = pd.Series(gain).rolling(period).mean()
+    loss_avg = pd.Series(loss).rolling(period).mean()
+
+    rs = gain_avg / (loss_avg + 1e-10)
+    rsi = 100 - (100 / (1 + rs))
+
+    return rsi
+
+
+# =========================
+# VELAS
 # =========================
 def body(v):
     return abs(v["close"] - v["open"])
@@ -13,59 +31,83 @@ def rango(v):
     return v["max"] - v["min"]
 
 
-def es_alcista(v):
-    return v["close"] > v["open"]
+def es_doji(v):
+    if rango(v) == 0:
+        return False
+    return body(v) < rango(v) * 0.2
 
 
-def es_bajista(v):
-    return v["close"] < v["open"]
-
-
-# =========================
-# 🔥 CONSOLIDACIÓN PURA
-# =========================
-def es_consolidacion(df):
-    ultimas = df.iloc[-10:]
-
-    maximo = ultimas["max"].max()
-    minimo = ultimas["min"].min()
-
-    rango_total = maximo - minimo
-
-    if rango_total == 0:
+def es_pinbar(v):
+    if rango(v) == 0:
         return False
 
-    rangos = [rango(v) for _, v in ultimas.iterrows()]
+    mecha_sup = v["max"] - max(v["open"], v["close"])
+    mecha_inf = min(v["open"], v["close"]) - v["min"]
 
-    return np.mean(rangos) < (rango_total * 0.4)
+    return (
+        mecha_sup > body(v) * 2 or
+        mecha_inf > body(v) * 2
+    )
+
+
+def es_indecision(v):
+    if rango(v) == 0:
+        return False
+    return body(v) < rango(v) * 0.3
+
+
+def es_agotamiento(v):
+    return es_doji(v) or es_pinbar(v) or es_indecision(v)
 
 
 # =========================
-# 🎯 MAIN (SIN FILTROS)
+# MAIN
 # =========================
-def detectar_entrada_oculta(data):
+def detectar_entrada(data):
 
     mejor = None
+    mejor_score = 0
 
     for par, velas in data.items():
 
-        if len(velas) < 20:
+        if len(velas) < 50:
             continue
 
         df = pd.DataFrame(velas)
 
-        # SOLO CONSOLIDACIÓN
-        if not es_consolidacion(df):
-            continue
+        df["rsi"] = calcular_rsi(df)
 
-        v = df.iloc[-2]
+        rsi_actual = df["rsi"].iloc[-2]
+        vela = df.iloc[-2]
 
-        # 🔴 SI VELA BAJISTA → PUT
-        if es_bajista(v):
-            mejor = (par, "put", 1)
+        score = 0
 
-        # 🟢 SI VELA ALCISTA → CALL
-        elif es_alcista(v):
-            mejor = (par, "call", 1)
+        # =========================
+        # CALL
+        # =========================
+        if rsi_actual < 30:
+
+            score += 2
+
+            if es_agotamiento(vela):
+                score += 3
+
+            if score >= 4 and score > mejor_score:
+                mejor_score = score
+                mejor = (par, "call")
+
+        # =========================
+        # PUT
+        # =========================
+        if rsi_actual > 70:
+
+            score += 2
+
+            if es_agotamiento(vela):
+                score += 3
+
+            if score >= 4 and score > mejor_score:
+                mejor_score = score
+                mejor = (par, "put")
 
     return mejor
