@@ -61,9 +61,22 @@ def es_agotamiento(v):
 
 
 # =========================
+# TENDENCIA PREVIA
+# =========================
+def tendencia_alcista(df):
+    ultimas = df.iloc[-6:-1]
+    return all(ultimas["close"] > ultimas["open"])
+
+
+def tendencia_bajista(df):
+    ultimas = df.iloc[-6:-1]
+    return all(ultimas["close"] < ultimas["open"])
+
+
+# =========================
 # MAIN
 # =========================
-def detectar_entrada(data):
+def detectar_entrada_oculta(data):
 
     mejor = None
     mejor_score = 0
@@ -75,6 +88,7 @@ def detectar_entrada(data):
 
         df = pd.DataFrame(velas)
 
+        # calcular RSI
         df["rsi"] = calcular_rsi(df)
 
         rsi_actual = df["rsi"].iloc[-2]
@@ -83,31 +97,37 @@ def detectar_entrada(data):
         score = 0
 
         # =========================
-        # CALL
+        # CALL (REVERSIÓN)
         # =========================
         if rsi_actual < 30:
 
             score += 2
 
+            if tendencia_bajista(df):
+                score += 2
+
             if es_agotamiento(vela):
                 score += 3
 
-            if score >= 4 and score > mejor_score:
+            if score >= 6 and score > mejor_score:
                 mejor_score = score
-                mejor = (par, "call")
+                mejor = (par, "call", score)
 
         # =========================
-        # PUT
+        # PUT (REVERSIÓN)
         # =========================
-        if rsi_actual > 70:
+        elif rsi_actual > 70:
 
             score += 2
 
+            if tendencia_alcista(df):
+                score += 2
+
             if es_agotamiento(vela):
                 score += 3
 
-            if score >= 4 and score > mejor_score:
+            if score >= 5 and score > mejor_score:
                 mejor_score = score
-                mejor = (par, "put")
+                mejor = (par, "put", score)
 
     return mejor
