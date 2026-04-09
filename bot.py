@@ -34,17 +34,17 @@ def enviar_mensaje(texto):
         return
 
     try:
-        url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
-        requests.post(url, data={
-            "chat_id": CHAT_ID,
-            "text": texto
-        }, timeout=5)
+        requests.post(
+            f"https://api.telegram.org/bot{TOKEN}/sendMessage",
+            data={"chat_id": CHAT_ID, "text": texto},
+            timeout=5
+        )
     except:
-        pass  # 🔥 silencio total
+        pass
 
 
 # =========================
-# CONEXIÓN (SIN SPAM)
+# CONEXIÓN
 # =========================
 def conectar():
     while True:
@@ -54,10 +54,7 @@ def conectar():
 
             if iq.check_connect():
                 iq.change_balance(CUENTA)
-
                 print("✅ CONECTADO")
-                enviar_mensaje("✅ BOT CONECTADO")
-
                 return iq
 
         except:
@@ -71,14 +68,14 @@ def conectar():
 # =========================
 def esperar_cierre():
     while True:
-        now = time.time()
-        if int(now) % 60 == 59:
+        t = time.time()
+        if int(t) % 60 == 59:
             return
         time.sleep(0.05)
 
 
 # =========================
-# DATOS (SILENCIOSO)
+# VELAS SEGURAS
 # =========================
 def obtener_velas(iq, par):
     try:
@@ -99,17 +96,26 @@ def obtener_velas(iq, par):
 
 
 # =========================
-# VALIDAR OTC
+# VALIDACIÓN ULTRA SEGURA OTC
 # =========================
 def par_disponible(iq, par):
     try:
-        return iq.get_all_open_time()["digital"][par]["open"]
+        info = iq.get_all_open_time()
+
+        if "digital" not in info:
+            return False
+
+        if par not in info["digital"]:
+            return False
+
+        return info["digital"][par]["open"]
+
     except:
         return False
 
 
 # =========================
-# OPERAR (SIN SPAM)
+# OPERAR SIN UNDERLYING
 # =========================
 def operar(iq, par, direccion):
 
@@ -119,23 +125,25 @@ def operar(iq, par, direccion):
     esperar_cierre()
 
     try:
-        status, _ = iq.buy_digital_spot(par, MONTO, direccion, 5)
+        status, order_id = iq.buy_digital_spot(par, MONTO, direccion, 5)
 
         if status:
             print(f"🚀 {par} {direccion}")
-
-            enviar_mensaje(f"""
-🚀 ENTRADA
-
-Par: {par}
-Dirección: {direccion.upper()}
-Expiración: 5 MIN
-Monto: ${MONTO}
-""")
+            enviar_mensaje(f"🚀 {par} {direccion.upper()}")
             return True
 
     except:
-        pass
+        # 🔥 SI FALLA → REINTENTA UNA VEZ
+        try:
+            time.sleep(1)
+            status, order_id = iq.buy_digital_spot(par, MONTO, direccion, 5)
+
+            if status:
+                print(f"🚀 {par} {direccion}")
+                enviar_mensaje(f"🚀 {par} {direccion.upper()}")
+                return True
+        except:
+            pass
 
     return False
 
@@ -173,11 +181,7 @@ def run():
 
                 print(f"🎯 {par} {direccion}")
 
-                enviar_mensaje(f"🎯 SEÑAL {par} {direccion.upper()}")
-
-                ejecutado = operar(iq, par, direccion)
-
-                if ejecutado:
+                if operar(iq, par, direccion):
                     ultima_operacion = time.time()
                     time.sleep(300)
 
@@ -185,7 +189,7 @@ def run():
                 time.sleep(0.5)
 
         except:
-            # 🔥 silencio total + reconexión limpia
+            # 🔥 RECONEXIÓN AUTOMÁTICA
             iq = conectar()
             time.sleep(5)
 
