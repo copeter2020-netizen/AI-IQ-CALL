@@ -1,91 +1,71 @@
 import pandas as pd
+import numpy as np
 
 
 # =========================
-# IMPULSO FUERTE
+# UTILIDADES
 # =========================
-def impulso_fuerte(v):
-    rango = v["max"] - v["min"]
+def body(v):
+    return abs(v["close"] - v["open"])
 
-    if rango == 0:
+
+def rango(v):
+    return v["max"] - v["min"]
+
+
+def es_alcista(v):
+    return v["close"] > v["open"]
+
+
+def es_bajista(v):
+    return v["close"] < v["open"]
+
+
+# =========================
+# 🔥 CONSOLIDACIÓN PURA
+# =========================
+def es_consolidacion(df):
+    ultimas = df.iloc[-10:]
+
+    maximo = ultimas["max"].max()
+    minimo = ultimas["min"].min()
+
+    rango_total = maximo - minimo
+
+    if rango_total == 0:
         return False
 
-    cuerpo = abs(v["close"] - v["open"])
+    rangos = [rango(v) for _, v in ultimas.iterrows()]
 
-    return cuerpo > (rango * 0.7)
-
-
-# =========================
-# CONTINUIDAD
-# =========================
-def continuidad(df):
-
-    ultimas = df.iloc[-4:]
-
-    alcistas = sum(v["close"] > v["open"] for _, v in ultimas.iterrows())
-    bajistas = sum(v["close"] < v["open"] for _, v in ultimas.iterrows())
-
-    if alcistas >= 3:
-        return "alcista"
-
-    if bajistas >= 3:
-        return "bajista"
-
-    return "neutral"
+    return np.mean(rangos) < (rango_total * 0.4)
 
 
 # =========================
-# FUERZA
-# =========================
-def fuerza(df):
-    v = df.iloc[-1]  # 🔥 vela actual (no cerrada)
-
-    rango = v["max"] - v["min"]
-
-    if rango == 0:
-        return 0
-
-    cuerpo = abs(v["close"] - v["open"])
-
-    return cuerpo / rango
-
-
-# =========================
-# MAIN
+# 🎯 MAIN (SIN FILTROS)
 # =========================
 def detectar_entrada_oculta(data):
 
     mejor = None
-    mejor_score = 0
 
-    for par in ["EURUSD", "EURJPY"]:
-
-        velas = data.get(par, [])
+    for par, velas in data.items():
 
         if len(velas) < 20:
             continue
 
         df = pd.DataFrame(velas)
 
-        direccion = continuidad(df)
-
-        if direccion == "neutral":
+        # SOLO CONSOLIDACIÓN
+        if not es_consolidacion(df):
             continue
 
-        v = df.iloc[-1]  # 🔥 vela en tiempo real
+        v = df.iloc[-2]
 
-        # SOLO SI HAY IMPULSO AHORA
-        if not impulso_fuerte(v):
-            continue
+        # 🔴 SI VELA BAJISTA → PUT
+        if es_bajista(v):
+            mejor = (par, "put", 1)
 
-        score = fuerza(df)
-
-        if score > mejor_score:
-            mejor_score = score
-
-            if direccion == "alcista":
-                mejor = (par, "call", score)
-            else:
-                mejor = (par, "put", score)
+        # 🟢 SI VELA ALCISTA → CALL
+        elif es_alcista(v):
+            mejor = (par, "call", 1)
 
     return mejor
