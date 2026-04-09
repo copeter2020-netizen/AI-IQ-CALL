@@ -1,9 +1,13 @@
 import time
 import os
 import requests
+import sys
 from iqoptionapi.stable_api import IQ_Option
-from estrategia import detectar_entrada_oculta
 
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.append(BASE_DIR)
+
+from estrategia import detectar_entrada_oculta
 
 EMAIL = os.getenv("IQ_EMAIL")
 PASSWORD = os.getenv("IQ_PASSWORD")
@@ -14,12 +18,12 @@ CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 MONTO = 4
 CUENTA = "PRACTICE"
 
-PARES = [
-    "EURUSD",
-    "EURJPY"
-]
+PARES = ["EURUSD", "EURJPY"]
 
 
+# =========================
+# TELEGRAM
+# =========================
 def enviar_mensaje(texto):
     try:
         url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
@@ -31,6 +35,9 @@ def enviar_mensaje(texto):
         pass
 
 
+# =========================
+# CONEXIÓN SEGURA
+# =========================
 def conectar():
     while True:
         try:
@@ -41,25 +48,26 @@ def conectar():
                 iq.change_balance(CUENTA)
                 print("✅ CONECTADO")
                 return iq
-
         except Exception as e:
             print("Error conexión:", e)
-            time.sleep(5)
+
+        time.sleep(5)
 
 
-# 🔥 SOLO BINARY (evita error 'underlying')
+# =========================
+# VALIDAR PAR ABIERTO
+# =========================
 def par_abierto(iq, par):
     try:
         activos = iq.get_all_open_time()
-
-        # SOLO binary (NO digital)
-        return activos["binary"][par]["open"]
-
-    except Exception as e:
-        print(f"Error verificando {par}:", e)
+        return activos["digital"][par]["open"]
+    except:
         return False
 
 
+# =========================
+# OBTENER VELAS
+# =========================
 def obtener_velas(iq, par):
     try:
         velas = iq.get_candles(par, 60, 50, time.time())
@@ -76,65 +84,88 @@ def obtener_velas(iq, par):
         return []
 
 
-# 🔥 OPERACIÓN SEGURA
+# =========================
+# OPERAR SEGURO
+# =========================
 def operar(iq, par, direccion):
 
-    try:
-        if not par_abierto(iq, par):
-            print(f"❌ {par} cerrado")
-            return
+    # 🔒 VALIDAR PAR
+    if not par_abierto(iq, par):
+        print(f"❌ {par} cerrado")
+        return
 
-        # 🚨 FORZAR BINARY
-        check, id_op = iq.buy(MONTO, par, direccion, 5)
+    print(f"🚀 OPERANDO {par} {direccion}")
+
+    try:
+        check, id = iq.buy(MONTO, par, direccion, 5)
 
         if check:
-            print(f"🚀 OPERACIÓN: {par} {direccion}")
+            print("✅ OPERACIÓN EJECUTADA")
 
             enviar_mensaje(f"""
-🚀 ENTRADA MOMENTUM
+🚀 ENTRADA REAL
 
 Par: {par}
 Dirección: {direccion.upper()}
 Expiración: 5 MIN
 Monto: ${MONTO}
 """)
-
         else:
-            print(f"❌ Falló operación {par}")
-            print("Respuesta:", id_op)
+            print("❌ Falló ejecución")
 
     except Exception as e:
-        print("🔥 ERROR OPERANDO:", e)
+        print("❌ ERROR OPERANDO:", e)
 
 
+# =========================
+# RECONEXIÓN AUTOMÁTICA
+# =========================
+def asegurar_conexion(iq):
+    if not iq.check_connect():
+        print("🔄 RECONECTANDO...")
+        return conectar()
+    return iq
+
+
+# =========================
+# LOOP PRINCIPAL
+# =========================
 def run():
 
     iq = conectar()
 
     while True:
         try:
+            iq = asegurar_conexion(iq)
+
             data = {}
 
             for par in PARES:
                 if par_abierto(iq, par):
-                    data[par] = obtener_velas(iq, par)
+                    velas = obtener_velas(iq, par)
+                    if velas:
+                        data[par] = velas
+
+            if not data:
+                time.sleep(1)
+                continue
 
             señal = detectar_entrada_oculta(data)
 
             if señal:
                 par, direccion, score = señal
 
-                print(f"🎯 {par} {direccion} Score:{score:.2f}")
+                print(f"🎯 {par} {direccion} Score:{score}")
 
                 operar(iq, par, direccion)
 
-                time.sleep(300)
+                time.sleep(300)  # 5 minutos
 
             else:
-                time.sleep(0.2)
+                time.sleep(0.5)
 
         except Exception as e:
-            print("🔥 ERROR GLOBAL:", e)
+            print("❌ ERROR GENERAL:", e)
             time.sleep(5)
 
 
