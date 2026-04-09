@@ -7,7 +7,7 @@ from iqoptionapi.stable_api import IQ_Option
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(BASE_DIR)
 
-from estrategia import detectar_entrada
+from estrategia import detectar_entrada_oculta
 
 EMAIL = os.getenv("IQ_EMAIL")
 PASSWORD = os.getenv("IQ_PASSWORD")
@@ -18,9 +18,42 @@ CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 MONTO = 5
 CUENTA = "PRACTICE"
 
-PARES = ["EURUSD", "EURJPY"]
+PARES = [
+    "EURUSD-OTC",
+    "EURJPY-OTC",
+    "EURGBP-OTC",
+    "EURCHF-OTC",
+    "EURAUD-OTC",
+    "EURCAD-OTC",
+    "GBPUSD-OTC",
+    "GBPJPY-OTC",
+    "GBPAUD-OTC",
+    "GBPCAD-OTC",
+    "GBPCHF-OTC",
+    "USDJPY-OTC",
+    "USDCHF-OTC",
+    "USDCAD-OTC",
+    "AUDUSD-OTC",
+    "AUDJPY-OTC",
+    "AUDCAD-OTC",
+    "AUDCHF-OTC",
+    "NZDJPY-OTC",
+    "NZDCAD-OTC",
+    "CADJPY-OTC",
+    "CHFJPY-OTC", 
+    "USDNOK-OTC",
+    "USDSEK-OTC",
+    "USDTRY-OTC",
+    "USDZAR-OTC",
+    "BTCUSD-OTC",
+    "ETHUSD-OTC",
+    "LTCUSD-OTC"
+]
 
 
+# =========================
+# TELEGRAM
+# =========================
 def enviar_mensaje(texto):
     try:
         url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
@@ -32,6 +65,9 @@ def enviar_mensaje(texto):
         pass
 
 
+# =========================
+# CONEXIÓN
+# =========================
 def conectar():
     while True:
         try:
@@ -40,18 +76,35 @@ def conectar():
 
             if iq.check_connect():
                 iq.change_balance(CUENTA)
-                print("✅ CONECTADO A IQ OPTION")
+                print("✅ CONECTADO")
+                enviar_mensaje("✅ BOT CONECTADO")
                 return iq
 
-        except Exception as e:
-            print("Error conexión:", e)
+        except:
+            pass
 
         time.sleep(5)
 
 
+# =========================
+# ⏱ ENTRADA EXACTA
+# =========================
+def esperar_cierre():
+    while True:
+        ahora = time.time()
+
+        if int(ahora) % 60 == 59 and (ahora - int(ahora)) > 0.8:
+            return
+
+        time.sleep(0.01)
+
+
+# =========================
+# DATOS
+# =========================
 def obtener_velas(iq, par):
     try:
-        velas = iq.get_candles(par, 60, 100, time.time())
+        velas = iq.get_candles(par, 60, 50, time.time() - 2)
 
         return [{
             "open": v["open"],
@@ -60,78 +113,72 @@ def obtener_velas(iq, par):
             "min": v["min"]
         } for v in velas]
 
-    except Exception as e:
-        print(f"Error velas {par}:", e)
+    except:
         return []
 
 
-def par_disponible(iq, par):
-    try:
-        activos = iq.get_all_open_time()
-
-        return activos["binary"][par]["open"]
-
-    except:
-        return False
-
-
+# =========================
+# OPERAR
+# =========================
 def operar(iq, par, direccion):
 
-    if not par_disponible(iq, par):
-        print(f"❌ {par} no disponible")
-        return
+    esperar_cierre()
 
-    try:
-        check, id = iq.buy(MONTO, par, direccion, 1)
+    check, _ = iq.buy(MONTO, par, direccion, 1)
 
-        if check:
-            print(f"🚀 OPERANDO {par} {direccion}")
+    if check:
+        print(f"🚀 {par} {direccion}")
 
-            enviar_mensaje(f"""
-🚀 ENTRADA EJECUTADA
+        enviar_mensaje(f"""
+🚀 ENTRADA CONSOLIDACIÓN
 
 Par: {par}
 Dirección: {direccion.upper()}
-Expiración: 5 MIN
+Expiración: 3 MIN
 Monto: ${MONTO}
+
+📊 Estrategia: Rango + Reversión
 """)
-        else:
-            print(f"❌ Fallo al ejecutar {par}")
-
-    except Exception as e:
-        print("Error al operar:", e)
 
 
+# =========================
+# MAIN
+# =========================
 def run():
 
     iq = conectar()
 
+    ultima_operacion = 0
+
     while True:
         try:
+            if time.time() - ultima_operacion < 60:
+                time.sleep(0.2)
+                continue
+
             data = {}
 
             for par in PARES:
-                velas = obtener_velas(iq, par)
+                data[par] = obtener_velas(iq, par)
 
-                if velas:
-                    data[par] = velas
-
-            señal = detectar_entrada(data)
+            señal = detectar_entrada_oculta(data)
 
             if señal:
-                par, direccion = señal
+                par, direccion, score = señal
 
-                print(f"🎯 SEÑAL: {par} {direccion}")
+                print(f"🎯 {par} {direccion} Score:{score}")
 
                 operar(iq, par, direccion)
 
-                time.sleep(300)
+                ultima_operacion = time.time()
+
+                time.sleep(180)
 
             else:
-                time.sleep(1)
+                time.sleep(0.3)
 
         except Exception as e:
-            print("Error general:", e)
+            print("Error:", e)
             time.sleep(5)
 
 
