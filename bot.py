@@ -23,10 +23,6 @@ CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 MONTO = 10000
 CUENTA = "PRACTICE"
 
-# 🔥 CONTROL TELEGRAM
-BOT_ACTIVO = True
-LAST_UPDATE_ID = 0
-
 PARES = [
     "EURUSD-OTC",
     "GBPUSD-OTC",
@@ -37,53 +33,17 @@ PARES = [
 ]
 
 
-# =========================
-# TELEGRAM
-# =========================
 def enviar_mensaje(texto):
-    if not TOKEN or not CHAT_ID:
-        return
-
     try:
-        requests.post(
-            f"https://api.telegram.org/bot{TOKEN}/sendMessage",
-            data={"chat_id": CHAT_ID, "text": texto},
-            timeout=5
-        )
+        url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
+        requests.post(url, data={
+            "chat_id": CHAT_ID,
+            "text": texto
+        }, timeout=5)
     except:
         pass
 
 
-def leer_comandos():
-    global BOT_ACTIVO, LAST_UPDATE_ID
-
-    try:
-        url = f"https://api.telegram.org/bot{TOKEN}/getUpdates?offset={LAST_UPDATE_ID + 1}"
-        res = requests.get(url, timeout=5).json()
-
-        for update in res.get("result", []):
-            LAST_UPDATE_ID = update["update_id"]
-
-            if "message" not in update:
-                continue
-
-            texto = update["message"].get("text", "").lower()
-
-            if "/stop" in texto:
-                BOT_ACTIVO = False
-                enviar_mensaje("⛔ BOT DETENIDO")
-
-            elif "/start" in texto:
-                BOT_ACTIVO = True
-                enviar_mensaje("✅ BOT ACTIVADO")
-
-    except:
-        pass
-
-
-# =========================
-# CONEXIÓN
-# =========================
 def conectar():
     while True:
         try:
@@ -93,7 +53,6 @@ def conectar():
             if iq.check_connect():
                 iq.change_balance(CUENTA)
                 print("✅ CONECTADO")
-                enviar_mensaje("✅ BOT CONECTADO")
                 return iq
 
         except Exception as e:
@@ -102,28 +61,7 @@ def conectar():
         time.sleep(5)
 
 
-# =========================
-# VALIDAR OTC
-# =========================
-def par_disponible(iq, par):
-    try:
-        activos = iq.get_all_open_time()
-
-        if "digital" not in activos:
-            return False
-
-        if par not in activos["digital"]:
-            return False
-
-        return activos["digital"][par]["open"]
-
-    except:
-        return False
-
-
-# =========================
-# TIMING
-# =========================
+# 🔥 FIX REAL DE TIMING
 def esperar_apertura_real():
     while True:
         ahora = time.time()
@@ -136,15 +74,9 @@ def esperar_apertura_real():
         time.sleep(0.005)
 
 
-# =========================
-# DATOS
-# =========================
 def obtener_velas(iq, par):
     try:
         velas = iq.get_candles(par, 60, 40, time.time())
-
-        if not velas or len(velas) < 30:
-            return None
 
         return [{
             "open": v["open"],
@@ -155,24 +87,17 @@ def obtener_velas(iq, par):
 
     except Exception as e:
         print("Error velas:", e)
-        return None
+        return []
 
 
-# =========================
-# OPERAR (SIN UNDERLYING)
-# =========================
 def operar(iq, par, direccion):
 
-    if not par_disponible(iq, par):
-        print(f"❌ {par} no disponible")
-        return False
-
-    esperar_apertura_real()
-
     try:
-        status, _ = iq.buy_digital_spot(par, MONTO, direccion, 5)
+        esperar_apertura_real()
 
-        if status:
+        check, _ = iq.buy(MONTO, par, direccion, 5)
+
+        if check:
             print(f"🚀 ENTRADA {par} {direccion}")
 
             enviar_mensaje(f"""
@@ -185,17 +110,11 @@ Monto: ${MONTO}
 
 ⏱ Entrada en apertura REAL
 """)
-            return True
 
     except Exception as e:
         print("Error operar:", e)
 
-    return False
 
-
-# =========================
-# MAIN
-# =========================
 def run():
 
     if detectar_entrada_oculta is None:
@@ -206,23 +125,11 @@ def run():
 
     while True:
         try:
-            leer_comandos()  # 🔥 escucha telegram SIEMPRE
-
-            if not BOT_ACTIVO:
-                time.sleep(1)
-                continue
 
             data = {}
 
             for par in PARES:
-                velas = obtener_velas(iq, par)
-
-                if velas:
-                    data[par] = velas
-
-            if not data:
-                time.sleep(1)
-                continue
+                data[par] = obtener_velas(iq, par)
 
             señal = detectar_entrada_oculta(data)
 
@@ -231,15 +138,15 @@ def run():
 
                 print(f"🎯 Señal {par} {direccion} Score:{score}")
 
-                if operar(iq, par, direccion):
-                    time.sleep(180)
+                operar(iq, par, direccion)
+
+                time.sleep(180)
 
             else:
                 time.sleep(0.5)
 
         except Exception as e:
             print("Error loop:", e)
-            iq = conectar()
             time.sleep(5)
 
 
