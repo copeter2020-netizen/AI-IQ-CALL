@@ -22,7 +22,33 @@ CUENTA = os.getenv("CUENTA", "PRACTICE")
 PARES = [
     "EURUSD-OTC",
     "EURJPY-OTC",
-    "GBPUSD-OTC"
+    "EURGBP-OTC",
+    "EURCHF-OTC",
+    "EURAUD-OTC",
+    "EURCAD-OTC",
+    "GBPUSD-OTC",
+    "GBPJPY-OTC",
+    "GBPAUD-OTC",
+    "GBPCAD-OTC",
+    "GBPCHF-OTC",
+    "USDJPY-OTC",
+    "USDCHF-OTC",
+    "USDCAD-OTC",
+    "AUDUSD-OTC",
+    "AUDJPY-OTC",
+    "AUDCAD-OTC",
+    "AUDCHF-OTC",
+    "NZDJPY-OTC",
+    "NZDCAD-OTC",
+    "CADJPY-OTC",
+    "CHFJPY-OTC",
+    "USDNOK-OTC",
+    "USDSEK-OTC",
+    "USDTRY-OTC",
+    "USDZAR-OTC",
+    "BTCUSD-OTC",
+    "ETHUSD-OTC",
+    "LTCUSD-OTC"
 ]
 
 
