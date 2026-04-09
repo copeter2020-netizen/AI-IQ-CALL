@@ -11,7 +11,7 @@ PASSWORD = os.getenv("IQ_PASSWORD")
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-MONTO = 3.33
+MONTO = 4
 CUENTA = "PRACTICE"
 
 # SOLO MERCADO REAL
@@ -47,14 +47,6 @@ def conectar():
             time.sleep(5)
 
 
-# ⏱ Entrada exacta
-def esperar_cierre():
-    while True:
-        if int(time.time()) % 60 == 0:
-            return
-        time.sleep(0.01)
-
-
 def obtener_velas(iq, par):
     try:
         velas = iq.get_candles(par, 60, 50, time.time())
@@ -72,22 +64,21 @@ def obtener_velas(iq, par):
 
 def operar(iq, par, direccion):
 
-    esperar_cierre()
-
+    # 🚀 ENTRADA INMEDIATA (SIN ESPERAR)
     check, _ = iq.buy(MONTO, par, direccion, 5)
 
     if check:
         print(f"🚀 {par} {direccion}")
 
         enviar_mensaje(f"""
-🚀 ENTRADA MOMENTUM
+🚀 ENTRADA MOMENTUM (INMEDIATA)
 
 Par: {par}
 Dirección: {direccion.upper()}
 Expiración: 5 MIN
 Monto: ${MONTO}
 
-⚡ Estrategia: Momentum puro
+⚡ Entrada en tiempo real (sin espera)
 """)
 
 
@@ -114,7 +105,7 @@ def run():
                 time.sleep(300)
 
             else:
-                time.sleep(0.3)
+                time.sleep(0.2)
 
         except Exception as e:
             print("Error:", e)
