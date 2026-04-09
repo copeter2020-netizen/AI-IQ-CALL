@@ -1,130 +1,131 @@
 import time
 import os
-import requests
+import sys
+import pandas as pd
 from iqoptionapi.stable_api import IQ_Option
 
-from estrategia import detectar_mejor_entrada
+# =========================
+# IMPORTAR ESTRATEGIA
+# =========================
+try:
+    from estrategia import detectar_entrada
+except:
+    print("❌ Falta estrategia.py")
+    sys.exit()
 
 # =========================
-# CONFIGURACIÓN
+# CONFIG
 # =========================
 EMAIL = os.getenv("IQ_EMAIL")
 PASSWORD = os.getenv("IQ_PASSWORD")
 
-MONTO = 2
-TIEMPO_EXPIRACION = 5
-
-PARES = [
-    "EURUSD-OTC", "GBPUSD-OTC", "AUDUSD-OTC",
-    "EURGBP-OTC", "EURJPY-OTC", "GBPJPY-OTC", "USDCHF-OTC", "USDCAD-OTC"
+PARIDADES = [
+    "EURUSD-OTC",
+    "EURJPY-OTC",
+    "EURGBP-OTC",
+    "USDCHF-OTC",
+    "GBPUSD-OTC",
+    "AUDUSD-OTC",
+    "USDCAD-OTC",
+    "NZDUSD-OTC",
+    "USDJPY-OTC",
+    "GBPJPY-OTC",
+    "EURCHF-OTC",
+    "AUDJPY-OTC",
+    "CADJPY-OTC",
+    "CHFJPY-OTC",
+    "EURAUD-OTC",
+    "EURNZD-OTC",
+    "GBPAUD-OTC",
+    "GBPNZD-OTC",
+    "AUDCAD-OTC",
+    "AUDCHF-OTC",
+    "AUDNZD-OTC",
+    "CADCHF-OTC",
+    "NZDJPY-OTC",
+    "NZDCHF-OTC",
+    "NZDCAD-OTC",
+    "USDNOK-OTC",
+    "USDSEK-OTC",
+    "USDDKK-OTC",
+    "USDZAR-OTC",
+    "USDSGD-OTC",
+    "USDHKD-OTC",
+    "USDTRY-OTC",
+    "USDTHB-OTC",
+    "USDMXN-OTC",
+    "USDPLN-OTC",
+    "USDINR-OTC",
+    "USDPHP-OTC",
+    "EURTRY-OTC",
+    "EURZAR-OTC",
+    "EURSGD-OTC",
+    "GBPCHF-OTC",
+    "GBPCHF-OTC",
+    "CHFSGD-OTC",
+    "AUDSGD-OTC",
+    "CADSGD-OTC",
+    "EURNOK-OTC",
+    "EURSEK-OTC"
 ]
 
-# =========================
-# TELEGRAM CONFIG
-# =========================
-TELEGRAM_TOKEN = os.getenv("TG_TOKEN")
-TELEGRAM_CHAT_ID = os.getenv("TG_CHAT_ID")
-
-def enviar_telegram(mensaje):
-    try:
-        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-        data = {
-            "chat_id": TELEGRAM_CHAT_ID,
-            "text": mensaje
-        }
-        requests.post(url, data=data, timeout=5)
-    except:
-        pass  # evita spam de errores
+MONTO = 1000
+TIEMPO = 1  # 1 minuto
 
 # =========================
 # CONEXIÓN
 # =========================
-def conectar():
-    iq = IQ_Option(EMAIL, PASSWORD)
-    iq.connect()
+Iq = IQ_Option(EMAIL, PASSWORD)
+Iq.connect()
 
-    if iq.check_connect():
-        msg = "✅ BOT CONECTADO"
-        print(msg)
-        enviar_telegram(msg)
-        return iq
-    else:
-        print("❌ Error de conexión")
-        return None
+if not Iq.check_connect():
+    print("❌ Error conectando")
+    sys.exit()
+else:
+    print("✅ Conectado")
 
 # =========================
-# OBTENER VELAS
+# OBTENER DATOS
 # =========================
-def obtener_velas(iq, par):
+def obtener_candles(par):
     try:
-        velas = iq.get_candles(par, 60, 50, time.time())
-
-        if not velas:
-            return None
-
-        import pandas as pd
-        df = pd.DataFrame(velas)
-
+        candles = Iq.get_candles(par, 60, 50, time.time())
+        df = pd.DataFrame(candles)
+        df.rename(columns={
+            "min": "min",
+            "max": "max",
+            "open": "open",
+            "close": "close"
+        }, inplace=True)
         return df
-
     except:
         return None
 
 # =========================
-# EJECUTAR OPERACIÓN
+# EJECUTAR TRADE
 # =========================
-def ejecutar_operacion(iq, par, direccion):
+def ejecutar_trade(par, direccion):
     try:
-        accion = "call" if direccion == "call" else "put"
-
-        status, _ = iq.buy(MONTO, par, accion, TIEMPO_EXPIRACION)
-
+        status, id = Iq.buy(MONTO, par, direccion, TIEMPO)
         if status:
-            msg = f"🚀 ENTRADA\nPar: {par}\nDirección: {accion.upper()}"
-            print(msg)
-            enviar_telegram(msg)
-        else:
-            enviar_telegram("❌ Error al ejecutar operación")
-
-    except Exception as e:
-        enviar_telegram(f"❌ Error operación: {e}")
+            print(f"🚀 ENTRADA {par} {direccion.upper()}")
+    except:
+        pass
 
 # =========================
 # LOOP PRINCIPAL
 # =========================
-def main():
-    iq = conectar()
-    if not iq:
-        return
+while True:
+    for par in PARIDADES:
+        df = obtener_candles(par)
 
-    operando = False
+        if df is None:
+            continue
 
-    while True:
-        try:
-            if not operando:
+        señal = detectar_entrada(df)
 
-                def get_velas(par):
-                    return obtener_velas(iq, par)
+        if señal:
+            print(f"📊 Señal {par} {señal.upper()}")
+            ejecutar_trade(par, señal)
 
-                mejor = detectar_mejor_entrada(PARES, get_velas)
-
-                if mejor:
-                    msg = f"📊 Señal detectada\nPar: {mejor['par']}\nDirección: {mejor['direccion'].upper()}\nScore: {mejor['score']}"
-                    print(msg)
-                    enviar_telegram(msg)
-
-                    ejecutar_operacion(iq, mejor["par"], mejor["direccion"])
-                    operando = True
-
-            time.sleep(TIEMPO_EXPIRACION * 60)
-            operando = False
-
-        except Exception as e:
-            enviar_telegram(f"❌ Error loop: {e}")
-            time.sleep(5)
-
-# =========================
-# INICIO
-# =========================
-if __name__ == "__main__":
-    main()
+    time.sleep(10)
