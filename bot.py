@@ -14,10 +14,11 @@ CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 MONTO = 4
 CUENTA = "PRACTICE"
 
-# SOLO MERCADO REAL
 PARES = [
     "EURUSD",
-    "EURJPY"
+    "EURJPY",
+    "EURUSD-OTC",
+    "EURJPY-OTC"
 ]
 
 
@@ -47,6 +48,15 @@ def conectar():
             time.sleep(5)
 
 
+# 🔥 VERIFICAR SI EL PAR ESTÁ ABIERTO
+def par_abierto(iq, par):
+    try:
+        activos = iq.get_all_open_time()
+        return activos["binary"][par]["open"]
+    except:
+        return False
+
+
 def obtener_velas(iq, par):
     try:
         velas = iq.get_candles(par, 60, 50, time.time())
@@ -64,22 +74,27 @@ def obtener_velas(iq, par):
 
 def operar(iq, par, direccion):
 
-    # 🚀 ENTRADA INMEDIATA (SIN ESPERAR)
-    check, _ = iq.buy(MONTO, par, direccion, 1)
+    # 🚨 validar mercado abierto
+    if not par_abierto(iq, par):
+        print(f"❌ {par} CERRADO")
+        return
+
+    check, id_op = iq.buy(MONTO, par, direccion, 5)
 
     if check:
-        print(f"🚀 {par} {direccion}")
+        print(f"🚀 OPERACIÓN EJECUTADA: {par} {direccion}")
 
         enviar_mensaje(f"""
-🚀 ENTRADA MOMENTUM (INMEDIATA)
+🚀 ENTRADA MOMENTUM
 
 Par: {par}
 Dirección: {direccion.upper()}
 Expiración: 5 MIN
 Monto: ${MONTO}
-
-⚡ Entrada en tiempo real (sin espera)
 """)
+    else:
+        print(f"❌ ERROR AL OPERAR {par}")
+        print("ID:", id_op)
 
 
 def run():
@@ -91,7 +106,8 @@ def run():
             data = {}
 
             for par in PARES:
-                data[par] = obtener_velas(iq, par)
+                if par_abierto(iq, par):
+                    data[par] = obtener_velas(iq, par)
 
             señal = detectar_entrada_oculta(data)
 
