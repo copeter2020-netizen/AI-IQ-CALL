@@ -65,7 +65,7 @@ def obtener_velas(iq, par):
 def operar(iq, par, direccion):
 
     # 🚀 ENTRADA INMEDIATA (SIN ESPERAR)
-    check, _ = iq.buy(MONTO, par, direccion, 5)
+    check, _ = iq.buy(MONTO, par, direccion, 1)
 
     if check:
         print(f"🚀 {par} {direccion}")
