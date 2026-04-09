@@ -95,7 +95,7 @@ def operar(iq, par, direccion):
     try:
         esperar_apertura_real()
 
-        check, _ = iq.buy(MONTO, par, direccion, 3)
+        check, _ = iq.buy(MONTO, par, direccion, 5)
 
         if check:
             print(f"🚀 ENTRADA {par} {direccion}")
@@ -105,7 +105,7 @@ def operar(iq, par, direccion):
 
 Par: {par}
 Dirección: {direccion.upper()}
-Expiración: 3 MIN
+Expiración: 5 MIN
 Monto: ${MONTO}
 
 ⏱ Entrada en apertura REAL
