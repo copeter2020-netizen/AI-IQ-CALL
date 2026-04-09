@@ -76,12 +76,12 @@ def conectar():
 
             if iq.check_connect():
                 iq.change_balance(CUENTA)
-                print("✅ CONECTADO")
+                print("✅ CONECTADO A IQ OPTION")
                 enviar_mensaje("✅ BOT CONECTADO")
                 return iq
 
-        except:
-            pass
+        except Exception as e:
+            print("Error conexión:", e)
 
         time.sleep(5)
 
@@ -104,7 +104,10 @@ def esperar_cierre():
 # =========================
 def obtener_velas(iq, par):
     try:
-        velas = iq.get_candles(par, 60, 50, time.time() - 2)
+        velas = iq.get_candles(par, 60, 50, time.time())
+
+        if not velas:
+            return []
 
         return [{
             "open": v["open"],
@@ -113,32 +116,58 @@ def obtener_velas(iq, par):
             "min": v["min"]
         } for v in velas]
 
-    except:
+    except Exception as e:
+        print(f"Error velas {par}:", e)
         return []
 
 
 # =========================
-# OPERAR
+# VALIDAR OTC
+# =========================
+def par_disponible(iq, par):
+    try:
+        activos = iq.get_all_open_time()
+
+        return activos["digital"][par]["open"]
+
+    except Exception as e:
+        print(f"Error activo {par}:", e)
+        return False
+
+
+# =========================
+# OPERAR (DIGITAL OTC)
 # =========================
 def operar(iq, par, direccion):
 
+    if not par_disponible(iq, par):
+        print(f"❌ {par} no disponible")
+        return
+
     esperar_cierre()
 
-    check, _ = iq.buy(MONTO, par, direccion, 1)
+    try:
+        status, id = iq.buy_digital_spot(par, MONTO, direccion, 5)
 
-    if check:
-        print(f"🚀 {par} {direccion}")
+        if status:
+            print(f"🚀 OPERANDO {par} {direccion}")
 
-        enviar_mensaje(f"""
-🚀 ENTRADA CONSOLIDACIÓN
+            enviar_mensaje(f"""
+🚀 ENTRADA EJECUTADA OTC
 
 Par: {par}
 Dirección: {direccion.upper()}
-Expiración: 3 MIN
+Expiración: 5 MIN
 Monto: ${MONTO}
 
-📊 Estrategia: Rango + Reversión
+📊 Estrategia activa
 """)
+
+        else:
+            print(f"❌ Error al ejecutar {par}")
+
+    except Exception as e:
+        print("Error al operar:", e)
 
 
 # =========================
@@ -152,14 +181,22 @@ def run():
 
     while True:
         try:
+            # evitar sobreoperar
             if time.time() - ultima_operacion < 60:
-                time.sleep(0.2)
+                time.sleep(0.5)
                 continue
 
             data = {}
 
             for par in PARES:
-                data[par] = obtener_velas(iq, par)
+                velas = obtener_velas(iq, par)
+
+                if velas:
+                    data[par] = velas
+
+            if not data:
+                time.sleep(1)
+                continue
 
             señal = detectar_entrada_oculta(data)
 
@@ -172,15 +209,19 @@ def run():
 
                 ultima_operacion = time.time()
 
-                time.sleep(180)
+                time.sleep(300)
 
             else:
-                time.sleep(0.3)
+                time.sleep(0.5)
 
         except Exception as e:
-            print("Error:", e)
+            print("Error general:", e)
+
+            # 🔥 RECONEXIÓN AUTOMÁTICA
+            iq = conectar()
+
             time.sleep(5)
 
 
 if __name__ == "__main__":
-    run()
+    run() 
