@@ -16,9 +16,7 @@ CUENTA = "PRACTICE"
 
 PARES = [
     "EURUSD",
-    "EURJPY",
-    "EURUSD-OTC",
-    "EURJPY-OTC"
+    "EURJPY"
 ]
 
 
@@ -44,16 +42,21 @@ def conectar():
                 print("✅ CONECTADO")
                 return iq
 
-        except:
+        except Exception as e:
+            print("Error conexión:", e)
             time.sleep(5)
 
 
-# 🔥 VERIFICAR SI EL PAR ESTÁ ABIERTO
+# 🔥 SOLO BINARY (evita error 'underlying')
 def par_abierto(iq, par):
     try:
         activos = iq.get_all_open_time()
+
+        # SOLO binary (NO digital)
         return activos["binary"][par]["open"]
-    except:
+
+    except Exception as e:
+        print(f"Error verificando {par}:", e)
         return False
 
 
@@ -68,23 +71,26 @@ def obtener_velas(iq, par):
             "min": v["min"]
         } for v in velas]
 
-    except:
+    except Exception as e:
+        print(f"Error velas {par}:", e)
         return []
 
 
+# 🔥 OPERACIÓN SEGURA
 def operar(iq, par, direccion):
 
-    # 🚨 validar mercado abierto
-    if not par_abierto(iq, par):
-        print(f"❌ {par} CERRADO")
-        return
+    try:
+        if not par_abierto(iq, par):
+            print(f"❌ {par} cerrado")
+            return
 
-    check, id_op = iq.buy(MONTO, par, direccion, 5)
+        # 🚨 FORZAR BINARY
+        check, id_op = iq.buy(MONTO, par, direccion, 5)
 
-    if check:
-        print(f"🚀 OPERACIÓN EJECUTADA: {par} {direccion}")
+        if check:
+            print(f"🚀 OPERACIÓN: {par} {direccion}")
 
-        enviar_mensaje(f"""
+            enviar_mensaje(f"""
 🚀 ENTRADA MOMENTUM
 
 Par: {par}
@@ -92,9 +98,13 @@ Dirección: {direccion.upper()}
 Expiración: 5 MIN
 Monto: ${MONTO}
 """)
-    else:
-        print(f"❌ ERROR AL OPERAR {par}")
-        print("ID:", id_op)
+
+        else:
+            print(f"❌ Falló operación {par}")
+            print("Respuesta:", id_op)
+
+    except Exception as e:
+        print("🔥 ERROR OPERANDO:", e)
 
 
 def run():
@@ -124,7 +134,7 @@ def run():
                 time.sleep(0.2)
 
         except Exception as e:
-            print("Error:", e)
+            print("🔥 ERROR GLOBAL:", e)
             time.sleep(5)
 
 
