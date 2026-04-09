@@ -35,10 +35,10 @@ def continuidad(df):
 
 
 # =========================
-# FUERZA DEL MOVIMIENTO
+# FUERZA
 # =========================
 def fuerza(df):
-    v = df.iloc[-2]
+    v = df.iloc[-1]  # 🔥 vela actual (no cerrada)
 
     rango = v["max"] - v["min"]
 
@@ -72,9 +72,9 @@ def detectar_entrada_oculta(data):
         if direccion == "neutral":
             continue
 
-        v = df.iloc[-2]
+        v = df.iloc[-1]  # 🔥 vela en tiempo real
 
-        # SOLO SI HAY IMPULSO REAL
+        # SOLO SI HAY IMPULSO AHORA
         if not impulso_fuerte(v):
             continue
 
