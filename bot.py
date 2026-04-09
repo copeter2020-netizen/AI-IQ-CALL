@@ -15,7 +15,7 @@ PASSWORD = os.getenv("IQ_PASSWORD")
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-MONTO = 1
+MONTO = 2
 CUENTA = "PRACTICE"
 
 PARES = [
@@ -25,36 +25,26 @@ PARES = [
     "EURCHF-OTC",
     "EURAUD-OTC",
     "EURCAD-OTC",
-
     "GBPUSD-OTC",
     "GBPJPY-OTC",
     "GBPAUD-OTC",
     "GBPCAD-OTC",
     "GBPCHF-OTC",
-
     "USDJPY-OTC",
     "USDCHF-OTC",
     "USDCAD-OTC",
-
     "AUDUSD-OTC",
     "AUDJPY-OTC",
     "AUDCAD-OTC",
     "AUDCHF-OTC",
-
-    "NZDUSD-OTC",
     "NZDJPY-OTC",
     "NZDCAD-OTC",
-
     "CADJPY-OTC",
-    "CHFJPY-OTC",
-
-    # 🔥 EXTRAS OTC
+    "CHFJPY-OTC", 
     "USDNOK-OTC",
     "USDSEK-OTC",
     "USDTRY-OTC",
     "USDZAR-OTC",
-
-    # 💣 CRYPTO OTC (si tu broker los tiene)
     "BTCUSD-OTC",
     "ETHUSD-OTC",
     "LTCUSD-OTC"
