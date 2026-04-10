@@ -7,12 +7,7 @@ from iqoptionapi.stable_api import IQ_Option
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(BASE_DIR)
 
-try:
-    from estrategia import detectar_entrada_oculta
-except Exception as e:
-    print("❌ Error importando estrategia:", e)
-    detectar_entrada_oculta = None
-
+from estrategia import detectar_entrada_oculta
 
 EMAIL = os.getenv("IQ_EMAIL")
 PASSWORD = os.getenv("IQ_PASSWORD")
@@ -20,30 +15,30 @@ PASSWORD = os.getenv("IQ_PASSWORD")
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-MONTO = 10000
+MONTO = 5
 CUENTA = "PRACTICE"
 
-PARES = [
-    "EURUSD-OTC",
-    "GBPUSD-OTC",
-    "EURJPY-OTC",
-    "EURGBP-OTC",
-    "GBPJPY-OTC",
-    "USDCHF-OTC"
-]
+# 🔥 SOLO UN PAR
+PARES = ["EURUSD-OTC"]
 
 
+# =========================
+# TELEGRAM
+# =========================
 def enviar_mensaje(texto):
     try:
-        url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
-        requests.post(url, data={
-            "chat_id": CHAT_ID,
-            "text": texto
-        }, timeout=5)
+        requests.post(
+            f"https://api.telegram.org/bot{TOKEN}/sendMessage",
+            data={"chat_id": CHAT_ID, "text": texto},
+            timeout=5
+        )
     except:
         pass
 
 
+# =========================
+# CONEXIÓN
+# =========================
 def conectar():
     while True:
         try:
@@ -55,28 +50,29 @@ def conectar():
                 print("✅ CONECTADO")
                 return iq
 
-        except Exception as e:
-            print("Error conexión:", e)
+        except:
+            pass
 
         time.sleep(5)
 
 
-# 🔥 FIX REAL DE TIMING
-def esperar_apertura_real():
-    while True:
-        ahora = time.time()
-        segundos = int(ahora) % 60
-        milisegundos = ahora - int(ahora)
-
-        if segundos == 58 and milisegundos > 0.90:
-            return
-
-        time.sleep(0.005)
+# =========================
+# VALIDAR OTC
+# =========================
+def par_abierto(iq, par):
+    try:
+        activos = iq.get_all_open_time()
+        return activos["digital"][par]["open"]
+    except:
+        return False
 
 
+# =========================
+# DATOS (3 HORAS)
+# =========================
 def obtener_velas(iq, par):
     try:
-        velas = iq.get_candles(par, 60, 40, time.time())
+        velas = iq.get_candles(par, 60, 180, time.time())
 
         return [{
             "open": v["open"],
@@ -85,46 +81,56 @@ def obtener_velas(iq, par):
             "min": v["min"]
         } for v in velas]
 
-    except Exception as e:
-        print("Error velas:", e)
+    except:
         return []
 
 
+# =========================
+# OPERAR INMEDIATO
+# =========================
 def operar(iq, par, direccion):
 
+    if not par_abierto(iq, par):
+        return False
+
     try:
-        esperar_apertura_real()
+        status, _ = iq.buy_digital_spot(par, MONTO, direccion, 1)
 
-        check, _ = iq.buy(MONTO, par, direccion, 5)
-
-        if check:
-            print(f"🚀 ENTRADA {par} {direccion}")
+        if status:
+            print(f"🚀 {par} {direccion}")
 
             enviar_mensaje(f"""
-🚀 ENTRADA PRO
+🚀 ENTRADA CORRECCIÓN
 
 Par: {par}
 Dirección: {direccion.upper()}
-Expiración: 5 MIN
+Expiración: 1 MIN
 Monto: ${MONTO}
 
-⏱ Entrada en apertura REAL
+📊 Estrategia: Pullback + Continuidad
 """)
 
-    except Exception as e:
-        print("Error operar:", e)
+            return True
+
+    except:
+        pass
+
+    return False
 
 
+# =========================
+# MAIN
+# =========================
 def run():
 
-    if detectar_entrada_oculta is None:
-        print("❌ No se puede ejecutar sin estrategia.py")
-        return
-
     iq = conectar()
+    ultima_operacion = 0
 
     while True:
         try:
+            if time.time() - ultima_operacion < 30:
+                time.sleep(0.2)
+                continue
 
             data = {}
 
@@ -136,17 +142,17 @@ def run():
             if señal:
                 par, direccion, score = señal
 
-                print(f"🎯 Señal {par} {direccion} Score:{score}")
+                print(f"🎯 {par} {direccion}")
 
-                operar(iq, par, direccion)
-
-                time.sleep(180)
+                if operar(iq, par, direccion):
+                    ultima_operacion = time.time()
+                    time.sleep(60)
 
             else:
-                time.sleep(0.5)
+                time.sleep(0.2)
 
-        except Exception as e:
-            print("Error loop:", e)
+        except:
+            iq = conectar()
             time.sleep(5)
 
 
