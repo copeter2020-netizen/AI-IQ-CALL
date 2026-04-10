@@ -1,63 +1,94 @@
+import numpy as np
 import pandas as pd
 
 
-# =========================
-# UTILIDADES
-# =========================
+def body(v):
+    return abs(v["close"] - v["open"])
+
+def rango(v):
+    return v["max"] - v["min"]
+
 def es_alcista(v):
     return v["close"] > v["open"]
-
 
 def es_bajista(v):
     return v["close"] < v["open"]
 
 
 # =========================
-# TENDENCIA (estructura real)
+# ESTRUCTURA
 # =========================
-def tendencia(df):
-    ultimas = df.iloc[-20:]
+def niveles(df):
+    soporte = df["min"].rolling(20).min().iloc[-2]
+    resistencia = df["max"].rolling(20).max().iloc[-2]
+    return soporte, resistencia
 
-    maximos = ultimas["max"]
-    minimos = ultimas["min"]
 
-    if maximos.is_monotonic_increasing and minimos.is_monotonic_increasing:
+def mercado_lateral(df):
+    ultimas = df.iloc[-6:]
+    rangos = [rango(v) for _, v in ultimas.iterrows()]
+
+    if len(rangos) == 0:
+        return True
+
+    return np.mean(rangos) < (max(rangos) * 0.5)
+
+
+def tendencia_fuerte(df):
+    ultimas = df.iloc[-6:]
+
+    verdes = sum(v["close"] > v["open"] for _, v in ultimas.iterrows())
+    rojas = sum(v["close"] < v["open"] for _, v in ultimas.iterrows())
+
+    if verdes >= 5:
         return "alcista"
 
-    if maximos.is_monotonic_decreasing and minimos.is_monotonic_decreasing:
+    if rojas >= 5:
         return "bajista"
 
     return "neutral"
 
 
 # =========================
-# DETECTAR CORRECCIÓN
+# VALIDACIONES
 # =========================
-def correccion_alcista(df):
-    ultimas = df.iloc[-5:-1]
+def confirmacion_fuerte(v):
+    if rango(v) == 0:
+        return False
 
-    rojas = sum(es_bajista(v) for _, v in ultimas.iterrows())
-
-    return 2 <= rojas <= 4
-
-
-def correccion_bajista(df):
-    ultimas = df.iloc[-5:-1]
-
-    verdes = sum(es_alcista(v) for _, v in ultimas.iterrows())
-
-    return 2 <= verdes <= 4
+    return body(v) > rango(v) * 0.5  # 🔥 más flexible
 
 
-# =========================
-# CONFIRMACIÓN DE REENTRADA
-# =========================
-def confirmacion_alcista(v):
-    return es_alcista(v)
+def impulso_fuerte(v):
+    if rango(v) == 0:
+        return False
+
+    return body(v) > rango(v) * 0.7
 
 
-def confirmacion_bajista(v):
-    return es_bajista(v)
+def rechazo_fuerte(v):
+    if rango(v) == 0:
+        return False
+
+    mecha_sup = v["max"] - max(v["open"], v["close"])
+    mecha_inf = min(v["open"], v["close"]) - v["min"]
+
+    return (
+        mecha_sup > body(v) * 1.2 or
+        mecha_inf > body(v) * 1.2
+    )
+
+
+def zona_mala(df, soporte, resistencia):
+    precio = df["close"].iloc[-1]
+    rango_total = resistencia - soporte
+
+    if rango_total == 0:
+        return True
+
+    distancia = min(abs(precio - soporte), abs(precio - resistencia))
+
+    return distancia > rango_total * 0.75  # 🔥 más permisivo
 
 
 # =========================
@@ -65,40 +96,76 @@ def confirmacion_bajista(v):
 # =========================
 def detectar_entrada_oculta(data):
 
-    par = "EURUSD-OTC"
+    mejor = None
+    mejor_score = 0
 
-    if par not in data:
-        return None
+    for par, velas in data.items():
 
-    velas = data[par]
+        if len(velas) < 30:
+            continue
 
-    if len(velas) < 180:
-        return None
+        df = pd.DataFrame(velas)
 
-    df = pd.DataFrame(velas)
+        # SOLO evitamos lateral extremo
+        if mercado_lateral(df):
+            continue
 
-    dir_tendencia = tendencia(df)
+        soporte, resistencia = niveles(df)
 
-    v_actual = df.iloc[-1]
+        if zona_mala(df, soporte, resistencia):
+            continue
 
-    # =========================
-    # COMPRA
-    # =========================
-    if dir_tendencia == "alcista":
+        tendencia = tendencia_fuerte(df)
 
-        if correccion_alcista(df):
+        # BLOQUEO INTELIGENTE (no contra tendencia)
+        bloquear_put = tendencia == "alcista"
+        bloquear_call = tendencia == "bajista"
 
-            if confirmacion_alcista(v_actual):
-                return (par, "call", 10)
+        v_confirmacion = df.iloc[-2]
+        v_manipulacion = df.iloc[-3]
 
-    # =========================
-    # VENTA
-    # =========================
-    if dir_tendencia == "bajista":
+        score = 0
 
-        if correccion_bajista(df):
+        # =========================
+        # PUT
+        # =========================
+        if not bloquear_put and v_manipulacion["max"] >= resistencia:
 
-            if confirmacion_bajista(v_actual):
-                return (par, "put", 10)
+            if rechazo_fuerte(v_manipulacion):
+                score += 2
 
-    return None
+            if es_bajista(v_confirmacion):
+                score += 2
+
+            if impulso_fuerte(v_confirmacion):
+                score += 1
+
+            if not confirmacion_fuerte(v_confirmacion):
+                continue
+
+            if score >= 8 and score > mejor_score:
+                mejor_score = score
+                mejor = (par, "put", score)
+
+        # =========================
+        # CALL
+        # =========================
+        if not bloquear_call and v_manipulacion["min"] <= soporte:
+
+            if rechazo_fuerte(v_manipulacion):
+                score += 2
+
+            if es_alcista(v_confirmacion):
+                score += 2
+
+            if impulso_fuerte(v_confirmacion):
+                score += 1
+
+            if not confirmacion_fuerte(v_confirmacion):
+                continue
+
+            if score >= 5 and score > mejor_score:
+                mejor_score = score
+                mejor = (par, "call", score)
+
+    return mejor
