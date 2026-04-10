@@ -7,9 +7,6 @@ from iqoptionapi.stable_api import IQ_Option
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(BASE_DIR)
 
-# =========================
-# IMPORT ESTRATEGIA
-# =========================
 try:
     from estrategia import detectar_entrada_oculta
 except Exception as e:
@@ -17,17 +14,23 @@ except Exception as e:
     detectar_entrada_oculta = None
 
 
-# =========================
-# CONFIG
-# =========================
 EMAIL = os.getenv("IQ_EMAIL")
 PASSWORD = os.getenv("IQ_PASSWORD")
 
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-MONTO = 5000
+MONTO = 10000
 CUENTA = "PRACTICE"
+
+PARES = [
+    "EURUSD-OTC",
+    "GBPUSD-OTC",
+    "EURJPY-OTC",
+    "EURGBP-OTC",
+    "GBPJPY-OTC",
+    "USDCHF-OTC"
+]
 
 
 # =========================
@@ -45,7 +48,7 @@ def enviar_mensaje(texto):
 
 
 # =========================
-# CONEXIÓN ROBUSTA
+# CONEXIÓN
 # =========================
 def conectar():
     while True:
@@ -65,40 +68,14 @@ def conectar():
 
 
 # =========================
-# CACHE ACTIVOS (ANTI UNDERLYING)
-# =========================
-def obtener_activos(iq):
-    try:
-        return iq.get_all_open_time()
-    except:
-        return {}
-
-
-# =========================
-# FILTRAR PARES OTC ABIERTOS
-# =========================
-def obtener_pares_otc(activos):
-    pares = []
-
-    try:
-        for par, info in activos.get("digital", {}).items():
-            if "-OTC" in par and info.get("open"):
-                pares.append(par)
-    except:
-        pass
-
-    return pares
-
-
-# =========================
-# OBTENER VELAS (SEGURAS)
+# OBTENER VELAS (ANTI ERROR)
 # =========================
 def obtener_velas(iq, par):
     try:
-        velas = iq.get_candles(par, 60, 120, time.time())
+        velas = iq.get_candles(par, 60, 50, time.time())
 
-        if not velas:
-            return []
+        if not velas or len(velas) < 10:
+            return None
 
         return [{
             "open": v["open"],
@@ -108,24 +85,30 @@ def obtener_velas(iq, par):
         } for v in velas]
 
     except Exception as e:
-        print(f"Error velas {par}:", e)
-        return []
+        print(f"❌ Error velas {par}:", e)
+        return None
 
 
 # =========================
-# OPERAR (SIN ERROR UNDERLYING)
+# VALIDAR PAR OTC (SIN UNDERLYING)
 # =========================
-def operar(iq, activos, par, direccion):
-
+def par_valido(iq, par):
     try:
-        # 🔥 VALIDACIÓN SEGURA
-        if par not in activos.get("digital", {}):
+        velas = iq.get_candles(par, 60, 1, time.time())
+        return velas is not None and len(velas) > 0
+    except:
+        return False
+
+
+# =========================
+# OPERAR SEGURO
+# =========================
+def operar(iq, par, direccion):
+    try:
+        if not par_valido(iq, par):
+            print(f"⛔ {par} no disponible")
             return False
 
-        if not activos["digital"][par]["open"]:
-            return False
-
-        # 🔥 OPERACIÓN CONTROLADA
         status, _ = iq.buy_digital_spot(par, MONTO, direccion, 1)
 
         if status:
@@ -141,9 +124,11 @@ Monto: ${MONTO}
 """)
 
             return True
+        else:
+            print(f"❌ Fallo entrada {par}")
 
     except Exception as e:
-        print("Error operar:", e)
+        print(f"❌ Error operar {par}:", e)
 
     return False
 
@@ -154,49 +139,30 @@ Monto: ${MONTO}
 def run():
 
     if detectar_entrada_oculta is None:
-        print("❌ Estrategia no disponible")
+        print("❌ Falta estrategia.py")
         return
 
     iq = conectar()
     ultima_operacion = 0
-    activos_cache = {}
-    tiempo_cache = 0
 
     while True:
         try:
-            # 🔄 RECONEXIÓN
-            if not iq.check_connect():
-                print("🔄 Reconectando...")
-                iq = conectar()
-
-            # 🔥 ACTUALIZAR ACTIVOS CADA 30s
-            if time.time() - tiempo_cache > 30:
-                activos_cache = obtener_activos(iq)
-                tiempo_cache = time.time()
-
-            pares = obtener_pares_otc(activos_cache)
-
-            if not pares:
-                time.sleep(1)
-                continue
-
-            # 🔥 CONTROL DE OPERACIONES
+            # evitar sobrecarga
             if time.time() - ultima_operacion < 30:
-                time.sleep(0.3)
+                time.sleep(0.5)
                 continue
 
             data = {}
 
-            for par in pares:
+            for par in PARES:
                 velas = obtener_velas(iq, par)
 
-                if len(velas) > 50:
+                if velas:
                     data[par] = velas
 
-                time.sleep(0.15)  # 🔥 evita crash IQ Option
+                time.sleep(0.2)  # 🔥 anti saturación API
 
             if not data:
-                time.sleep(1)
                 continue
 
             señal = detectar_entrada_oculta(data)
@@ -206,21 +172,20 @@ def run():
 
                 print(f"🎯 {par} {direccion} Score:{score}")
 
-                if operar(iq, activos_cache, par, direccion):
+                if operar(iq, par, direccion):
                     ultima_operacion = time.time()
                     time.sleep(60)
 
             else:
-                time.sleep(0.3)
+                time.sleep(0.5)
 
         except Exception as e:
-            print("Error general:", e)
+            print("❌ Error general:", e)
+
+            # 🔥 RECONEXIÓN AUTOMÁTICA
             iq = conectar()
             time.sleep(5)
 
 
-# =========================
-# START
-# =========================
 if __name__ == "__main__":
     run()
