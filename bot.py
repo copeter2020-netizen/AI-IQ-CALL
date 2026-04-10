@@ -18,9 +18,6 @@ CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 MONTO = 5000
 CUENTA = "PRACTICE"
 
-# 🔥 SOLO UN PAR
-PARES = ["EURUSD-OTC"]
-
 
 # =========================
 # TELEGRAM
@@ -54,6 +51,25 @@ def conectar():
             pass
 
         time.sleep(5)
+
+
+# =========================
+# 🔥 OBTENER TODOS LOS PARES OTC DISPONIBLES
+# =========================
+def obtener_pares_otc(iq):
+    try:
+        activos = iq.get_all_open_time()
+
+        pares = []
+
+        for par, info in activos["digital"].items():
+            if "OTC" in par and info["open"]:
+                pares.append(par)
+
+        return pares
+
+    except:
+        return []
 
 
 # =========================
@@ -132,10 +148,24 @@ def run():
                 time.sleep(0.2)
                 continue
 
+            # 🔥 OBTENER TODOS LOS PARES OTC EN TIEMPO REAL
+            PARES = obtener_pares_otc(iq)
+
+            if not PARES:
+                time.sleep(1)
+                continue
+
             data = {}
 
             for par in PARES:
-                data[par] = obtener_velas(iq, par)
+                velas = obtener_velas(iq, par)
+
+                if velas:
+                    data[par] = velas
+
+            if not data:
+                time.sleep(0.5)
+                continue
 
             señal = detectar_entrada_oculta(data)
 
