@@ -32,23 +32,52 @@ PARES = [
     "USDCHF-OTC"
 ]
 
+# 🔥 CONTROL ANTI-SPAM
+ultimo_mensaje = ""
+ultimo_envio = 0
+
 
 # =========================
-# TELEGRAM
+# TELEGRAM MEJORADO
 # =========================
-def enviar_mensaje(texto):
+def enviar_mensaje(par, direccion, score):
+    global ultimo_mensaje, ultimo_envio
+
+    ahora = time.time()
+
+    mensaje = f"""🚀 NUEVA ENTRADA
+
+Par: {par}
+Dirección: {direccion.upper()}
+Expiración: 1 MIN
+Monto: ${MONTO}
+
+📊 Score: {score}
+"""
+
+    # 🔥 EVITAR DUPLICADOS
+    if mensaje == ultimo_mensaje and (ahora - ultimo_envio) < 60:
+        return
+
     try:
         requests.post(
             f"https://api.telegram.org/bot{TOKEN}/sendMessage",
-            data={"chat_id": CHAT_ID, "text": texto},
+            data={
+                "chat_id": CHAT_ID,
+                "text": mensaje
+            },
             timeout=5
         )
-    except:
-        pass
+
+        ultimo_mensaje = mensaje
+        ultimo_envio = ahora
+
+    except Exception as e:
+        print("❌ Error Telegram:", e)
 
 
 # =========================
-# CONEXIÓN (ANTI CRASH)
+# CONEXIÓN
 # =========================
 def conectar():
     while True:
@@ -58,11 +87,8 @@ def conectar():
 
             if iq.check_connect():
                 iq.change_balance(CUENTA)
-
-                # 🔥 EVITA ERRORES UNDERLYING
-                iq.api.digital_option = None
-
-                print("✅ CONECTADO ESTABLE")
+                iq.api.digital_option = None  # 🔥 FIX UNDERLYING
+                print("✅ CONECTADO")
                 return iq
 
         except Exception as e:
@@ -72,7 +98,7 @@ def conectar():
 
 
 # =========================
-# OBTENER VELAS (SEGURO)
+# DATOS
 # =========================
 def obtener_velas(iq, par):
     try:
@@ -88,13 +114,12 @@ def obtener_velas(iq, par):
             "min": v["min"]
         } for v in velas]
 
-    except Exception as e:
-        print(f"❌ Error velas {par}:", e)
+    except:
         return None
 
 
 # =========================
-# VALIDAR PAR REAL
+# VALIDAR PAR
 # =========================
 def par_valido(iq, par):
     try:
@@ -105,45 +130,32 @@ def par_valido(iq, par):
 
 
 # =========================
-# OPERAR (ULTRA SEGURO)
+# OPERAR
 # =========================
-def operar(iq, par, direccion):
+def operar(iq, par, direccion, score):
 
     if not par_valido(iq, par):
-        print(f"⛔ {par} inválido")
         return False
 
     try:
-        status, order_id = iq.buy_digital_spot(par, MONTO, direccion, 1)
+        status, _ = iq.buy_digital_spot(par, MONTO, direccion, 1)
 
         if status:
             print(f"🚀 {par} {direccion}")
 
-            enviar_mensaje(f"""
-🚀 ENTRADA EJECUTADA
-
-Par: {par}
-Dirección: {direccion.upper()}
-Expiración: 1 MIN
-Monto: ${MONTO}
-""")
+            # 🔥 SOLO AQUÍ ENVÍA MENSAJE
+            enviar_mensaje(par, direccion, score)
 
             return True
 
-        else:
-            print(f"❌ Fallo entrada {par}")
-
     except Exception as e:
-        print(f"❌ Error operar {par}:", e)
-
-        # 🔥 SI FALLA → REINICIAR CONEXIÓN
-        return False
+        print("Error operar:", e)
 
     return False
 
 
 # =========================
-# MAIN (ANTI CRASH TOTAL)
+# MAIN
 # =========================
 def run():
 
@@ -168,7 +180,7 @@ def run():
                 if velas:
                     data[par] = velas
 
-                time.sleep(0.3)  # 🔥 evita saturación
+                time.sleep(0.3)
 
             if not data:
                 continue
@@ -180,7 +192,7 @@ def run():
 
                 print(f"🎯 {par} {direccion} Score:{score}")
 
-                if operar(iq, par, direccion):
+                if operar(iq, par, direccion, score):
                     ultima_operacion = time.time()
                     time.sleep(60)
 
@@ -188,9 +200,7 @@ def run():
                 time.sleep(0.5)
 
         except Exception as e:
-            print("❌ ERROR GLOBAL:", e)
-
-            # 🔥 REINICIO TOTAL (CLAVE)
+            print("❌ Error general:", e)
             iq = conectar()
             time.sleep(5)
 
