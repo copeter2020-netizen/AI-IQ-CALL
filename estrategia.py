@@ -34,7 +34,7 @@ def rango(v):
 def es_doji(v):
     if rango(v) == 0:
         return False
-    return body(v) < rango(v) * 0.2
+    return body(v) < rango(v) * 0.25
 
 
 def es_pinbar(v):
@@ -45,15 +45,15 @@ def es_pinbar(v):
     mecha_inf = min(v["open"], v["close"]) - v["min"]
 
     return (
-        mecha_sup > body(v) * 2 or
-        mecha_inf > body(v) * 2
+        mecha_sup > body(v) * 1.5 or
+        mecha_inf > body(v) * 1.5
     )
 
 
 def es_indecision(v):
     if rango(v) == 0:
         return False
-    return body(v) < rango(v) * 0.3
+    return body(v) < rango(v) * 0.4
 
 
 def es_agotamiento(v):
@@ -61,16 +61,18 @@ def es_agotamiento(v):
 
 
 # =========================
-# TENDENCIA PREVIA
+# TENDENCIA FLEXIBLE 🔥
 # =========================
 def tendencia_alcista(df):
     ultimas = df.iloc[-6:-1]
-    return all(ultimas["close"] > ultimas["open"])
+    verdes = sum(ultimas["close"] > ultimas["open"])
+    return verdes >= 3  # 🔥 antes 5
 
 
 def tendencia_bajista(df):
     ultimas = df.iloc[-6:-1]
-    return all(ultimas["close"] < ultimas["open"])
+    rojas = sum(ultimas["close"] < ultimas["open"])
+    return rojas >= 3  # 🔥 antes 5
 
 
 # =========================
@@ -79,7 +81,7 @@ def tendencia_bajista(df):
 def detectar_entrada_oculta(data):
 
     mejor = None
-    mejor_score = 6
+    mejor_score = 0
 
     for par, velas in data.items():
 
@@ -88,7 +90,6 @@ def detectar_entrada_oculta(data):
 
         df = pd.DataFrame(velas)
 
-        # calcular RSI
         df["rsi"] = calcular_rsi(df)
 
         rsi_actual = df["rsi"].iloc[-2]
@@ -99,34 +100,35 @@ def detectar_entrada_oculta(data):
         # =========================
         # CALL (REVERSIÓN)
         # =========================
-        if rsi_actual < 30:
+        if rsi_actual < 35:  # 🔥 antes 30
 
             score += 2
 
             if tendencia_bajista(df):
-                score += 2
+                score += 1  # 🔥 menos peso
 
             if es_agotamiento(vela):
-                score += 3
+                score += 2
 
-            if score >= 6 and score > mejor_score:
+            # 🔥 más flexible
+            if score >= 4 and score > mejor_score:
                 mejor_score = score
                 mejor = (par, "call", score)
 
         # =========================
         # PUT (REVERSIÓN)
         # =========================
-        elif rsi_actual > 70:
+        elif rsi_actual > 65:  # 🔥 antes 70
 
             score += 2
 
             if tendencia_alcista(df):
-                score += 2
+                score += 1
 
             if es_agotamiento(vela):
-                score += 3
+                score += 2
 
-            if score >= 6 and score > mejor_score:
+            if score >= 4 and score > mejor_score:
                 mejor_score = score
                 mejor = (par, "put", score)
 
