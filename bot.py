@@ -38,6 +38,31 @@ ultimo_envio = 0
 
 
 # =========================
+# ⏱ TIMING EXACTO
+# =========================
+def esperar_cierre_vela():
+    while True:
+        ahora = time.time()
+        restante = 60 - (ahora % 60)
+
+        if restante <= 0.3:
+            break
+
+        time.sleep(0.05)
+
+
+def esperar_cierre_siguiente():
+    # esperar cierre actual
+    esperar_cierre_vela()
+
+    # esperar una vela completa
+    time.sleep(60)
+
+    # esperar cierre exacto de la siguiente
+    esperar_cierre_vela()
+
+
+# =========================
 # TELEGRAM MEJORADO
 # =========================
 def enviar_mensaje(par, direccion, score):
@@ -55,7 +80,6 @@ Monto: ${MONTO}
 📊 Score: {score}
 """
 
-    # 🔥 EVITAR DUPLICADOS
     if mensaje == ultimo_mensaje and (ahora - ultimo_envio) < 60:
         return
 
@@ -87,7 +111,7 @@ def conectar():
 
             if iq.check_connect():
                 iq.change_balance(CUENTA)
-                iq.api.digital_option = None  # 🔥 FIX UNDERLYING
+                iq.api.digital_option = None
                 print("✅ CONECTADO")
                 return iq
 
@@ -143,7 +167,6 @@ def operar(iq, par, direccion, score):
         if status:
             print(f"🚀 {par} {direccion}")
 
-            # 🔥 SOLO AQUÍ ENVÍA MENSAJE
             enviar_mensaje(par, direccion, score)
 
             return True
@@ -191,6 +214,9 @@ def run():
                 par, direccion, score = señal
 
                 print(f"🎯 {par} {direccion} Score:{score}")
+
+                # 🔥 ESPERA LA SIGUIENTE VELA Y ENTRA EN SU CIERRE
+                esperar_cierre_siguiente()
 
                 if operar(iq, par, direccion, score):
                     ultima_operacion = time.time()
