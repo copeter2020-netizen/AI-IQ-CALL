@@ -18,81 +18,126 @@ def es_bajista(v):
 
 
 # =========================
+# MECHAS
+# =========================
+def mecha_superior(v):
+    return v["max"] - max(v["open"], v["close"])
+
+
+def mecha_inferior(v):
+    return min(v["open"], v["close"]) - v["min"]
+
+
+# =========================
+# ZONAS (SOPORTE / RESISTENCIA)
+# =========================
+def niveles(df):
+    resistencia = df["max"].rolling(20).max().iloc[-2]
+    soporte = df["min"].rolling(20).min().iloc[-2]
+    return soporte, resistencia
+
+
+# =========================
+# TENDENCIA CORTA
+# =========================
+def tendencia_corta(df):
+    ultimas = df.iloc[-5:]
+
+    verdes = sum(v["close"] > v["open"] for _, v in ultimas.iterrows())
+    rojas = sum(v["close"] < v["open"] for _, v in ultimas.iterrows())
+
+    if verdes >= 3:
+        return "alcista"
+    if rojas >= 3:
+        return "bajista"
+
+    return "neutral"
+
+
+# =========================
 # VALIDACIONES
 # =========================
-def es_indecision(v):
+def vela_fuerte(v):
     if rango(v) == 0:
         return False
-    return body(v) < (rango(v) * 0.3)
+    return body(v) > rango(v) * 0.5
 
 
-def es_fuerza(v):
-    if rango(v) == 0:
-        return False
-    return body(v) > (rango(v) * 0.6)
+def rechazo_superior(v):
+    return mecha_superior(v) > body(v) * 1.2
 
 
-def es_continuidad_alcista(v):
-    return es_alcista(v) and body(v) > rango(v) * 0.4
-
-
-def es_continuidad_bajista(v):
-    return es_bajista(v) and body(v) > rango(v) * 0.4
+def rechazo_inferior(v):
+    return mecha_inferior(v) > body(v) * 1.2
 
 
 # =========================
-# ESTRATEGIA FORZADA
+# ESTRATEGIA PRINCIPAL
 # =========================
 def detectar_entrada_oculta(data):
 
+    mejor = None
+    mejor_score = 0
+
     for par, velas in data.items():
 
-        if len(velas) < 10:
+        if len(velas) < 25:
             continue
 
         df = pd.DataFrame(velas)
 
-        v_ind = df.iloc[-4]
-        v_fuerza = df.iloc[-3]
-        v_cont = df.iloc[-2]
+        soporte, resistencia = niveles(df)
+        tendencia = tendencia_corta(df)
+
+        v_fake = df.iloc[-2]   # vela de ruptura falsa
+        v_conf = df.iloc[-1]   # vela confirmación
+
+        score = 0
 
         # =========================
-        # 1. INDECISIÓN
+        # 🔴 PUT (FAKE BREAKOUT ARRIBA)
         # =========================
-        if not es_indecision(v_ind):
-            continue
+        if tendencia == "alcista":
+
+            # rompe resistencia
+            if v_fake["max"] >= resistencia:
+
+                # cierra debajo (fake breakout)
+                if v_fake["close"] < resistencia:
+
+                    # rechazo fuerte
+                    if rechazo_superior(v_fake):
+                        score += 4
+
+                    # confirmación bajista
+                    if es_bajista(v_conf) and vela_fuerte(v_conf):
+                        score += 6
+
+                    if score >= 8 and score > mejor_score:
+                        mejor_score = score
+                        mejor = (par, "put", score)
 
         # =========================
-        # 2. FUERZA + RUPTURA
+        # 🟢 CALL (FAKE BREAKOUT ABAJO)
         # =========================
-        if not es_fuerza(v_fuerza):
-            continue
+        if tendencia == "bajista":
 
-        ruptura_alcista = v_fuerza["close"] > v_ind["max"]
-        ruptura_bajista = v_fuerza["close"] < v_ind["min"]
+            # rompe soporte
+            if v_fake["min"] <= soporte:
 
-        if not (ruptura_alcista or ruptura_bajista):
-            continue
+                # cierra arriba (fake)
+                if v_fake["close"] > soporte:
 
-        # =========================
-        # 3. CONTINUIDAD OBLIGATORIA
-        # =========================
-        # CALL
-        if ruptura_alcista:
-            if not es_continuidad_alcista(v_cont):
-                continue
-            if v_cont["close"] <= v_fuerza["close"]:
-                continue
+                    # rechazo inferior
+                    if rechazo_inferior(v_fake):
+                        score += 4
 
-            return (par, "call", 10)
+                    # confirmación alcista
+                    if es_alcista(v_conf) and vela_fuerte(v_conf):
+                        score += 6
 
-        # PUT
-        if ruptura_bajista:
-            if not es_continuidad_bajista(v_cont):
-                continue
-            if v_cont["close"] >= v_fuerza["close"]:
-                continue
+                    if score >= 8 and score > mejor_score:
+                        mejor_score = score
+                        mejor = (par, "call", score)
 
-            return (par, "put", 10)
-
-    return None
+    return mejor
