@@ -18,41 +18,32 @@ def es_bajista(v):
 
 
 # =========================
-# 🔥 VALIDACIONES
+# VALIDACIONES
 # =========================
 def es_indecision(v):
     if rango(v) == 0:
         return False
-
     return body(v) < (rango(v) * 0.3)
 
 
 def es_fuerza(v):
     if rango(v) == 0:
         return False
-
     return body(v) > (rango(v) * 0.6)
 
 
-def ruptura_alcista(v_fuerza, v_indecision):
-    return v_fuerza["close"] > v_indecision["max"]
+def es_continuidad_alcista(v):
+    return es_alcista(v) and body(v) > rango(v) * 0.4
 
 
-def ruptura_bajista(v_fuerza, v_indecision):
-    return v_fuerza["close"] < v_indecision["min"]
-
-
-def diferencia_clara(v1, v2):
-    return body(v2) > body(v1) * 1.5
+def es_continuidad_bajista(v):
+    return es_bajista(v) and body(v) > rango(v) * 0.4
 
 
 # =========================
-# 🔥 ESTRATEGIA PRINCIPAL
+# ESTRATEGIA FORZADA
 # =========================
 def detectar_entrada_oculta(data):
-
-    mejor = None
-    mejor_score = 0
 
     for par, velas in data.items():
 
@@ -61,49 +52,47 @@ def detectar_entrada_oculta(data):
 
         df = pd.DataFrame(velas)
 
-        v_ind = df.iloc[-3]
-        v_fuerza = df.iloc[-2]
+        v_ind = df.iloc[-4]
+        v_fuerza = df.iloc[-3]
+        v_cont = df.iloc[-2]
 
         # =========================
-        # 🟡 INDECISIÓN REAL
+        # 1. INDECISIÓN
         # =========================
         if not es_indecision(v_ind):
             continue
 
         # =========================
-        # 💥 FUERZA REAL
+        # 2. FUERZA + RUPTURA
         # =========================
         if not es_fuerza(v_fuerza):
             continue
 
-        # =========================
-        # 🔥 DIFERENCIA CLARA
-        # =========================
-        if not diferencia_clara(v_ind, v_fuerza):
-            continue
+        ruptura_alcista = v_fuerza["close"] > v_ind["max"]
+        ruptura_bajista = v_fuerza["close"] < v_ind["min"]
 
-        score = 0
-
-        # =========================
-        # 🟢 CALL
-        # =========================
-        if es_alcista(v_fuerza) and ruptura_alcista(v_fuerza, v_ind):
-            score += 10
-
-        # =========================
-        # 🔴 PUT
-        # =========================
-        elif es_bajista(v_fuerza) and ruptura_bajista(v_fuerza, v_ind):
-            score += 10
-
-        else:
+        if not (ruptura_alcista or ruptura_bajista):
             continue
 
         # =========================
-        # FILTRO FINAL
+        # 3. CONTINUIDAD OBLIGATORIA
         # =========================
-        if score >= 10 and score > mejor_score:
-            mejor_score = score
-            mejor = (par, "call" if es_alcista(v_fuerza) else "put", score)
+        # CALL
+        if ruptura_alcista:
+            if not es_continuidad_alcista(v_cont):
+                continue
+            if v_cont["close"] <= v_fuerza["close"]:
+                continue
 
-    return mejor
+            return (par, "call", 10)
+
+        # PUT
+        if ruptura_bajista:
+            if not es_continuidad_bajista(v_cont):
+                continue
+            if v_cont["close"] >= v_fuerza["close"]:
+                continue
+
+            return (par, "put", 10)
+
+    return None
