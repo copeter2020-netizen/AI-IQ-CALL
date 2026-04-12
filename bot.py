@@ -34,6 +34,8 @@ PARES = [
 ]
 
 ultima_entrada = 0
+ultimo_update_id = None
+bot_activo = True
 
 
 # =========================
@@ -46,6 +48,31 @@ def enviar_mensaje(texto):
             data={"chat_id": CHAT_ID, "text": texto},
             timeout=5
         )
+    except:
+        pass
+
+
+def leer_comandos():
+    global ultimo_update_id, bot_activo
+
+    try:
+        url = f"https://api.telegram.org/bot{TOKEN}/getUpdates"
+        params = {"timeout": 1, "offset": ultimo_update_id}
+        res = requests.get(url, params=params, timeout=5).json()
+
+        for update in res.get("result", []):
+            ultimo_update_id = update["update_id"] + 1
+
+            mensaje = update.get("message", {}).get("text", "")
+
+            if mensaje == "/startbot":
+                bot_activo = True
+                enviar_mensaje("✅ BOT ACTIVADO")
+
+            elif mensaje == "/stopbot":
+                bot_activo = False
+                enviar_mensaje("⛔ BOT DETENIDO")
+
     except:
         pass
 
@@ -104,12 +131,11 @@ def obtener_velas(iq, par):
 
 
 # =========================
-# 🔥 EJECUCIÓN OPTIMIZADA
+# OPERAR
 # =========================
 def operar(iq, par, direccion, score):
     global ultima_entrada
 
-    # evitar duplicadas
     if time.time() - ultima_entrada < 10:
         return
 
@@ -135,7 +161,7 @@ Dirección: {direccion.upper()}
 
 
 # =========================
-# MAIN (ANÁLISIS RÁPIDO)
+# MAIN
 # =========================
 def run():
 
@@ -146,6 +172,14 @@ def run():
 
     while True:
         try:
+            # 🔥 Leer comandos SIEMPRE
+            leer_comandos()
+
+            # ⛔ Si está detenido, no analiza ni opera
+            if not bot_activo:
+                time.sleep(1)
+                continue
+
             data = {}
 
             for par in PARES:
@@ -167,7 +201,6 @@ Dirección: {direccion.upper()}
 
                 operar(iq, par, direccion, score)
 
-            # 🔥 MÁS FRECUENTE
             time.sleep(0.3)
 
         except Exception as e:
