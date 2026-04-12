@@ -33,6 +33,8 @@ PARES = [
     "USDCHF-OTC"
 ]
 
+ultima_entrada = 0
+
 
 # =========================
 # TELEGRAM
@@ -49,21 +51,19 @@ def enviar_mensaje(texto):
 
 
 # =========================
-# ⏱ ESPERA EXACTA SIGUIENTE VELA
+# ⏱ ESPERA PRECISA
 # =========================
 def esperar_entrada_precisa():
     while True:
         ahora = time.time()
         restante = 60 - (ahora % 60)
 
-        # esperamos cierre exacto
-        if restante <= 0.05:
+        if restante <= 0.03:
             break
 
-        time.sleep(0.01)
+        time.sleep(0.005)
 
-    # 🔥 CLAVE: esperar un poco después del cambio de vela
-    time.sleep(1.2)
+    time.sleep(1.1)
 
 
 # =========================
@@ -104,34 +104,38 @@ def obtener_velas(iq, par):
 
 
 # =========================
-# 🔥 OPERAR CORRECTO
+# 🔥 EJECUCIÓN OPTIMIZADA
 # =========================
 def operar(iq, par, direccion, score):
+    global ultima_entrada
 
-    enviar_mensaje("⏱ Esperando siguiente vela...")
+    # evitar duplicadas
+    if time.time() - ultima_entrada < 10:
+        return
+
+    enviar_mensaje("⏱ Preparando entrada...")
 
     esperar_entrada_precisa()
 
     try:
-        status, id = iq.buy_digital_spot(par, MONTO, direccion, 1)
+        status, _ = iq.buy_digital_spot(par, MONTO, direccion, 1)
 
         if status:
             enviar_mensaje(f"""🚀 OPERACIÓN EJECUTADA
 
 Par: {par}
 Dirección: {direccion.upper()}
-Expiración: 1 MIN
 """)
+            ultima_entrada = time.time()
         else:
-            enviar_mensaje("❌ Error al ejecutar operación")
+            enviar_mensaje("❌ No se pudo ejecutar")
 
     except Exception as e:
-        print("Error operar:", e)
-        enviar_mensaje("❌ Excepción al operar")
+        print("Error:", e)
 
 
 # =========================
-# MAIN
+# MAIN (ANÁLISIS RÁPIDO)
 # =========================
 def run():
 
@@ -150,8 +154,6 @@ def run():
                 if velas:
                     data[par] = velas
 
-                time.sleep(0.2)
-
             señal = detectar_entrada_oculta(data)
 
             if señal:
@@ -165,10 +167,8 @@ Dirección: {direccion.upper()}
 
                 operar(iq, par, direccion, score)
 
-                time.sleep(60)
-
-            else:
-                time.sleep(1)
+            # 🔥 MÁS FRECUENTE
+            time.sleep(0.3)
 
         except Exception as e:
             print("Error:", e)
