@@ -50,11 +50,10 @@ def conectar():
 
             if iq.check_connect():
                 iq.change_balance("PRACTICE")
-
                 iq.get_all_ACTIVES_OPCODE()
                 time.sleep(2)
 
-                log("BOT CONECTADO DEMO")
+                log("🤖 BOT CONECTADO DEMO")
                 return iq
 
         except Exception as e:
@@ -69,7 +68,7 @@ def conectar():
 def asegurar_conexion(iq):
     try:
         if not iq.check_connect():
-            log("Reconectando...")
+            log("🔄 Reconectando...")
             return conectar()
         return iq
     except:
@@ -77,7 +76,7 @@ def asegurar_conexion(iq):
 
 
 # =========================
-# PARES ESTABLES
+# PARES
 # =========================
 PARES = [
     "EURUSD-OTC",
@@ -90,18 +89,21 @@ PARES = [
 
 
 # =========================
-# ESPERA SEGUNDO 58
+# 🔥 ESPERA SIGUIENTE VELA
 # =========================
-def esperar_entrada():
+def esperar_siguiente_vela():
+    # esperar cierre actual
     while True:
-        segundos = int(time.time() % 60)
-        if segundos >= 58:
+        if (time.time() % 60) < 0.1:
             break
         time.sleep(0.01)
 
+    # pequeña pausa para asegurar apertura
+    time.sleep(0.8)
+
 
 # =========================
-# OBTENER VELAS
+# VELAS
 # =========================
 def obtener_velas(iq, par):
     try:
@@ -122,7 +124,7 @@ def obtener_velas(iq, par):
 
 
 # =========================
-# OPERAR REAL
+# OPERAR EN SIGUIENTE VELA
 # =========================
 def operar(iq, par, direccion):
     global ultima_entrada
@@ -130,9 +132,9 @@ def operar(iq, par, direccion):
     if time.time() - ultima_entrada < 30:
         return False
 
-    log(f"Esperando entrada {par}")
+    log(f"⏱ Esperando siguiente vela para {par}")
 
-    esperar_entrada()
+    esperar_siguiente_vela()
 
     try:
         iq.subscribe_strike_list(par, 1)
@@ -143,15 +145,17 @@ def operar(iq, par, direccion):
         iq.unsubscribe_strike_list(par, 1)
 
         if status:
-            log(f"""OPERACIÓN EJECUTADA
+            log(f"""🚀 OPERACIÓN EJECUTADA
 
-{par} {direccion.upper()}
-Expiración 1M
+Par: {par}
+Dirección: {direccion.upper()}
+Entrada: NUEVA VELA
+Expiración: 1 MIN
 """)
             ultima_entrada = time.time()
             return True
         else:
-            log("No ejecutó la orden")
+            log("❌ No ejecutó")
             return False
 
     except Exception as e:
@@ -160,7 +164,7 @@ Expiración 1M
         except:
             pass
 
-        log(f"Error operación: {e}")
+        log(f"❌ Error operación: {e}")
         return False
 
 
@@ -192,9 +196,10 @@ def run():
             if señal:
                 par, direccion, score = señal
 
-                log(f"""SEÑAL DETECTADA
+                log(f"""🎯 SEÑAL DETECTADA
 
-{par} {direccion}
+Par: {par}
+Dirección: {direccion}
 Score: {score}
 """)
 
@@ -203,7 +208,7 @@ Score: {score}
             time.sleep(0.2)
 
         except Exception as e:
-            log(f"Error general: {e}")
+            log(f"❌ Error general: {e}")
             time.sleep(2)
 
 
