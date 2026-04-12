@@ -3,13 +3,12 @@ import os
 import requests
 import sys
 from iqoptionapi.stable_api import IQ_Option
-import pandas as pd
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(BASE_DIR)
 
 try:
-    from estrategia import detectar_entrada_oculta, niveles
+    from estrategia import detectar_entrada_oculta
 except Exception as e:
     print("❌ Error importando estrategia:", e)
     detectar_entrada_oculta = None
@@ -27,14 +26,35 @@ CUENTA = "PRACTICE"
 PARES = [
     "EURUSD-OTC",
     "GBPUSD-OTC",
+    "USDJPY-OTC",
     "EURJPY-OTC",
     "EURGBP-OTC",
     "GBPJPY-OTC",
-    "USDCHF-OTC"
+    "USDCHF-OTC",
+    "AUDUSD-OTC",
+    "USDCAD-OTC",
+    "AUDCAD-OTC",
+    "AUDCHF-OTC",
+    "AUDJPY-OTC",
+    "CADCHF-OTC",
+    "CADJPY-OTC",
+    "CHFJPY-OTC",
+    "EURAUD-OTC",
+    "EURCAD-OTC",
+    "EURCHF-OTC",
+    "GBPAUD-OTC",
+    "GBPCAD-OTC",
+    "GBPCHF-OTC",
+    "NZDUSD-OTC",
+    "NZDJPY-OTC",
+    "NZDCHF-OTC",
+    "NZDCAD-OTC",
+    "AUDNZD-OTC",
+    "EURNZD-OTC",
+    "GBPNZD-OTC"
 ]
 
-ultimo_update_id = None
-bot_activo = False
+bot_activo = True
 
 
 # =========================
@@ -44,37 +64,9 @@ def enviar_mensaje(texto):
     try:
         requests.post(
             f"https://api.telegram.org/bot{TOKEN}/sendMessage",
-            data={
-                "chat_id": CHAT_ID,
-                "text": texto
-            },
+            data={"chat_id": CHAT_ID, "text": texto},
             timeout=5
         )
-    except Exception as e:
-        print("❌ Error Telegram:", e)
-
-
-def leer_comandos():
-    global ultimo_update_id, bot_activo
-
-    try:
-        url = f"https://api.telegram.org/bot{TOKEN}/getUpdates"
-        params = {"timeout": 1, "offset": ultimo_update_id}
-        res = requests.get(url, params=params, timeout=5).json()
-
-        for update in res.get("result", []):
-            ultimo_update_id = update["update_id"] + 1
-
-            mensaje = update.get("message", {}).get("text", "")
-
-            if mensaje == "/startbot":
-                bot_activo = True
-                enviar_mensaje("✅ BOT ACTIVADO")
-
-            elif mensaje == "/stopbot":
-                bot_activo = False
-                enviar_mensaje("⛔ BOT DETENIDO")
-
     except:
         pass
 
@@ -90,22 +82,20 @@ def conectar():
 
             if iq.check_connect():
                 iq.change_balance(CUENTA)
-                print("✅ CONECTADO")
-                enviar_mensaje("🤖 BOT CONECTADO A IQ OPTION")
+                enviar_mensaje("🤖 BOT CONECTADO")
                 return iq
-
-        except Exception as e:
-            print("Error conexión:", e)
+        except:
+            pass
 
         time.sleep(5)
 
 
 # =========================
-# DATOS
+# DATOS (1 MIN)
 # =========================
 def obtener_velas(iq, par):
     try:
-        velas = iq.get_candles(par, 60, 200, time.time())
+        velas = iq.get_candles(par, 60, 50, time.time())
 
         return [{
             "open": v["open"],
@@ -118,48 +108,18 @@ def obtener_velas(iq, par):
         return None
 
 
-def precio_actual(iq, par):
+# =========================
+# OPERAR (1 MIN)
+# =========================
+def operar(iq, par, direccion, score):
     try:
-        velas = iq.get_candles(par, 60, 1, time.time())
-        return velas[-1]["close"]
-    except:
-        return None
+        status, _ = iq.buy_digital_spot(par, MONTO, direccion, 1)
 
+        if status:
+            enviar_mensaje(f"🚀 OPERACIÓN\n{par} {direccion.upper()}")
 
-# =========================
-# ENTRADA INTELIGENTE
-# =========================
-def esperar_toque_y_operar(iq, par, direccion, score):
-
-    inicio = time.time()
-
-    while time.time() - inicio < 300:
-
-        velas = obtener_velas(iq, par)
-        if not velas:
-            continue
-
-        df = pd.DataFrame(velas)
-        soporte, resistencia = niveles(df)
-        precio = precio_actual(iq, par)
-
-        if precio is None:
-            continue
-
-        if direccion == "put" and precio >= resistencia:
-            enviar_mensaje(f"🎯 ENTRADA EN RESISTENCIA\n{par} PUT")
-            status, _ = iq.buy_digital_spot(par, MONTO, direccion, 5)
-            return status
-
-        if direccion == "call" and precio <= soporte:
-            enviar_mensaje(f"🎯 ENTRADA EN SOPORTE\n{par} CALL")
-            status, _ = iq.buy_digital_spot(par, MONTO, direccion, 5)
-            return status
-
-        time.sleep(1)
-
-    enviar_mensaje("⏱ No tocó zona, no se operó")
-    return False
+    except Exception as e:
+        print(e)
 
 
 # =========================
@@ -168,58 +128,38 @@ def esperar_toque_y_operar(iq, par, direccion, score):
 def run():
 
     if detectar_entrada_oculta is None:
-        print("❌ Falta estrategia.py")
         return
 
     iq = conectar()
-    ultima_operacion = 0
 
     while True:
         try:
-            leer_comandos()
-
-            if not bot_activo:
-                time.sleep(1)
-                continue
-
-            if time.time() - ultima_operacion < 30:
-                time.sleep(1)
-                continue
-
             data = {}
 
             for par in PARES:
                 velas = obtener_velas(iq, par)
+
                 if velas:
                     data[par] = velas
-                time.sleep(0.2)
 
-            if not data:
-                continue
+                time.sleep(0.2)
 
             señal = detectar_entrada_oculta(data)
 
             if señal:
                 par, direccion, score = señal
 
-                mensaje = f"""🚨 SEÑAL DETECTADA
+                enviar_mensaje(f"🎯 SEÑAL\n{par} {direccion.upper()}")
 
-Par: {par}
-Dirección: {direccion.upper()}
-Expiración: 5 MIN
-Score: {score}
-"""
-                enviar_mensaje(mensaje)
+                operar(iq, par, direccion, score)
 
-                if esperar_toque_y_operar(iq, par, direccion, score):
-                    ultima_operacion = time.time()
-                    time.sleep(300)
+                time.sleep(60)
 
             else:
                 time.sleep(1)
 
         except Exception as e:
-            print("❌ Error:", e)
+            print("Error:", e)
             iq = conectar()
 
 
