@@ -27,9 +27,11 @@ ultima_entrada = 0
 
 
 # =========================
-# TELEGRAM
+# LOG + TELEGRAM
 # =========================
-def enviar_mensaje(msg):
+def log(msg):
+    print(msg)
+
     try:
         requests.post(
             f"https://api.telegram.org/bot{TOKEN}/sendMessage",
@@ -41,7 +43,7 @@ def enviar_mensaje(msg):
 
 
 # =========================
-# CONEXIÓN SEGURA
+# CONEXIÓN
 # =========================
 def conectar():
     while True:
@@ -50,20 +52,16 @@ def conectar():
             iq.connect()
 
             if iq.check_connect():
-
                 iq.change_balance("PRACTICE")
 
-                # 🔥 IMPORTANTE: estabilizar API
                 iq.get_all_ACTIVES_OPCODE()
                 time.sleep(2)
 
-                enviar_mensaje("🤖 BOT CONECTADO (DEMO)")
-                print("✅ Conectado")
-
+                log("🤖 BOT CONECTADO (DEMO)")
                 return iq
 
         except Exception as e:
-            print("Error conexión:", e)
+            log(f"❌ Error conexión: {e}")
 
         time.sleep(5)
 
@@ -74,6 +72,7 @@ def conectar():
 def asegurar_conexion(iq):
     try:
         if not iq.check_connect():
+            log("🔄 Reconectando...")
             return conectar()
         return iq
     except:
@@ -81,7 +80,7 @@ def asegurar_conexion(iq):
 
 
 # =========================
-# LISTA FIJA (EVITA BUG API)
+# PARES
 # =========================
 PARES = [
     "EURUSD-OTC",
@@ -94,19 +93,21 @@ PARES = [
 
 
 # =========================
-# ESPERA VELA
+# 🔥 ESPERA SEGUNDO 58
 # =========================
-def esperar_nueva_vela():
+def esperar_segundo_58():
     while True:
-        if (time.time() % 60) < 0.05:
+        t = time.time()
+        segundos = int(t % 60)
+
+        if segundos == 58:
             break
+
         time.sleep(0.01)
 
-    time.sleep(1.2)
-
 
 # =========================
-# OBTENER VELAS
+# VELAS
 # =========================
 def obtener_velas(iq, par):
     try:
@@ -122,12 +123,13 @@ def obtener_velas(iq, par):
             "min": v["min"]
         } for v in velas]
 
-    except:
+    except Exception as e:
+        log(f"❌ Error velas {par}: {e}")
         return None
 
 
 # =========================
-# OPERAR (AISLADO DEL ERROR)
+# OPERAR SNIPER
 # =========================
 def operar(iq, par, direccion):
     global ultima_entrada
@@ -135,26 +137,30 @@ def operar(iq, par, direccion):
     if time.time() - ultima_entrada < 30:
         return False
 
-    enviar_mensaje(f"⏱ Preparando entrada {par}")
+    log(f"🎯 Esperando segundo 58 para {par}")
 
-    esperar_nueva_vela()
+    esperar_segundo_58()
 
     try:
-        # 🔥 Esto evita fallo interno
         iq.subscribe_strike_list(par, 1)
-        time.sleep(0.5)
+        time.sleep(0.2)
 
-        status, _ = iq.buy_digital_spot(par, MONTO, direccion, 1)
+        status, order_id = iq.buy_digital_spot(par, MONTO, direccion, 1)
 
         iq.unsubscribe_strike_list(par, 1)
 
         if status:
-            enviar_mensaje(f"🚀 {par} {direccion.upper()}")
+            log(f"""🚀 OPERACIÓN EJECUTADA (SNIPER)
+
+Par: {par}
+Dirección: {direccion.upper()}
+Entrada: segundo 58
+Expiración: 1 MIN
+""")
             ultima_entrada = time.time()
             return True
-
         else:
-            enviar_mensaje("❌ No ejecutó")
+            log("❌ No ejecutó")
             return False
 
     except Exception as e:
@@ -163,7 +169,7 @@ def operar(iq, par, direccion):
         except:
             pass
 
-        enviar_mensaje(f"❌ Error: {e}")
+        log(f"❌ Error ejecución: {e}")
         return False
 
 
@@ -193,16 +199,21 @@ def run():
             señal = detectar_entrada_oculta(data)
 
             if señal:
-                par, direccion, _ = señal
+                par, direccion, score = señal
 
-                enviar_mensaje(f"🎯 SEÑAL {par} {direccion}")
+                log(f"""🎯 SEÑAL DETECTADA
+
+Par: {par}
+Dirección: {direccion}
+Score: {score}
+""")
 
                 operar(iq, par, direccion)
 
-            time.sleep(0.3)
+            time.sleep(0.2)
 
         except Exception as e:
-            print("Error general:", e)
+            log(f"❌ Error general: {e}")
             time.sleep(2)
 
 
