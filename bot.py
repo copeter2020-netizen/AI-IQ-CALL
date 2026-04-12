@@ -9,18 +9,15 @@ sys.path.append(BASE_DIR)
 
 from estrategia import detectar_entrada_oculta
 
-# =========================
-# VARIABLES
-# =========================
 EMAIL = os.getenv("IQ_EMAIL")
 PASSWORD = os.getenv("IQ_PASSWORD")
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 if not all([EMAIL, PASSWORD, TOKEN, CHAT_ID]):
-    raise Exception("❌ Faltan variables de entorno")
+    raise Exception("Faltan variables de entorno")
 
-MONTO = 6
+MONTO = 3
 CUENTA = "PRACTICE"
 
 ultima_entrada = 0
@@ -57,11 +54,11 @@ def conectar():
                 iq.get_all_ACTIVES_OPCODE()
                 time.sleep(2)
 
-                log("🤖 BOT CONECTADO (DEMO)")
+                log("BOT CONECTADO DEMO")
                 return iq
 
         except Exception as e:
-            log(f"❌ Error conexión: {e}")
+            log(f"Error conexión: {e}")
 
         time.sleep(5)
 
@@ -72,7 +69,7 @@ def conectar():
 def asegurar_conexion(iq):
     try:
         if not iq.check_connect():
-            log("🔄 Reconectando...")
+            log("Reconectando...")
             return conectar()
         return iq
     except:
@@ -80,12 +77,12 @@ def asegurar_conexion(iq):
 
 
 # =========================
-# PARES
+# PARES ESTABLES
 # =========================
 PARES = [
     "EURUSD-OTC",
     "GBPUSD-OTC",
-    "USDHKD-OTC",
+    "USDZAR-OTC",
     "EURJPY-OTC",
     "GBPJPY-OTC",
     "USDCHF-OTC"
@@ -93,21 +90,18 @@ PARES = [
 
 
 # =========================
-# 🔥 ESPERA SEGUNDO 58
+# ESPERA SEGUNDO 58
 # =========================
-def esperar_segundo_58():
+def esperar_entrada():
     while True:
-        t = time.time()
-        segundos = int(t % 60)
-
-        if segundos == 58:
+        segundos = int(time.time() % 60)
+        if segundos >= 58:
             break
-
         time.sleep(0.01)
 
 
 # =========================
-# VELAS
+# OBTENER VELAS
 # =========================
 def obtener_velas(iq, par):
     try:
@@ -123,13 +117,12 @@ def obtener_velas(iq, par):
             "min": v["min"]
         } for v in velas]
 
-    except Exception as e:
-        log(f"❌ Error velas {par}: {e}")
+    except:
         return None
 
 
 # =========================
-# OPERAR SNIPER
+# OPERAR REAL
 # =========================
 def operar(iq, par, direccion):
     global ultima_entrada
@@ -137,30 +130,28 @@ def operar(iq, par, direccion):
     if time.time() - ultima_entrada < 30:
         return False
 
-    log(f"🎯 Esperando segundo 58 para {par}")
+    log(f"Esperando entrada {par}")
 
-    esperar_segundo_58()
+    esperar_entrada()
 
     try:
         iq.subscribe_strike_list(par, 1)
-        time.sleep(0.2)
+        time.sleep(0.3)
 
         status, order_id = iq.buy_digital_spot(par, MONTO, direccion, 1)
 
         iq.unsubscribe_strike_list(par, 1)
 
         if status:
-            log(f"""🚀 OPERACIÓN EJECUTADA (SNIPER)
+            log(f"""OPERACIÓN EJECUTADA
 
-Par: {par}
-Dirección: {direccion.upper()}
-Entrada: segundo 58
-Expiración: 1 MIN
+{par} {direccion.upper()}
+Expiración 1M
 """)
             ultima_entrada = time.time()
             return True
         else:
-            log("❌ No ejecutó")
+            log("No ejecutó la orden")
             return False
 
     except Exception as e:
@@ -169,7 +160,7 @@ Expiración: 1 MIN
         except:
             pass
 
-        log(f"❌ Error ejecución: {e}")
+        log(f"Error operación: {e}")
         return False
 
 
@@ -201,10 +192,9 @@ def run():
             if señal:
                 par, direccion, score = señal
 
-                log(f"""🎯 SEÑAL DETECTADA
+                log(f"""SEÑAL DETECTADA
 
-Par: {par}
-Dirección: {direccion}
+{par} {direccion}
 Score: {score}
 """)
 
@@ -213,7 +203,7 @@ Score: {score}
             time.sleep(0.2)
 
         except Exception as e:
-            log(f"❌ Error general: {e}")
+            log(f"Error general: {e}")
             time.sleep(2)
 
 
