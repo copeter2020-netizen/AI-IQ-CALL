@@ -26,14 +26,12 @@ CUENTA = "PRACTICE"
 PARES = [
     "EURUSD-OTC",
     "GBPUSD-OTC",
-    "USDHKD-OTC",
+    "USDJPY-OTC",
     "EURJPY-OTC",
     "EURGBP-OTC",
     "GBPJPY-OTC",
     "USDCHF-OTC"
 ]
-
-bot_activo = True
 
 
 # =========================
@@ -51,17 +49,21 @@ def enviar_mensaje(texto):
 
 
 # =========================
-# ⏱ ESPERAR SIGUIENTE VELA
+# ⏱ ESPERA EXACTA SIGUIENTE VELA
 # =========================
-def esperar_siguiente_vela():
+def esperar_entrada_precisa():
     while True:
         ahora = time.time()
         restante = 60 - (ahora % 60)
 
-        if restante <= 0.2:
+        # esperamos cierre exacto
+        if restante <= 0.05:
             break
 
-        time.sleep(0.05)
+        time.sleep(0.01)
+
+    # 🔥 CLAVE: esperar un poco después del cambio de vela
+    time.sleep(1.2)
 
 
 # =========================
@@ -102,26 +104,30 @@ def obtener_velas(iq, par):
 
 
 # =========================
-# OPERAR (ENTRADA EN SIGUIENTE VELA)
+# 🔥 OPERAR CORRECTO
 # =========================
 def operar(iq, par, direccion, score):
 
-    # ⏱ Esperar cierre de vela actual
-    esperar_siguiente_vela()
+    enviar_mensaje("⏱ Esperando siguiente vela...")
+
+    esperar_entrada_precisa()
 
     try:
-        status, _ = iq.buy_digital_spot(par, MONTO, direccion, 1)
+        status, id = iq.buy_digital_spot(par, MONTO, direccion, 1)
 
         if status:
-            enviar_mensaje(f"""🚀 OPERACIÓN
+            enviar_mensaje(f"""🚀 OPERACIÓN EJECUTADA
 
 Par: {par}
 Dirección: {direccion.upper()}
 Expiración: 1 MIN
 """)
+        else:
+            enviar_mensaje("❌ Error al ejecutar operación")
 
     except Exception as e:
         print("Error operar:", e)
+        enviar_mensaje("❌ Excepción al operar")
 
 
 # =========================
