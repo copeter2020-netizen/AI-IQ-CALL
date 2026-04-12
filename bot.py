@@ -7,7 +7,12 @@ from iqoptionapi.stable_api import IQ_Option
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(BASE_DIR)
 
-from estrategia import detectar_entrada_oculta
+try:
+    from estrategia import detectar_entrada_oculta
+except Exception as e:
+    print("❌ Error importando estrategia:", e)
+    detectar_entrada_oculta = None
+
 
 EMAIL = os.getenv("IQ_EMAIL")
 PASSWORD = os.getenv("IQ_PASSWORD")
@@ -15,15 +20,17 @@ PASSWORD = os.getenv("IQ_PASSWORD")
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-MONTO = 10000
+MONTO = 12000
 CUENTA = "PRACTICE"
 
 PARES = [
     "EURUSD-OTC",
     "GBPUSD-OTC",
-    "USDJPY-OTC",
+    "USDZAR-OTC",
     "EURJPY-OTC",
-    "GBPJPY-OTC"
+    "EURGBP-OTC",
+    "GBPJPY-OTC",
+    "USDCHF-OTC"
 ]
 
 ultima_entrada = 0
@@ -32,11 +39,11 @@ ultima_entrada = 0
 # =========================
 # TELEGRAM
 # =========================
-def enviar_mensaje(msg):
+def enviar_mensaje(texto):
     try:
         requests.post(
             f"https://api.telegram.org/bot{TOKEN}/sendMessage",
-            data={"chat_id": CHAT_ID, "text": msg},
+            data={"chat_id": CHAT_ID, "text": texto},
             timeout=5
         )
     except:
@@ -44,16 +51,19 @@ def enviar_mensaje(msg):
 
 
 # =========================
-# ESPERA EXACTA NUEVA VELA
+# ⏱ ESPERA PRECISA
 # =========================
-def esperar_nueva_vela():
+def esperar_entrada_precisa():
     while True:
-        t = time.time()
-        if (t % 60) < 0.05:
-            break
-        time.sleep(0.01)
+        ahora = time.time()
+        restante = 60 - (ahora % 60)
 
-    time.sleep(1.2)
+        if restante <= 0.03:
+            break
+
+        time.sleep(0.005)
+
+    time.sleep(1.1)
 
 
 # =========================
@@ -61,13 +71,16 @@ def esperar_nueva_vela():
 # =========================
 def conectar():
     while True:
-        iq = IQ_Option(EMAIL, PASSWORD)
-        iq.connect()
+        try:
+            iq = IQ_Option(EMAIL, PASSWORD)
+            iq.connect()
 
-        if iq.check_connect():
-            iq.change_balance(CUENTA)
-            enviar_mensaje("🤖 BOT CONECTADO")
-            return iq
+            if iq.check_connect():
+                iq.change_balance(CUENTA)
+                enviar_mensaje("🤖 BOT CONECTADO")
+                return iq
+        except:
+            pass
 
         time.sleep(5)
 
@@ -77,44 +90,57 @@ def conectar():
 # =========================
 def obtener_velas(iq, par):
     try:
-        velas = iq.get_candles(par, 60, 20, time.time())
+        velas = iq.get_candles(par, 60, 50, time.time())
+
         return [{
             "open": v["open"],
             "close": v["close"],
             "max": v["max"],
             "min": v["min"]
         } for v in velas]
+
     except:
         return None
 
 
 # =========================
-# OPERAR
+# 🔥 EJECUCIÓN OPTIMIZADA
 # =========================
-def operar(iq, par, direccion):
-
+def operar(iq, par, direccion, score):
     global ultima_entrada
 
-    if time.time() - ultima_entrada < 30:
+    # evitar duplicadas
+    if time.time() - ultima_entrada < 10:
         return
 
-    enviar_mensaje("⏱ Esperando continuidad...")
+    enviar_mensaje("⏱ Preparando entrada...")
 
-    esperar_nueva_vela()
+    esperar_entrada_precisa()
 
-    status, _ = iq.buy_digital_spot(par, MONTO, direccion, 1)
+    try:
+        status, _ = iq.buy_digital_spot(par, MONTO, direccion, 1)
 
-    if status:
-        enviar_mensaje(f"🚀 {par} {direccion.upper()}")
-        ultima_entrada = time.time()
-    else:
-        enviar_mensaje("❌ Falló entrada")
+        if status:
+            enviar_mensaje(f"""🚀 OPERACIÓN EJECUTADA
+
+Par: {par}
+Dirección: {direccion.upper()}
+""")
+            ultima_entrada = time.time()
+        else:
+            enviar_mensaje("❌ No se pudo ejecutar")
+
+    except Exception as e:
+        print("Error:", e)
 
 
 # =========================
-# MAIN
+# MAIN (ANÁLISIS RÁPIDO)
 # =========================
 def run():
+
+    if detectar_entrada_oculta is None:
+        return
 
     iq = conectar()
 
@@ -124,22 +150,28 @@ def run():
 
             for par in PARES:
                 velas = obtener_velas(iq, par)
+
                 if velas:
                     data[par] = velas
 
             señal = detectar_entrada_oculta(data)
 
             if señal:
-                par, direccion, _ = señal
+                par, direccion, score = señal
 
-                enviar_mensaje(f"🎯 SEÑAL CONFIRMADA {par} {direccion}")
+                enviar_mensaje(f"""🎯 SEÑAL
 
-                operar(iq, par, direccion)
+Par: {par}
+Dirección: {direccion.upper()}
+""")
 
-            time.sleep(0.2)
+                operar(iq, par, direccion, score)
+
+            # 🔥 MÁS FRECUENTE
+            time.sleep(0.3)
 
         except Exception as e:
-            print(e)
+            print("Error:", e)
             iq = conectar()
 
 
