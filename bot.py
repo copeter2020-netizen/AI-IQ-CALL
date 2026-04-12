@@ -33,46 +33,50 @@ PARES = [
     "USDCHF-OTC"
 ]
 
-ultimo_mensaje = ""
-ultimo_envio = 0
+ultimo_update_id = None
+bot_activo = False
 
 
 # =========================
 # TELEGRAM
 # =========================
-def enviar_mensaje(par, direccion, score, tipo="SEÑAL"):
-    global ultimo_mensaje, ultimo_envio
-
-    ahora = time.time()
-
-    mensaje = f"""🚀 {tipo}
-
-Par: {par}
-Dirección: {direccion.upper()}
-Expiración: 5 MIN
-Monto: ${MONTO}
-
-📊 Score: {score}
-"""
-
-    if mensaje == ultimo_mensaje and (ahora - ultimo_envio) < 30:
-        return
-
+def enviar_mensaje(texto):
     try:
         requests.post(
             f"https://api.telegram.org/bot{TOKEN}/sendMessage",
             data={
                 "chat_id": CHAT_ID,
-                "text": mensaje
+                "text": texto
             },
             timeout=5
         )
-
-        ultimo_mensaje = mensaje
-        ultimo_envio = ahora
-
     except Exception as e:
         print("❌ Error Telegram:", e)
+
+
+def leer_comandos():
+    global ultimo_update_id, bot_activo
+
+    try:
+        url = f"https://api.telegram.org/bot{TOKEN}/getUpdates"
+        params = {"timeout": 1, "offset": ultimo_update_id}
+        res = requests.get(url, params=params, timeout=5).json()
+
+        for update in res.get("result", []):
+            ultimo_update_id = update["update_id"] + 1
+
+            mensaje = update.get("message", {}).get("text", "")
+
+            if mensaje == "/startbot":
+                bot_activo = True
+                enviar_mensaje("✅ BOT ACTIVADO")
+
+            elif mensaje == "/stopbot":
+                bot_activo = False
+                enviar_mensaje("⛔ BOT DETENIDO")
+
+    except:
+        pass
 
 
 # =========================
@@ -87,6 +91,7 @@ def conectar():
             if iq.check_connect():
                 iq.change_balance(CUENTA)
                 print("✅ CONECTADO")
+                enviar_mensaje("🤖 BOT CONECTADO A IQ OPTION")
                 return iq
 
         except Exception as e:
@@ -96,11 +101,11 @@ def conectar():
 
 
 # =========================
-# DATOS 1 MIN
+# DATOS
 # =========================
 def obtener_velas(iq, par):
     try:
-        velas = iq.get_candles(par, 60, 50, time.time())
+        velas = iq.get_candles(par, 60, 200, time.time())
 
         return [{
             "open": v["open"],
@@ -113,9 +118,6 @@ def obtener_velas(iq, par):
         return None
 
 
-# =========================
-# PRECIO ACTUAL
-# =========================
 def precio_actual(iq, par):
     try:
         velas = iq.get_candles(par, 60, 1, time.time())
@@ -130,9 +132,8 @@ def precio_actual(iq, par):
 def esperar_toque_y_operar(iq, par, direccion, score):
 
     inicio = time.time()
-    tiempo_limite = 300  # 5 minutos
 
-    while time.time() - inicio < tiempo_limite:
+    while time.time() - inicio < 300:
 
         velas = obtener_velas(iq, par)
         if not velas:
@@ -140,31 +141,24 @@ def esperar_toque_y_operar(iq, par, direccion, score):
 
         df = pd.DataFrame(velas)
         soporte, resistencia = niveles(df)
-
         precio = precio_actual(iq, par)
 
         if precio is None:
             continue
 
-        # 🔥 PUT en resistencia
         if direccion == "put" and precio >= resistencia:
-            print(f"🎯 Entrada en RESISTENCIA {par}")
-            enviar_mensaje(par, direccion, score, "ENTRADA EN RESISTENCIA")
-
+            enviar_mensaje(f"🎯 ENTRADA EN RESISTENCIA\n{par} PUT")
             status, _ = iq.buy_digital_spot(par, MONTO, direccion, 5)
             return status
 
-        # 🔥 CALL en soporte
         if direccion == "call" and precio <= soporte:
-            print(f"🎯 Entrada en SOPORTE {par}")
-            enviar_mensaje(par, direccion, score, "ENTRADA EN SOPORTE")
-
+            enviar_mensaje(f"🎯 ENTRADA EN SOPORTE\n{par} CALL")
             status, _ = iq.buy_digital_spot(par, MONTO, direccion, 5)
             return status
 
         time.sleep(1)
 
-    print("⏱ No tocó zona, no se opera")
+    enviar_mensaje("⏱ No tocó zona, no se operó")
     return False
 
 
@@ -182,6 +176,12 @@ def run():
 
     while True:
         try:
+            leer_comandos()
+
+            if not bot_activo:
+                time.sleep(1)
+                continue
+
             if time.time() - ultima_operacion < 30:
                 time.sleep(1)
                 continue
@@ -202,9 +202,14 @@ def run():
             if señal:
                 par, direccion, score = señal
 
-                print(f"🚨 SEÑAL {par} {direccion} Score:{score}")
+                mensaje = f"""🚨 SEÑAL DETECTADA
 
-                enviar_mensaje(par, direccion, score, "SEÑAL DETECTADA")
+Par: {par}
+Dirección: {direccion.upper()}
+Expiración: 5 MIN
+Score: {score}
+"""
+                enviar_mensaje(mensaje)
 
                 if esperar_toque_y_operar(iq, par, direccion, score):
                     ultima_operacion = time.time()
