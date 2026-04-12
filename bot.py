@@ -26,32 +26,11 @@ CUENTA = "PRACTICE"
 PARES = [
     "EURUSD-OTC",
     "GBPUSD-OTC",
-    "USDJPY-OTC",
+    "USDHKD-OTC",
     "EURJPY-OTC",
     "EURGBP-OTC",
     "GBPJPY-OTC",
-    "USDCHF-OTC",
-    "AUDUSD-OTC",
-    "USDCAD-OTC",
-    "AUDCAD-OTC",
-    "AUDCHF-OTC",
-    "AUDJPY-OTC",
-    "CADCHF-OTC",
-    "CADJPY-OTC",
-    "CHFJPY-OTC",
-    "EURAUD-OTC",
-    "EURCAD-OTC",
-    "EURCHF-OTC",
-    "GBPAUD-OTC",
-    "GBPCAD-OTC",
-    "GBPCHF-OTC",
-    "NZDUSD-OTC",
-    "NZDJPY-OTC",
-    "NZDCHF-OTC",
-    "NZDCAD-OTC",
-    "AUDNZD-OTC",
-    "EURNZD-OTC",
-    "GBPNZD-OTC"
+    "USDCHF-OTC"
 ]
 
 bot_activo = True
@@ -69,6 +48,20 @@ def enviar_mensaje(texto):
         )
     except:
         pass
+
+
+# =========================
+# ⏱ ESPERAR SIGUIENTE VELA
+# =========================
+def esperar_siguiente_vela():
+    while True:
+        ahora = time.time()
+        restante = 60 - (ahora % 60)
+
+        if restante <= 0.2:
+            break
+
+        time.sleep(0.05)
 
 
 # =========================
@@ -91,7 +84,7 @@ def conectar():
 
 
 # =========================
-# DATOS (1 MIN)
+# DATOS
 # =========================
 def obtener_velas(iq, par):
     try:
@@ -109,17 +102,26 @@ def obtener_velas(iq, par):
 
 
 # =========================
-# OPERAR (1 MIN)
+# OPERAR (ENTRADA EN SIGUIENTE VELA)
 # =========================
 def operar(iq, par, direccion, score):
+
+    # ⏱ Esperar cierre de vela actual
+    esperar_siguiente_vela()
+
     try:
         status, _ = iq.buy_digital_spot(par, MONTO, direccion, 1)
 
         if status:
-            enviar_mensaje(f"🚀 OPERACIÓN\n{par} {direccion.upper()}")
+            enviar_mensaje(f"""🚀 OPERACIÓN
+
+Par: {par}
+Dirección: {direccion.upper()}
+Expiración: 1 MIN
+""")
 
     except Exception as e:
-        print(e)
+        print("Error operar:", e)
 
 
 # =========================
@@ -149,7 +151,11 @@ def run():
             if señal:
                 par, direccion, score = señal
 
-                enviar_mensaje(f"🎯 SEÑAL\n{par} {direccion.upper()}")
+                enviar_mensaje(f"""🎯 SEÑAL
+
+Par: {par}
+Dirección: {direccion.upper()}
+""")
 
                 operar(iq, par, direccion, score)
 
