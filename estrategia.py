@@ -16,14 +16,39 @@ def es_bajista(v):
 
 
 # =========================
-# NIVELES (IMPORTANTE EXPORTAR)
+# VOLATILIDAD
+# =========================
+def volatilidad(df):
+    rangos = df["max"] - df["min"]
+    return rangos.rolling(14).mean().iloc[-1]
+
+
+# =========================
+# NIVELES DINÁMICOS
 # =========================
 def niveles(df):
-    soporte = df["min"].rolling(20).min().iloc[-2]
-    resistencia = df["max"].rolling(20).max().iloc[-2]
+
+    vol = volatilidad(df)
+
+    ultimos_rangos = (df["max"] - df["min"]).tail(10)
+    rango_medio = ultimos_rangos.mean()
+
+    if rango_medio > vol * 1.2:
+        ventana = 10
+    elif rango_medio < vol * 0.8:
+        ventana = 30
+    else:
+        ventana = 20
+
+    soporte = df["min"].rolling(ventana).min().iloc[-2]
+    resistencia = df["max"].rolling(ventana).max().iloc[-2]
+
     return soporte, resistencia
 
 
+# =========================
+# MERCADO LATERAL
+# =========================
 def mercado_lateral(df):
     ultimas = df.iloc[-6:]
     rangos = [rango(v) for _, v in ultimas.iterrows()]
@@ -34,21 +59,49 @@ def mercado_lateral(df):
     return np.mean(rangos) < (max(rangos) * 0.5)
 
 
+# =========================
+# 🔥 NUEVA TENDENCIA (3 HORAS + MOMENTUM)
+# =========================
 def tendencia_fuerte(df):
-    ultimas = df.iloc[-6:]
+
+    if len(df) < 180:
+        return "neutral"
+
+    # 📊 ESTRUCTURA 3 HORAS
+    estructura = df.tail(180)
+
+    max_actual = estructura["max"].iloc[-1]
+    min_actual = estructura["min"].iloc[-1]
+
+    max_pasado = estructura["max"].iloc[0]
+    min_pasado = estructura["min"].iloc[0]
+
+    # 📈 DIRECCIÓN GENERAL
+    estructura_alcista = max_actual > max_pasado and min_actual > min_pasado
+    estructura_bajista = max_actual < max_pasado and min_actual < min_pasado
+
+    # ⚡ MOMENTUM ACTUAL (últimas 5 velas)
+    ultimas = df.tail(5)
 
     verdes = sum(v["close"] > v["open"] for _, v in ultimas.iterrows())
     rojas = sum(v["close"] < v["open"] for _, v in ultimas.iterrows())
 
-    if verdes >= 5:
+    momentum_alcista = verdes >= 3
+    momentum_bajista = rojas >= 3
+
+    # 🎯 DECISIÓN FINAL
+    if estructura_alcista and momentum_alcista:
         return "alcista"
 
-    if rojas >= 5:
+    if estructura_bajista and momentum_bajista:
         return "bajista"
 
     return "neutral"
 
 
+# =========================
+# VALIDACIONES
+# =========================
 def confirmacion_fuerte(v):
     if rango(v) == 0:
         return False
@@ -121,6 +174,9 @@ def detectar_entrada_oculta(data):
 
         score = 0
 
+        # =========================
+        # PUT
+        # =========================
         if not bloquear_put and v_manipulacion["max"] >= resistencia:
 
             if rechazo_fuerte(v_manipulacion):
@@ -139,6 +195,9 @@ def detectar_entrada_oculta(data):
                 mejor_score = score
                 mejor = (par, "put", score)
 
+        # =========================
+        # CALL
+        # =========================
         if not bloquear_call and v_manipulacion["min"] <= soporte:
 
             if rechazo_fuerte(v_manipulacion):
