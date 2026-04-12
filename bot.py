@@ -9,15 +9,18 @@ sys.path.append(BASE_DIR)
 
 from estrategia import detectar_entrada_oculta
 
+# =========================
+# VALIDACIÓN ENV
+# =========================
 EMAIL = os.getenv("IQ_EMAIL")
 PASSWORD = os.getenv("IQ_PASSWORD")
-
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-MONTO = 6
+if not all([EMAIL, PASSWORD, TOKEN, CHAT_ID]):
+    raise Exception("❌ Faltan variables de entorno")
 
-# 🔥 FORZAMOS DEMO
+MONTO = 6
 CUENTA = "PRACTICE"
 
 ultima_entrada = 0
@@ -30,18 +33,15 @@ def enviar_mensaje(msg):
     try:
         requests.post(
             f"https://api.telegram.org/bot{TOKEN}/sendMessage",
-            data={
-                "chat_id": CHAT_ID,
-                "text": msg
-            },
+            data={"chat_id": CHAT_ID, "text": msg},
             timeout=5
         )
-    except:
-        pass
+    except Exception as e:
+        print("Error Telegram:", e)
 
 
 # =========================
-# CONEXIÓN (100% DEMO)
+# CONEXIÓN SEGURA
 # =========================
 def conectar():
     while True:
@@ -50,21 +50,16 @@ def conectar():
             iq.connect()
 
             if iq.check_connect():
-
-                # 🔥 FORZAR CUENTA DEMO
                 iq.change_balance("PRACTICE")
-
                 time.sleep(1)
 
-                balance = iq.get_balance()
+                try:
+                    balance = iq.get_balance()
+                except:
+                    balance = "N/A"
 
-                enviar_mensaje(f"""🤖 BOT CONECTADO
-
-Cuenta: DEMO
-Balance: ${balance}
-""")
-
-                print("✅ CONECTADO A DEMO")
+                enviar_mensaje(f"🤖 BOT CONECTADO\nCuenta: DEMO\nBalance: {balance}")
+                print("✅ Conectado correctamente")
 
                 return iq
 
@@ -75,25 +70,39 @@ Balance: ${balance}
 
 
 # =========================
-# OBTENER PARES ABIERTOS
+# VERIFICAR CONEXIÓN
+# =========================
+def asegurar_conexion(iq):
+    if not iq.check_connect():
+        print("🔄 Reconectando...")
+        return conectar()
+    return iq
+
+
+# =========================
+# PARES ABIERTOS
 # =========================
 def obtener_pares_abiertos(iq):
     try:
         activos = iq.get_all_open_time()
-        abiertos = []
 
-        for par, info in activos["digital"].items():
-            if info["open"]:
-                abiertos.append(par)
+        if "digital" not in activos:
+            return []
+
+        abiertos = [
+            par for par, info in activos["digital"].items()
+            if isinstance(info, dict) and info.get("open")
+        ]
 
         return abiertos
 
-    except:
+    except Exception as e:
+        print("Error activos:", e)
         return []
 
 
 # =========================
-# ESPERA NUEVA VELA
+# ESPERA VELA
 # =========================
 def esperar_nueva_vela():
     while True:
@@ -106,25 +115,29 @@ def esperar_nueva_vela():
 
 
 # =========================
-# OBTENER VELAS
+# VELAS SEGURAS
 # =========================
 def obtener_velas(iq, par):
     try:
         velas = iq.get_candles(par, 60, 30, time.time())
 
-        return [{
-            "open": v["open"],
-            "close": v["close"],
-            "max": v["max"],
-            "min": v["min"]
-        } for v in velas]
+        if not velas or len(velas) < 10:
+            return None
 
-    except:
+        return [{
+            "open": v.get("open"),
+            "close": v.get("close"),
+            "max": v.get("max"),
+            "min": v.get("min")
+        } for v in velas if all(k in v for k in ["open", "close", "max", "min"])]
+
+    except Exception as e:
+        print(f"Error velas {par}:", e)
         return None
 
 
 # =========================
-# OPERAR
+# OPERAR SEGURO
 # =========================
 def operar(iq, par, direccion):
     global ultima_entrada
@@ -137,9 +150,7 @@ def operar(iq, par, direccion):
     esperar_nueva_vela()
 
     try:
-        # 🔥 NECESARIO PARA OTC
         iq.subscribe_strike_list(par, 1)
-
         time.sleep(0.5)
 
         status, order_id = iq.buy_digital_spot(par, MONTO, direccion, 1)
@@ -153,21 +164,24 @@ Par: {par}
 Dirección: {direccion.upper()}
 Expiración: 1 MIN
 """)
-
             ultima_entrada = time.time()
             return True
-
         else:
-            enviar_mensaje("❌ Falló ejecución")
+            enviar_mensaje("❌ No ejecutó operación")
             return False
 
     except Exception as e:
+        try:
+            iq.unsubscribe_strike_list(par, 1)
+        except:
+            pass
+
         enviar_mensaje(f"❌ Error ejecución: {e}")
         return False
 
 
 # =========================
-# MAIN
+# MAIN ROBUSTO
 # =========================
 def run():
 
@@ -175,9 +189,9 @@ def run():
 
     while True:
         try:
-            data = {}
+            iq = asegurar_conexion(iq)
 
-            # 🔥 SOLO PARES ABIERTOS REALES
+            data = {}
             pares = obtener_pares_abiertos(iq)
 
             if not pares:
@@ -190,20 +204,24 @@ def run():
                 if velas:
                     data[par] = velas
 
+            if not data:
+                time.sleep(1)
+                continue
+
             señal = detectar_entrada_oculta(data)
 
-            if señal:
+            if señal and len(señal) == 3:
                 par, direccion, _ = señal
 
-                enviar_mensaje(f"🎯 SEÑAL DETECTADA\n{par} {direccion}")
-
-                operar(iq, par, direccion)
+                if par in data:
+                    enviar_mensaje(f"🎯 SEÑAL DETECTADA\n{par} {direccion}")
+                    operar(iq, par, direccion)
 
             time.sleep(0.3)
 
         except Exception as e:
-            print("Error general:", e)
-            iq = conectar()
+            print("❌ Error crítico:", e)
+            time.sleep(3)
 
 
 if __name__ == "__main__":
