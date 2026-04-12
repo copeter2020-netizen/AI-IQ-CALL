@@ -50,14 +50,15 @@ def conectar():
             iq.connect()
 
             if iq.check_connect():
+
                 iq.change_balance("PRACTICE")
 
-                # 🔥 FORZAR CARGA DIGITAL (FIX ERROR)
+                # 🔥 IMPORTANTE: estabilizar API
                 iq.get_all_ACTIVES_OPCODE()
                 time.sleep(2)
 
                 enviar_mensaje("🤖 BOT CONECTADO (DEMO)")
-                print("✅ Conectado correctamente")
+                print("✅ Conectado")
 
                 return iq
 
@@ -68,7 +69,7 @@ def conectar():
 
 
 # =========================
-# VERIFICAR CONEXIÓN
+# RECONEXIÓN
 # =========================
 def asegurar_conexion(iq):
     try:
@@ -80,18 +81,16 @@ def asegurar_conexion(iq):
 
 
 # =========================
-# PARES SEGUROS (EVITA ERROR)
+# LISTA FIJA (EVITA BUG API)
 # =========================
-def obtener_pares_seguro():
-    # 🔥 LISTA FIJA (evita fallo API)
-    return [
-        "EURUSD-OTC",
-        "GBPUSD-OTC",
-        "USDJPY-OTC",
-        "EURJPY-OTC",
-        "GBPJPY-OTC",
-        "USDCHF-OTC"
-    ]
+PARES = [
+    "EURUSD-OTC",
+    "GBPUSD-OTC",
+    "USDHKD-OTC",
+    "EURJPY-OTC",
+    "GBPJPY-OTC",
+    "USDCHF-OTC"
+]
 
 
 # =========================
@@ -107,7 +106,7 @@ def esperar_nueva_vela():
 
 
 # =========================
-# VELAS SEGURAS
+# OBTENER VELAS
 # =========================
 def obtener_velas(iq, par):
     try:
@@ -128,7 +127,7 @@ def obtener_velas(iq, par):
 
 
 # =========================
-# OPERAR SIN ERROR DIGITAL
+# OPERAR (AISLADO DEL ERROR)
 # =========================
 def operar(iq, par, direccion):
     global ultima_entrada
@@ -136,12 +135,12 @@ def operar(iq, par, direccion):
     if time.time() - ultima_entrada < 30:
         return False
 
-    enviar_mensaje(f"⏱ Preparando entrada en {par}")
+    enviar_mensaje(f"⏱ Preparando entrada {par}")
 
     esperar_nueva_vela()
 
     try:
-        # 🔥 SUSCRIPCIÓN SEGURA
+        # 🔥 Esto evita fallo interno
         iq.subscribe_strike_list(par, 1)
         time.sleep(0.5)
 
@@ -153,8 +152,9 @@ def operar(iq, par, direccion):
             enviar_mensaje(f"🚀 {par} {direccion.upper()}")
             ultima_entrada = time.time()
             return True
+
         else:
-            enviar_mensaje("❌ Falló ejecución")
+            enviar_mensaje("❌ No ejecutó")
             return False
 
     except Exception as e:
@@ -168,7 +168,7 @@ def operar(iq, par, direccion):
 
 
 # =========================
-# MAIN ESTABLE
+# MAIN
 # =========================
 def run():
 
@@ -180,9 +180,7 @@ def run():
 
             data = {}
 
-            pares = obtener_pares_seguro()
-
-            for par in pares:
+            for par in PARES:
                 velas = obtener_velas(iq, par)
 
                 if velas:
