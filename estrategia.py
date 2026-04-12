@@ -16,7 +16,7 @@ def es_bajista(v):
 
 
 # =========================
-# ESTRUCTURA
+# NIVELES (IMPORTANTE EXPORTAR)
 # =========================
 def niveles(df):
     soporte = df["min"].rolling(20).min().iloc[-2]
@@ -49,14 +49,11 @@ def tendencia_fuerte(df):
     return "neutral"
 
 
-# =========================
-# VALIDACIONES
-# =========================
 def confirmacion_fuerte(v):
     if rango(v) == 0:
         return False
 
-    return body(v) > rango(v) * 0.5  # 🔥 más flexible
+    return body(v) > rango(v) * 0.5
 
 
 def impulso_fuerte(v):
@@ -88,7 +85,7 @@ def zona_mala(df, soporte, resistencia):
 
     distancia = min(abs(precio - soporte), abs(precio - resistencia))
 
-    return distancia > rango_total * 0.75  # 🔥 más permisivo
+    return distancia > rango_total * 0.75
 
 
 # =========================
@@ -106,7 +103,6 @@ def detectar_entrada_oculta(data):
 
         df = pd.DataFrame(velas)
 
-        # SOLO evitamos lateral extremo
         if mercado_lateral(df):
             continue
 
@@ -117,7 +113,6 @@ def detectar_entrada_oculta(data):
 
         tendencia = tendencia_fuerte(df)
 
-        # BLOQUEO INTELIGENTE (no contra tendencia)
         bloquear_put = tendencia == "alcista"
         bloquear_call = tendencia == "bajista"
 
@@ -126,9 +121,6 @@ def detectar_entrada_oculta(data):
 
         score = 0
 
-        # =========================
-        # PUT
-        # =========================
         if not bloquear_put and v_manipulacion["max"] >= resistencia:
 
             if rechazo_fuerte(v_manipulacion):
@@ -147,9 +139,6 @@ def detectar_entrada_oculta(data):
                 mejor_score = score
                 mejor = (par, "put", score)
 
-        # =========================
-        # CALL
-        # =========================
         if not bloquear_call and v_manipulacion["min"] <= soporte:
 
             if rechazo_fuerte(v_manipulacion):
