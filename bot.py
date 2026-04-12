@@ -10,7 +10,7 @@ sys.path.append(BASE_DIR)
 from estrategia import detectar_entrada_oculta
 
 # =========================
-# VALIDACIÓN ENV
+# VARIABLES
 # =========================
 EMAIL = os.getenv("IQ_EMAIL")
 PASSWORD = os.getenv("IQ_PASSWORD")
@@ -36,8 +36,8 @@ def enviar_mensaje(msg):
             data={"chat_id": CHAT_ID, "text": msg},
             timeout=5
         )
-    except Exception as e:
-        print("Error Telegram:", e)
+    except:
+        pass
 
 
 # =========================
@@ -51,14 +51,12 @@ def conectar():
 
             if iq.check_connect():
                 iq.change_balance("PRACTICE")
-                time.sleep(1)
 
-                try:
-                    balance = iq.get_balance()
-                except:
-                    balance = "N/A"
+                # 🔥 FORZAR CARGA DIGITAL (FIX ERROR)
+                iq.get_all_ACTIVES_OPCODE()
+                time.sleep(2)
 
-                enviar_mensaje(f"🤖 BOT CONECTADO\nCuenta: DEMO\nBalance: {balance}")
+                enviar_mensaje("🤖 BOT CONECTADO (DEMO)")
                 print("✅ Conectado correctamente")
 
                 return iq
@@ -73,32 +71,27 @@ def conectar():
 # VERIFICAR CONEXIÓN
 # =========================
 def asegurar_conexion(iq):
-    if not iq.check_connect():
-        print("🔄 Reconectando...")
-        return conectar()
-    return iq
-
-
-# =========================
-# PARES ABIERTOS
-# =========================
-def obtener_pares_abiertos(iq):
     try:
-        activos = iq.get_all_open_time()
+        if not iq.check_connect():
+            return conectar()
+        return iq
+    except:
+        return conectar()
 
-        if "digital" not in activos:
-            return []
 
-        abiertos = [
-            par for par, info in activos["digital"].items()
-            if isinstance(info, dict) and info.get("open")
-        ]
-
-        return abiertos
-
-    except Exception as e:
-        print("Error activos:", e)
-        return []
+# =========================
+# PARES SEGUROS (EVITA ERROR)
+# =========================
+def obtener_pares_seguro():
+    # 🔥 LISTA FIJA (evita fallo API)
+    return [
+        "EURUSD-OTC",
+        "GBPUSD-OTC",
+        "USDJPY-OTC",
+        "EURJPY-OTC",
+        "GBPJPY-OTC",
+        "USDCHF-OTC"
+    ]
 
 
 # =========================
@@ -106,8 +99,7 @@ def obtener_pares_abiertos(iq):
 # =========================
 def esperar_nueva_vela():
     while True:
-        t = time.time()
-        if (t % 60) < 0.05:
+        if (time.time() % 60) < 0.05:
             break
         time.sleep(0.01)
 
@@ -121,23 +113,22 @@ def obtener_velas(iq, par):
     try:
         velas = iq.get_candles(par, 60, 30, time.time())
 
-        if not velas or len(velas) < 10:
+        if not velas:
             return None
 
         return [{
-            "open": v.get("open"),
-            "close": v.get("close"),
-            "max": v.get("max"),
-            "min": v.get("min")
-        } for v in velas if all(k in v for k in ["open", "close", "max", "min"])]
+            "open": v["open"],
+            "close": v["close"],
+            "max": v["max"],
+            "min": v["min"]
+        } for v in velas]
 
-    except Exception as e:
-        print(f"Error velas {par}:", e)
+    except:
         return None
 
 
 # =========================
-# OPERAR SEGURO
+# OPERAR SIN ERROR DIGITAL
 # =========================
 def operar(iq, par, direccion):
     global ultima_entrada
@@ -150,24 +141,20 @@ def operar(iq, par, direccion):
     esperar_nueva_vela()
 
     try:
+        # 🔥 SUSCRIPCIÓN SEGURA
         iq.subscribe_strike_list(par, 1)
         time.sleep(0.5)
 
-        status, order_id = iq.buy_digital_spot(par, MONTO, direccion, 1)
+        status, _ = iq.buy_digital_spot(par, MONTO, direccion, 1)
 
         iq.unsubscribe_strike_list(par, 1)
 
         if status:
-            enviar_mensaje(f"""🚀 OPERACIÓN EJECUTADA
-
-Par: {par}
-Dirección: {direccion.upper()}
-Expiración: 1 MIN
-""")
+            enviar_mensaje(f"🚀 {par} {direccion.upper()}")
             ultima_entrada = time.time()
             return True
         else:
-            enviar_mensaje("❌ No ejecutó operación")
+            enviar_mensaje("❌ Falló ejecución")
             return False
 
     except Exception as e:
@@ -176,12 +163,12 @@ Expiración: 1 MIN
         except:
             pass
 
-        enviar_mensaje(f"❌ Error ejecución: {e}")
+        enviar_mensaje(f"❌ Error: {e}")
         return False
 
 
 # =========================
-# MAIN ROBUSTO
+# MAIN ESTABLE
 # =========================
 def run():
 
@@ -192,11 +179,8 @@ def run():
             iq = asegurar_conexion(iq)
 
             data = {}
-            pares = obtener_pares_abiertos(iq)
 
-            if not pares:
-                time.sleep(2)
-                continue
+            pares = obtener_pares_seguro()
 
             for par in pares:
                 velas = obtener_velas(iq, par)
@@ -210,18 +194,18 @@ def run():
 
             señal = detectar_entrada_oculta(data)
 
-            if señal and len(señal) == 3:
+            if señal:
                 par, direccion, _ = señal
 
-                if par in data:
-                    enviar_mensaje(f"🎯 SEÑAL DETECTADA\n{par} {direccion}")
-                    operar(iq, par, direccion)
+                enviar_mensaje(f"🎯 SEÑAL {par} {direccion}")
+
+                operar(iq, par, direccion)
 
             time.sleep(0.3)
 
         except Exception as e:
-            print("❌ Error crítico:", e)
-            time.sleep(3)
+            print("Error general:", e)
+            time.sleep(2)
 
 
 if __name__ == "__main__":
