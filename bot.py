@@ -3,12 +3,13 @@ import os
 import requests
 import sys
 from iqoptionapi.stable_api import IQ_Option
+import pandas as pd
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(BASE_DIR)
 
 try:
-    from estrategia import detectar_entrada_oculta
+    from estrategia import detectar_entrada_oculta, niveles
 except Exception as e:
     print("❌ Error importando estrategia:", e)
     detectar_entrada_oculta = None
@@ -32,55 +33,29 @@ PARES = [
     "USDCHF-OTC"
 ]
 
-# 🔥 CONTROL ANTI-SPAM
 ultimo_mensaje = ""
 ultimo_envio = 0
 
 
 # =========================
-# ⏱ TIMING EXACTO
+# TELEGRAM
 # =========================
-def esperar_cierre_vela():
-    while True:
-        ahora = time.time()
-        restante = 60 - (ahora % 60)
-
-        if restante <= 0.3:
-            break
-
-        time.sleep(0.05)
-
-
-def esperar_cierre_siguiente():
-    # esperar cierre actual
-    esperar_cierre_vela()
-
-    # esperar una vela completa
-    time.sleep(60)
-
-    # esperar cierre exacto de la siguiente
-    esperar_cierre_vela()
-
-
-# =========================
-# TELEGRAM MEJORADO
-# =========================
-def enviar_mensaje(par, direccion, score):
+def enviar_mensaje(par, direccion, score, tipo="SEÑAL"):
     global ultimo_mensaje, ultimo_envio
 
     ahora = time.time()
 
-    mensaje = f"""🚀 NUEVA ENTRADA
+    mensaje = f"""🚀 {tipo}
 
 Par: {par}
 Dirección: {direccion.upper()}
-Expiración: 1 MIN
+Expiración: 5 MIN
 Monto: ${MONTO}
 
 📊 Score: {score}
 """
 
-    if mensaje == ultimo_mensaje and (ahora - ultimo_envio) < 60:
+    if mensaje == ultimo_mensaje and (ahora - ultimo_envio) < 30:
         return
 
     try:
@@ -111,7 +86,6 @@ def conectar():
 
             if iq.check_connect():
                 iq.change_balance(CUENTA)
-                iq.api.digital_option = None
                 print("✅ CONECTADO")
                 return iq
 
@@ -122,14 +96,11 @@ def conectar():
 
 
 # =========================
-# DATOS
+# DATOS 1 MIN
 # =========================
 def obtener_velas(iq, par):
     try:
         velas = iq.get_candles(par, 60, 50, time.time())
-
-        if not velas:
-            return None
 
         return [{
             "open": v["open"],
@@ -143,37 +114,57 @@ def obtener_velas(iq, par):
 
 
 # =========================
-# VALIDAR PAR
+# PRECIO ACTUAL
 # =========================
-def par_valido(iq, par):
+def precio_actual(iq, par):
     try:
         velas = iq.get_candles(par, 60, 1, time.time())
-        return velas is not None and len(velas) > 0
+        return velas[-1]["close"]
     except:
-        return False
+        return None
 
 
 # =========================
-# OPERAR
+# ENTRADA INTELIGENTE
 # =========================
-def operar(iq, par, direccion, score):
+def esperar_toque_y_operar(iq, par, direccion, score):
 
-    if not par_valido(iq, par):
-        return False
+    inicio = time.time()
+    tiempo_limite = 300  # 5 minutos
 
-    try:
-        status, _ = iq.buy_digital_spot(par, MONTO, direccion, 1)
+    while time.time() - inicio < tiempo_limite:
 
-        if status:
-            print(f"🚀 {par} {direccion}")
+        velas = obtener_velas(iq, par)
+        if not velas:
+            continue
 
-            enviar_mensaje(par, direccion, score)
+        df = pd.DataFrame(velas)
+        soporte, resistencia = niveles(df)
 
-            return True
+        precio = precio_actual(iq, par)
 
-    except Exception as e:
-        print("Error operar:", e)
+        if precio is None:
+            continue
 
+        # 🔥 PUT en resistencia
+        if direccion == "put" and precio >= resistencia:
+            print(f"🎯 Entrada en RESISTENCIA {par}")
+            enviar_mensaje(par, direccion, score, "ENTRADA EN RESISTENCIA")
+
+            status, _ = iq.buy_digital_spot(par, MONTO, direccion, 5)
+            return status
+
+        # 🔥 CALL en soporte
+        if direccion == "call" and precio <= soporte:
+            print(f"🎯 Entrada en SOPORTE {par}")
+            enviar_mensaje(par, direccion, score, "ENTRADA EN SOPORTE")
+
+            status, _ = iq.buy_digital_spot(par, MONTO, direccion, 5)
+            return status
+
+        time.sleep(1)
+
+    print("⏱ No tocó zona, no se opera")
     return False
 
 
@@ -192,18 +183,16 @@ def run():
     while True:
         try:
             if time.time() - ultima_operacion < 30:
-                time.sleep(0.5)
+                time.sleep(1)
                 continue
 
             data = {}
 
             for par in PARES:
                 velas = obtener_velas(iq, par)
-
                 if velas:
                     data[par] = velas
-
-                time.sleep(0.3)
+                time.sleep(0.2)
 
             if not data:
                 continue
@@ -213,22 +202,20 @@ def run():
             if señal:
                 par, direccion, score = señal
 
-                print(f"🎯 {par} {direccion} Score:{score}")
+                print(f"🚨 SEÑAL {par} {direccion} Score:{score}")
 
-                # 🔥 ESPERA LA SIGUIENTE VELA Y ENTRA EN SU CIERRE
-                esperar_cierre_siguiente()
+                enviar_mensaje(par, direccion, score, "SEÑAL DETECTADA")
 
-                if operar(iq, par, direccion, score):
+                if esperar_toque_y_operar(iq, par, direccion, score):
                     ultima_operacion = time.time()
-                    time.sleep(60)
+                    time.sleep(300)
 
             else:
-                time.sleep(0.5)
+                time.sleep(1)
 
         except Exception as e:
-            print("❌ Error general:", e)
+            print("❌ Error:", e)
             iq = conectar()
-            time.sleep(5)
 
 
 if __name__ == "__main__":
