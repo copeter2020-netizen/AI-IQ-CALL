@@ -51,9 +51,7 @@ def conectar():
             if iq.check_connect():
                 iq.change_balance(CUENTA)
                 iq.update_ACTIVES_OPCODE()
-                time.sleep(2)
-
-                log("BOT CONECTADO DEMO")
+                log("✅ BOT CONECTADO")
                 return iq
 
         except Exception as e:
@@ -70,7 +68,6 @@ def asegurar_conexion(iq):
         if not iq.check_connect():
             log("Reconectando...")
             return conectar()
-
         return iq
     except:
         return conectar()
@@ -87,18 +84,6 @@ PARES = [
     "GBPJPY-OTC",
     "USDCHF-OTC"
 ]
-
-
-# =========================
-# ESPERAR SIGUIENTE VELA
-# =========================
-def esperar_siguiente_vela():
-    while True:
-        now = datetime.now()
-        if now.second == 0:
-            time.sleep(0.5)  # 🔥 entra justo después de abrir
-            return
-        time.sleep(0.01)
 
 
 # =========================
@@ -134,7 +119,15 @@ def activo_disponible(iq, par):
 
 
 # =========================
-# OPERAR EN SIGUIENTE VELA
+# VERIFICAR SI ES BUEN MOMENTO DE ENTRAR
+# =========================
+def es_momento_entrada():
+    now = datetime.now()
+    return now.second >= 0 and now.second <= 3  # primeros segundos vela
+
+
+# =========================
+# OPERAR (SIN BLOQUEO)
 # =========================
 def operar(iq, par, direccion):
     global ultima_entrada
@@ -146,23 +139,16 @@ def operar(iq, par, direccion):
         log(f"❌ Activo no disponible: {par}")
         return False
 
-    log(f"⏳ Esperando siguiente vela {par}")
-
-    # 🔥 ESPERA NUEVA VELA
-    esperar_siguiente_vela()
+    # 🔥 SOLO ENTRA SI ESTÁ EN VENTANA CORRECTA
+    if not es_momento_entrada():
+        log("⏱ Esperando nueva vela sin bloquear...")
+        return False
 
     try:
         iq.subscribe_strike_list(par, 1)
         time.sleep(0.2)
 
-        EXPIRACION = 1  # 1 minuto
-
-        status, order_id = iq.buy_digital_spot(
-            par,
-            MONTO,
-            direccion,
-            EXPIRACION
-        )
+        status, order_id = iq.buy_digital_spot(par, MONTO, direccion, 1)
 
         try:
             iq.unsubscribe_strike_list(par, 1)
@@ -174,7 +160,6 @@ def operar(iq, par, direccion):
 
 {par} {direccion.upper()}
 Expiración: 1M
-Entrada: nueva vela
 """)
             ultima_entrada = time.time()
             return True
@@ -223,7 +208,8 @@ Score: {score}
 
                 operar(iq, par, direccion)
 
-            time.sleep(0.2)
+            # 🔥 LOOP RÁPIDO Y NO BLOQUEANTE
+            time.sleep(0.3)
 
         except Exception as e:
             log(f"❌ Error general: {e}")
