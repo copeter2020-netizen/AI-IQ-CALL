@@ -2,7 +2,6 @@ import time
 import os
 import requests
 import sys
-from datetime import datetime
 from iqoptionapi.stable_api import IQ_Option
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -22,6 +21,7 @@ MONTO = 3
 CUENTA = "PRACTICE"
 
 ultima_entrada = 0
+ultima_senal = None
 
 
 # =========================
@@ -29,7 +29,6 @@ ultima_entrada = 0
 # =========================
 def log(msg):
     print(msg)
-
     try:
         requests.post(
             f"https://api.telegram.org/bot{TOKEN}/sendMessage",
@@ -38,6 +37,35 @@ def log(msg):
         )
     except:
         pass
+
+
+# =========================
+# TIEMPO SERVIDOR
+# =========================
+def tiempo_servidor(iq):
+    return int(iq.get_server_timestamp())
+
+
+# =========================
+# ESPERA NUEVA VELA (SYNC REAL)
+# =========================
+def esperar_cierre_vela(iq):
+    while True:
+        server_time = tiempo_servidor(iq)
+        if server_time % 60 == 0:
+            break
+        time.sleep(0.05)
+
+
+# =========================
+# ESPERA SEGUNDO 58
+# =========================
+def esperar_entrada(iq):
+    while True:
+        server_time = tiempo_servidor(iq)
+        if server_time % 60 >= 58:
+            break
+        time.sleep(0.01)
 
 
 # =========================
@@ -50,12 +78,11 @@ def conectar():
             iq.connect()
 
             if iq.check_connect():
-                iq.change_balance("PRACTICE")
-
+                iq.change_balance(CUENTA)
                 iq.update_ACTIVES_OPCODE()
                 time.sleep(2)
 
-                log("BOT CONECTADO DEMO")
+                log("✅ BOT CONECTADO")
                 return iq
 
         except Exception as e:
@@ -73,15 +100,13 @@ def asegurar_conexion(iq):
             log("Reconectando...")
             return conectar()
 
-        iq.update_ACTIVES_OPCODE()
         return iq
-
     except:
         return conectar()
 
 
 # =========================
-# PARES ESTABLES
+# PARES OTC
 # =========================
 PARES = [
     "EURUSD-OTC",
@@ -94,33 +119,11 @@ PARES = [
 
 
 # =========================
-# ESPERA NUEVA VELA
-# =========================
-def esperar_nueva_vela():
-    while True:
-        now = datetime.now()
-        if now.second == 0:
-            break
-        time.sleep(0.2)
-
-
-# =========================
-# ESPERA SEGUNDO 58
-# =========================
-def esperar_entrada():
-    while True:
-        now = datetime.now()
-        if now.second >= 58:
-            break
-        time.sleep(0.01)
-
-
-# =========================
 # OBTENER VELAS
 # =========================
 def obtener_velas(iq, par):
     try:
-        velas = iq.get_candles(par, 60, 30, time.time())
+        velas = iq.get_candles(par, 60, 30, tiempo_servidor(iq))
 
         if not velas:
             return None
@@ -137,44 +140,71 @@ def obtener_velas(iq, par):
 
 
 # =========================
-# VALIDAR ACTIVO
+# VALIDAR DIGITAL OTC
 # =========================
-def activo_disponible(iq, par):
+def activo_abierto(iq, par):
     try:
-        activos = iq.get_all_ACTIVES_OPCODE()
-        return par in activos
+        digital, _ = iq.get_digital_underlying_list_data()
+        return par in digital
     except:
         return False
 
 
 # =========================
-# OPERAR REAL
+# FILTRO MERCADO MUERTO
 # =========================
-def operar(iq, par, direccion):
+def mercado_activo(velas):
+    ultima = velas[-1]
+    rango = ultima["max"] - ultima["min"]
+    return rango > 0.0002
+
+
+# =========================
+# CONFIRMACIÓN FINAL
+# =========================
+def confirmar_direccion(velas, direccion):
+    ultima = velas[-1]
+
+    if ultima["close"] > ultima["open"]:
+        confirmacion = "call"
+    else:
+        confirmacion = "put"
+
+    return confirmacion == direccion
+
+
+# =========================
+# OPERAR
+# =========================
+def operar(iq, par, direccion, velas):
     global ultima_entrada
 
     if time.time() - ultima_entrada < 30:
         return False
 
-    if not activo_disponible(iq, par):
+    if not activo_abierto(iq, par):
         log(f"❌ Activo no disponible: {par}")
         return False
 
-    log(f"Esperando nueva vela {par}")
+    if not mercado_activo(velas):
+        log(f"⚠️ Mercado muerto: {par}")
+        return False
 
-    esperar_nueva_vela()
-    esperar_entrada()
+    if not confirmar_direccion(velas, direccion):
+        log(f"❌ Sin confirmación: {par}")
+        return False
+
+    log(f"⏳ Esperando entrada {par}")
+
+    esperar_entrada(iq)
 
     try:
         iq.subscribe_strike_list(par, 1)
-        time.sleep(0.5)
+        time.sleep(0.3)
 
         status, order_id = iq.buy_digital_spot(par, MONTO, direccion, 1)
 
-        try:
-            iq.unsubscribe_strike_list(par, 1)
-        except:
-            pass
+        iq.unsubscribe_strike_list(par, 1)
 
         if status:
             log(f"""✅ OPERACIÓN EJECUTADA
@@ -185,15 +215,10 @@ Expiración: 1M
             ultima_entrada = time.time()
             return True
         else:
-            log("❌ No ejecutó la orden")
+            log("❌ No ejecutó")
             return False
 
     except Exception as e:
-        try:
-            iq.unsubscribe_strike_list(par, 1)
-        except:
-            pass
-
         log(f"❌ Error operación: {e}")
         return False
 
@@ -202,6 +227,7 @@ Expiración: 1M
 # MAIN
 # =========================
 def run():
+    global ultima_senal
 
     iq = conectar()
 
@@ -209,16 +235,17 @@ def run():
         try:
             iq = asegurar_conexion(iq)
 
+            # 🔥 ESPERAR CIERRE REAL DE VELA
+            esperar_cierre_vela(iq)
+
             data = {}
 
             for par in PARES:
                 velas = obtener_velas(iq, par)
-
                 if velas:
                     data[par] = velas
 
             if not data:
-                time.sleep(1)
                 continue
 
             señal = detectar_entrada_oculta(data)
@@ -226,15 +253,25 @@ def run():
             if señal:
                 par, direccion, score = señal
 
-                log(f"""📊 SEÑAL DETECTADA
+                # 🔥 FILTRO DE CALIDAD
+                if score < 80:
+                    continue
+
+                # 🔥 EVITAR REPETICIÓN
+                if señal == ultima_senal:
+                    continue
+
+                log(f"""📊 SEÑAL
 
 {par} {direccion}
 Score: {score}
 """)
 
-                operar(iq, par, direccion)
+                operar(iq, par, direccion, data[par])
 
-            time.sleep(0.2)
+                ultima_senal = señal
+
+            time.sleep(0.05)
 
         except Exception as e:
             log(f"❌ Error general: {e}")
