@@ -18,7 +18,7 @@ CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 if not all([EMAIL, PASSWORD, TOKEN, CHAT_ID]):
     raise Exception("Faltan variables de entorno")
 
-MONTO = 3
+MONTO = 1500
 CUENTA = "PRACTICE"
 
 ultima_entrada = 0
@@ -119,15 +119,15 @@ def activo_disponible(iq, par):
 
 
 # =========================
-# VERIFICAR SI ES BUEN MOMENTO DE ENTRAR
+# MOMENTO DE ENTRADA (VELA NUEVA)
 # =========================
 def es_momento_entrada():
     now = datetime.now()
-    return now.second >= 0 and now.second <= 3  # primeros segundos vela
+    return 0 <= now.second <= 3  # primeros segundos
 
 
 # =========================
-# OPERAR (SIN BLOQUEO)
+# OPERAR
 # =========================
 def operar(iq, par, direccion):
     global ultima_entrada
@@ -139,16 +139,21 @@ def operar(iq, par, direccion):
         log(f"❌ Activo no disponible: {par}")
         return False
 
-    # 🔥 SOLO ENTRA SI ESTÁ EN VENTANA CORRECTA
     if not es_momento_entrada():
-        log("⏱ Esperando nueva vela sin bloquear...")
         return False
 
     try:
         iq.subscribe_strike_list(par, 1)
         time.sleep(0.2)
 
-        status, order_id = iq.buy_digital_spot(par, MONTO, direccion, 1)
+        EXPIRACION = 1
+
+        status, order_id = iq.buy_digital_spot(
+            par,
+            MONTO,
+            direccion,
+            EXPIRACION
+        )
 
         try:
             iq.unsubscribe_strike_list(par, 1)
@@ -200,6 +205,10 @@ def run():
             if señal:
                 par, direccion, score = señal
 
+                # 🔥 FILTRO DE CALIDAD
+                if score < 83:
+                    continue
+
                 log(f"""📊 SEÑAL DETECTADA
 
 {par} {direccion}
@@ -208,7 +217,6 @@ Score: {score}
 
                 operar(iq, par, direccion)
 
-            # 🔥 LOOP RÁPIDO Y NO BLOQUEANTE
             time.sleep(0.3)
 
         except Exception as e:
