@@ -2,6 +2,7 @@ import time
 import os
 import requests
 import sys
+import threading
 from iqoptionapi.stable_api import IQ_Option
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -27,18 +28,32 @@ api_estable = True
 
 
 # =========================
+# TELEGRAM (NO BLOQUEANTE)
+# =========================
+def enviar_telegram(msg):
+    def enviar():
+        try:
+            url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
+            requests.post(
+                url,
+                data={
+                    "chat_id": CHAT_ID,
+                    "text": msg
+                },
+                timeout=5
+            )
+        except:
+            pass
+
+    threading.Thread(target=enviar, daemon=True).start()
+
+
+# =========================
 # LOG
 # =========================
 def log(msg):
     print(msg)
-    try:
-        requests.post(
-            f"https://api.telegram.org/bot{TOKEN}/sendMessage",
-            data={"chat_id": CHAT_ID, "text": msg},
-            timeout=5
-        )
-    except:
-        pass
+    enviar_telegram(msg)
 
 
 # =========================
@@ -55,7 +70,7 @@ def conectar():
             if iq.check_connect():
                 iq.change_balance(CUENTA)
 
-                log("Calentando API...")
+                log("🔌 Conectando y calentando API...")
 
                 for _ in range(5):
                     try:
@@ -65,11 +80,11 @@ def conectar():
                         pass
 
                 api_estable = True
-                log("BOT CONECTADO")
+                log("✅ BOT CONECTADO")
                 return iq
 
         except Exception as e:
-            log(f"Error conexión: {e}")
+            log(f"❌ Error conexión: {e}")
 
         time.sleep(5)
 
@@ -80,6 +95,7 @@ def asegurar_conexion(iq):
     try:
         if not iq.check_connect():
             api_estable = False
+            log("🔄 Reconectando...")
             return conectar()
         return iq
     except:
@@ -129,7 +145,7 @@ def obtener_velas(iq, par):
 
 
 # =========================
-# OPERAR (CONTROL TOTAL)
+# OPERAR
 # =========================
 def operar(iq, par, direccion):
     global ultima_entrada, operando, api_estable
@@ -156,10 +172,17 @@ def operar(iq, par, direccion):
         iq.unsubscribe_strike_list(par, 1)
 
         if status:
-            log(f"✅ TRADE {par} {direccion}")
+            mensaje = f"""✅ OPERACIÓN EJECUTADA
+
+Par: {par}
+Dirección: {direccion.upper()}
+Monto: ${MONTO}
+ID: {order_id}
+"""
+            log(mensaje)
             ultima_entrada = time.time()
         else:
-            log("❌ No ejecutó")
+            log("❌ No ejecutó la operación")
 
     except KeyError:
         log("⚠️ ERROR UNDERLYING → REINICIANDO API")
@@ -167,7 +190,7 @@ def operar(iq, par, direccion):
         iq = conectar()
 
     except Exception as e:
-        log(f"Error trade: {e}")
+        log(f"❌ Error operación: {e}")
 
     operando = False
     return True
@@ -204,11 +227,16 @@ def run():
             if señal:
                 par, direccion, score = señal
 
-                # 🔥 BLOQUEA REPETICIÓN MISMO PAR
                 if par == ultimo_par:
                     continue
 
-                log(f"SEÑAL {par} {direccion} score {score}")
+                mensaje = f"""📊 SEÑAL DETECTADA
+
+Par: {par}
+Dirección: {direccion.upper()}
+Score: {score}
+"""
+                log(mensaje)
 
                 velas_final = obtener_velas(iq, par)
 
@@ -220,11 +248,13 @@ def run():
                 if confirmacion:
                     operar(iq, par, direccion)
                     ultimo_par = par
+                else:
+                    log("⚠️ Señal cancelada")
 
             time.sleep(0.3)
 
         except Exception as e:
-            log(f"Error general: {e}")
+            log(f"❌ Error general: {e}")
             time.sleep(2)
 
 
