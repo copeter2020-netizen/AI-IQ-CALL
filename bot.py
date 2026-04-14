@@ -49,7 +49,7 @@ def conectar():
             iq.connect()
 
             if iq.check_connect():
-                iq.change_balance("PRACTICE")
+                iq.change_balance(CUENTA)
 
                 iq.get_all_ACTIVES_OPCODE()
                 time.sleep(2)
@@ -90,6 +90,17 @@ PARES = [
 
 
 # =========================
+# VALIDAR ACTIVO ABIERTO
+# =========================
+def activo_abierto(iq, par):
+    try:
+        info = iq.get_all_open_time()
+        return info["digital"][par]["open"]
+    except:
+        return False
+
+
+# =========================
 # ESPERA SEGUNDO 58
 # =========================
 def esperar_entrada():
@@ -127,7 +138,13 @@ def obtener_velas(iq, par):
 def operar(iq, par, direccion):
     global ultima_entrada
 
-    if time.time() - ultima_entrada < 30:
+    # Evita spam de entradas
+    if time.time() - ultima_entrada < 20:
+        return False
+
+    # Verifica si el activo está abierto
+    if not activo_abierto(iq, par):
+        log(f"{par} cerrado")
         return False
 
     log(f"Esperando entrada {par}")
@@ -136,22 +153,23 @@ def operar(iq, par, direccion):
 
     try:
         iq.subscribe_strike_list(par, 1)
-        time.sleep(0.3)
+        time.sleep(0.5)
 
         status, order_id = iq.buy_digital_spot(par, MONTO, direccion, 1)
 
         iq.unsubscribe_strike_list(par, 1)
 
-        if status:
-            log(f"""OPERACIÓN EJECUTADA
+        if status and order_id:
+            log(f"""✅ OPERACIÓN EJECUTADA
 
 {par} {direccion.upper()}
 Expiración 1M
+ID: {order_id}
 """)
             ultima_entrada = time.time()
             return True
         else:
-            log("No ejecutó la orden")
+            log("❌ No ejecutó la orden")
             return False
 
     except Exception as e:
@@ -192,13 +210,24 @@ def run():
             if señal:
                 par, direccion, score = señal
 
-                log(f"""SEÑAL DETECTADA
+                log(f"""📊 SEÑAL DETECTADA
 
 {par} {direccion}
 Score: {score}
 """)
 
-                operar(iq, par, direccion)
+                # 🔥 VALIDACIÓN FINAL (ANTES DE ENTRAR)
+                velas_final = obtener_velas(iq, par)
+
+                if not velas_final:
+                    continue
+
+                confirmacion = detectar_entrada_oculta({par: velas_final})
+
+                if confirmacion:
+                    operar(iq, par, direccion)
+                else:
+                    log("⚠️ Señal cancelada en último segundo")
 
             time.sleep(0.2)
 
