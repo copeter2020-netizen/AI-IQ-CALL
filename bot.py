@@ -29,7 +29,6 @@ ultima_entrada = 0
 # =========================
 def log(msg):
     print(msg)
-
     try:
         requests.post(
             f"https://api.telegram.org/bot{TOKEN}/sendMessage",
@@ -50,8 +49,7 @@ def conectar():
             iq.connect()
 
             if iq.check_connect():
-                iq.change_balance("PRACTICE")
-
+                iq.change_balance(CUENTA)
                 iq.update_ACTIVES_OPCODE()
                 time.sleep(2)
 
@@ -73,15 +71,13 @@ def asegurar_conexion(iq):
             log("Reconectando...")
             return conectar()
 
-        iq.update_ACTIVES_OPCODE()
         return iq
-
     except:
         return conectar()
 
 
 # =========================
-# PARES ESTABLES
+# PARES
 # =========================
 PARES = [
     "EURUSD-OTC",
@@ -94,14 +90,15 @@ PARES = [
 
 
 # =========================
-# ESPERA NUEVA VELA
+# ESPERAR SIGUIENTE VELA
 # =========================
-def esperar_nueva_vela():
+def esperar_siguiente_vela():
     while True:
         now = datetime.now()
         if now.second == 0:
-            break
-        time.sleep(0.2)
+            time.sleep(0.5)  # 🔥 entra justo después de abrir
+            return
+        time.sleep(0.01)
 
 
 # =========================
@@ -137,7 +134,7 @@ def activo_disponible(iq, par):
 
 
 # =========================
-# 🔥 OPERAR SNIPER REAL
+# OPERAR EN SIGUIENTE VELA
 # =========================
 def operar(iq, par, direccion):
     global ultima_entrada
@@ -149,24 +146,16 @@ def operar(iq, par, direccion):
         log(f"❌ Activo no disponible: {par}")
         return False
 
-    log(f"🎯 SNIPER esperando {par}")
+    log(f"⏳ Esperando siguiente vela {par}")
 
-    # 🔥 ESPERA ULTRA PRECISA (59.5+)
-    while True:
-        ahora = time.time()
-        segundos = int(ahora) % 60
-        milisegundos = ahora - int(ahora)
-
-        if segundos == 59 and milisegundos >= 0.5:
-            break
-
-        time.sleep(0.001)
+    # 🔥 ESPERA NUEVA VELA
+    esperar_siguiente_vela()
 
     try:
         iq.subscribe_strike_list(par, 1)
-        time.sleep(0.1)
+        time.sleep(0.2)
 
-        EXPIRACION = 1
+        EXPIRACION = 1  # 1 minuto
 
         status, order_id = iq.buy_digital_spot(
             par,
@@ -181,25 +170,20 @@ def operar(iq, par, direccion):
             pass
 
         if status:
-            log(f"""🚀 SNIPER EJECUTADO
+            log(f"""✅ OPERACIÓN EJECUTADA
 
 {par} {direccion.upper()}
-Expiración: {EXPIRACION}M
-Entrada: 59.5+
+Expiración: 1M
+Entrada: nueva vela
 """)
             ultima_entrada = time.time()
             return True
         else:
-            log("❌ SNIPER no ejecutó")
+            log("❌ No ejecutó la orden")
             return False
 
     except Exception as e:
-        try:
-            iq.unsubscribe_strike_list(par, 1)
-        except:
-            pass
-
-        log(f"❌ Error sniper: {e}")
+        log(f"❌ Error operación: {e}")
         return False
 
 
