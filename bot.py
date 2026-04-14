@@ -51,8 +51,13 @@ def conectar():
             if iq.check_connect():
                 iq.change_balance(CUENTA)
 
-                iq.get_all_ACTIVES_OPCODE()
-                time.sleep(2)
+                # 🔥 FORZAR CARGA DE ACTIVOS
+                for _ in range(3):
+                    try:
+                        iq.get_all_open_time()
+                        time.sleep(1)
+                    except:
+                        pass
 
                 log("BOT CONECTADO DEMO")
                 return iq
@@ -77,7 +82,7 @@ def asegurar_conexion(iq):
 
 
 # =========================
-# PARES ESTABLES
+# PARES
 # =========================
 PARES = [
     "EURUSD-OTC",
@@ -90,7 +95,7 @@ PARES = [
 
 
 # =========================
-# VALIDAR ACTIVO ABIERTO
+# VALIDAR ACTIVO
 # =========================
 def activo_abierto(iq, par):
     try:
@@ -133,37 +138,43 @@ def obtener_velas(iq, par):
 
 
 # =========================
-# OPERAR REAL
+# OPERAR (ANTI ERROR UNDERLYING)
 # =========================
 def operar(iq, par, direccion):
     global ultima_entrada
 
-    # Evita spam de entradas
     if time.time() - ultima_entrada < 20:
         return False
 
-    # Verifica si el activo está abierto
     if not activo_abierto(iq, par):
         log(f"{par} cerrado")
         return False
 
-    log(f"Esperando entrada {par}")
+    log(f"Preparando entrada {par}")
 
     esperar_entrada()
 
     try:
-        iq.subscribe_strike_list(par, 1)
-        time.sleep(0.5)
+        # 🔥 PROTECCIÓN CLAVE
+        try:
+            iq.subscribe_strike_list(par, 1)
+            time.sleep(0.7)
+        except KeyError:
+            log("⚠️ Error underlying (subscribe) - reintentando...")
+            time.sleep(2)
+            return False
 
         status, order_id = iq.buy_digital_spot(par, MONTO, direccion, 1)
 
-        iq.unsubscribe_strike_list(par, 1)
+        try:
+            iq.unsubscribe_strike_list(par, 1)
+        except:
+            pass
 
         if status and order_id:
             log(f"""✅ OPERACIÓN EJECUTADA
 
 {par} {direccion.upper()}
-Expiración 1M
 ID: {order_id}
 """)
             ultima_entrada = time.time()
@@ -172,12 +183,11 @@ ID: {order_id}
             log("❌ No ejecutó la orden")
             return False
 
-    except Exception as e:
-        try:
-            iq.unsubscribe_strike_list(par, 1)
-        except:
-            pass
+    except KeyError:
+        log("⚠️ Error underlying (buy) - ignorado")
+        return False
 
+    except Exception as e:
         log(f"Error operación: {e}")
         return False
 
@@ -216,7 +226,7 @@ def run():
 Score: {score}
 """)
 
-                # 🔥 VALIDACIÓN FINAL (ANTES DE ENTRAR)
+                # 🔥 CONFIRMACIÓN FINAL
                 velas_final = obtener_velas(iq, par)
 
                 if not velas_final:
@@ -227,7 +237,7 @@ Score: {score}
                 if confirmacion:
                     operar(iq, par, direccion)
                 else:
-                    log("⚠️ Señal cancelada en último segundo")
+                    log("⚠️ Señal cancelada")
 
             time.sleep(0.2)
 
