@@ -2,50 +2,40 @@ import time
 import os
 import requests
 import sys
+from datetime import datetime
 from iqoptionapi.stable_api import IQ_Option
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(BASE_DIR)
 
-try:
-    from estrategia import detectar_entrada_oculta
-except Exception as e:
-    print("❌ Error importando estrategia:", e)
-    detectar_entrada_oculta = None
-
+from estrategia import detectar_entrada_oculta
 
 EMAIL = os.getenv("IQ_EMAIL")
 PASSWORD = os.getenv("IQ_PASSWORD")
-
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-MONTO = 30
+if not all([EMAIL, PASSWORD, TOKEN, CHAT_ID]):
+    raise Exception("Faltan variables de entorno")
+
+MONTO = 3
 CUENTA = "PRACTICE"
 
-PARES = [
-    "EURUSD-OTC",
-    "GBPUSD-OTC",
-    "EURJPY-OTC",
-    "EURGBP-OTC",
-    "GBPJPY-OTC",
-    "USDCHF-OTC"
-]
-
-# 🔥 CONTROL GLOBAL
-ultima_senal = None
+ultima_entrada = 0
 
 
 # =========================
-# TELEGRAM
+# LOG + TELEGRAM
 # =========================
-def enviar_mensaje(texto):
+def log(msg):
+    print(msg)
+
     try:
-        url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
-        requests.post(url, data={
-            "chat_id": CHAT_ID,
-            "text": texto
-        }, timeout=5)
+        requests.post(
+            f"https://api.telegram.org/bot{TOKEN}/sendMessage",
+            data={"chat_id": CHAT_ID, "text": msg},
+            timeout=5
+        )
     except:
         pass
 
@@ -60,30 +50,58 @@ def conectar():
             iq.connect()
 
             if iq.check_connect():
-                iq.change_balance(CUENTA)
-                print("✅ CONECTADO")
+                iq.change_balance("PRACTICE")
+
+                iq.update_ACTIVES_OPCODE()
+                time.sleep(2)
+
+                log("BOT CONECTADO DEMO")
                 return iq
 
         except Exception as e:
-            print("Error conexión:", e)
+            log(f"Error conexión: {e}")
 
         time.sleep(5)
 
 
 # =========================
-# TIMING PRECISO (NO TOCAR)
+# RECONEXIÓN
 # =========================
-def esperar_apertura_real():
+def asegurar_conexion(iq):
+    try:
+        if not iq.check_connect():
+            log("Reconectando...")
+            return conectar()
+
+        iq.update_ACTIVES_OPCODE()
+        return iq
+
+    except:
+        return conectar()
+
+
+# =========================
+# PARES ESTABLES
+# =========================
+PARES = [
+    "EURUSD-OTC",
+    "GBPUSD-OTC",
+    "USDZAR-OTC",
+    "EURJPY-OTC",
+    "GBPJPY-OTC",
+    "USDCHF-OTC"
+]
+
+
+# =========================
+# ESPERA NUEVA VELA
+# =========================
+def esperar_nueva_vela():
     while True:
-        ahora = time.time()
-        segundos = int(ahora) % 60
-        milisegundos = ahora - int(ahora)
-
-        # 🔥 Entrada ultra precisa
-        if segundos == 58 and milisegundos >= 0.95:
-            return
-
-        time.sleep(0.002)
+        now = datetime.now()
+        if now.second == 0:
+            break
+        time.sleep(0.2)
 
 
 # =========================
@@ -91,7 +109,10 @@ def esperar_apertura_real():
 # =========================
 def obtener_velas(iq, par):
     try:
-        velas = iq.get_candles(par, 60, 40, time.time())
+        velas = iq.get_candles(par, 60, 30, time.time())
+
+        if not velas:
+            return None
 
         return [{
             "open": v["open"],
@@ -100,129 +121,129 @@ def obtener_velas(iq, par):
             "min": v["min"]
         } for v in velas]
 
-    except Exception as e:
-        print("Error velas:", e)
-        return []
+    except:
+        return None
 
 
 # =========================
-# FILTRO MERCADO MUERTO
+# VALIDAR ACTIVO
 # =========================
-def mercado_activo(velas):
-    if not velas:
+def activo_disponible(iq, par):
+    try:
+        activos = iq.get_all_ACTIVES_OPCODE()
+        return par in activos
+    except:
         return False
 
-    ultima = velas[-1]
-    rango = ultima["max"] - ultima["min"]
-
-    return rango > 0.00015
-
 
 # =========================
-# CONFIRMACIÓN FINAL
-# =========================
-def confirmar_direccion(velas, direccion):
-    ultima = velas[-1]
-
-    if ultima["close"] > ultima["open"]:
-        confirmacion = "call"
-    else:
-        confirmacion = "put"
-
-    return confirmacion == direccion
-
-
-# =========================
-# OPERAR (DIGITAL OTC)
+# 🔥 OPERAR SNIPER REAL
 # =========================
 def operar(iq, par, direccion):
+    global ultima_entrada
+
+    if time.time() - ultima_entrada < 30:
+        return False
+
+    if not activo_disponible(iq, par):
+        log(f"❌ Activo no disponible: {par}")
+        return False
+
+    log(f"🎯 SNIPER esperando {par}")
+
+    # 🔥 ESPERA ULTRA PRECISA (59.5+)
+    while True:
+        ahora = time.time()
+        segundos = int(ahora) % 60
+        milisegundos = ahora - int(ahora)
+
+        if segundos == 59 and milisegundos >= 0.5:
+            break
+
+        time.sleep(0.001)
+
     try:
-        esperar_apertura_real()
-
         iq.subscribe_strike_list(par, 1)
-        time.sleep(0.2)
+        time.sleep(0.1)
 
-        status, order_id = iq.buy_digital_spot(par, MONTO, direccion, 1)
+        EXPIRACION = 1
 
-        iq.unsubscribe_strike_list(par, 1)
+        status, order_id = iq.buy_digital_spot(
+            par,
+            MONTO,
+            direccion,
+            EXPIRACION
+        )
+
+        try:
+            iq.unsubscribe_strike_list(par, 1)
+        except:
+            pass
 
         if status:
-            print(f"🚀 DIGITAL {par} {direccion}")
+            log(f"""🚀 SNIPER EJECUTADO
 
-            enviar_mensaje(f"""
-🚀 ENTRADA DIGITAL
-
-Par: {par}
-Dirección: {direccion.upper()}
-Expiración: 1 MIN
-Monto: ${MONTO}
-
-⏱ Entrada precisa (segundo 58)
+{par} {direccion.upper()}
+Expiración: {EXPIRACION}M
+Entrada: 59.5+
 """)
+            ultima_entrada = time.time()
+            return True
         else:
-            print("❌ No ejecutó operación")
+            log("❌ SNIPER no ejecutó")
+            return False
 
     except Exception as e:
-        print("Error operar:", e)
+        try:
+            iq.unsubscribe_strike_list(par, 1)
+        except:
+            pass
+
+        log(f"❌ Error sniper: {e}")
+        return False
 
 
 # =========================
 # MAIN
 # =========================
 def run():
-    global ultima_senal
-
-    if detectar_entrada_oculta is None:
-        print("❌ No se puede ejecutar sin estrategia.py")
-        return
 
     iq = conectar()
 
     while True:
         try:
+            iq = asegurar_conexion(iq)
+
             data = {}
 
             for par in PARES:
                 velas = obtener_velas(iq, par)
-                data[par] = velas
+
+                if velas:
+                    data[par] = velas
+
+            if not data:
+                time.sleep(1)
+                continue
 
             señal = detectar_entrada_oculta(data)
 
             if señal:
                 par, direccion, score = señal
 
-                # 🔥 FILTRO DE CALIDAD
-                if score < 75:
-                    continue
+                log(f"""📊 SEÑAL DETECTADA
 
-                # 🔥 EVITAR REPETICIÓN
-                if señal == ultima_senal:
-                    continue
-
-                # 🔥 FILTRO MERCADO
-                if not mercado_activo(data[par]):
-                    print(f"⚠️ Mercado muerto {par}")
-                    continue
-
-                # 🔥 CONFIRMACIÓN FINAL
-                if not confirmar_direccion(data[par], direccion):
-                    print(f"❌ Sin confirmación {par}")
-                    continue
-
-                print(f"🎯 Señal {par} {direccion} Score:{score}")
+{par} {direccion}
+Score: {score}
+""")
 
                 operar(iq, par, direccion)
 
-                ultima_senal = señal
-
-                time.sleep(60)
-
-            else:
-                time.sleep(0.1)
+            time.sleep(0.2)
 
         except Exception as e:
-            print("Error loop:", e)
-            time.sleep(5)
+            log(f"❌ Error general: {e}")
+            time.sleep(2)
 
 
 if __name__ == "__main__":
