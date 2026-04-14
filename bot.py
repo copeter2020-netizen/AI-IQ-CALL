@@ -2,7 +2,6 @@ import time
 import os
 import requests
 import sys
-from datetime import datetime
 from iqoptionapi.stable_api import IQ_Option
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -18,7 +17,7 @@ CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 if not all([EMAIL, PASSWORD, TOKEN, CHAT_ID]):
     raise Exception("Faltan variables de entorno")
 
-MONTO = 1114
+MONTO = 3
 CUENTA = "PRACTICE"
 
 ultima_entrada = 0
@@ -29,6 +28,7 @@ ultima_entrada = 0
 # =========================
 def log(msg):
     print(msg)
+
     try:
         requests.post(
             f"https://api.telegram.org/bot{TOKEN}/sendMessage",
@@ -49,9 +49,12 @@ def conectar():
             iq.connect()
 
             if iq.check_connect():
-                iq.change_balance(CUENTA)
-                iq.update_ACTIVES_OPCODE()
-                log("✅ BOT CONECTADO")
+                iq.change_balance("PRACTICE")
+
+                iq.get_all_ACTIVES_OPCODE()
+                time.sleep(2)
+
+                log("BOT CONECTADO DEMO")
                 return iq
 
         except Exception as e:
@@ -74,7 +77,7 @@ def asegurar_conexion(iq):
 
 
 # =========================
-# PARES
+# PARES ESTABLES
 # =========================
 PARES = [
     "EURUSD-OTC",
@@ -84,6 +87,17 @@ PARES = [
     "GBPJPY-OTC",
     "USDCHF-OTC"
 ]
+
+
+# =========================
+# ESPERA SEGUNDO 58
+# =========================
+def esperar_entrada():
+    while True:
+        segundos = int(time.time() % 60)
+        if segundos >= 58:
+            break
+        time.sleep(0.01)
 
 
 # =========================
@@ -108,29 +122,7 @@ def obtener_velas(iq, par):
 
 
 # =========================
-# VALIDAR ACTIVO
-# =========================
-def activo_disponible(iq, par):
-    try:
-        activos = iq.get_all_ACTIVES_OPCODE()
-        return par in activos
-    except:
-        return False
-
-
-# =========================
-# ESPERA ÚLTIMOS SEGUNDOS
-# =========================
-def esperar_confirmacion_final():
-    while True:
-        now = datetime.now()
-        if now.second >= 58:
-            return
-        time.sleep(0.01)
-
-
-# =========================
-# OPERAR CON CONFIRMACIÓN FINAL
+# OPERAR REAL
 # =========================
 def operar(iq, par, direccion):
     global ultima_entrada
@@ -138,63 +130,37 @@ def operar(iq, par, direccion):
     if time.time() - ultima_entrada < 30:
         return False
 
-    if not activo_disponible(iq, par):
-        log(f"❌ Activo no disponible: {par}")
-        return False
+    log(f"Esperando entrada {par}")
 
-    log(f"⏳ Esperando confirmación final {par}")
+    esperar_entrada()
 
-    # 🔥 esperar últimos segundos
-    esperar_confirmacion_final()
-
-    # 🔥 volver a analizar en tiempo real
-    data = {}
-    velas = obtener_velas(iq, par)
-
-    if not velas:
-        return False
-
-    data[par] = velas
-    señal = detectar_entrada_oculta(data)
-
-    # 🔥 si ya no cumple → cancelar
-    if not señal:
-        log("❌ Señal desapareció")
-        return False
-
-    par2, direccion2, score2 = señal
-
-    if par2 != par or direccion2 != direccion or score2 < 80:
-        log("❌ Señal cambió o perdió fuerza")
-        return False
-
-    # 🔥 ENTRADA
     try:
         iq.subscribe_strike_list(par, 1)
-        time.sleep(0.2)
+        time.sleep(0.3)
 
         status, order_id = iq.buy_digital_spot(par, MONTO, direccion, 1)
 
+        iq.unsubscribe_strike_list(par, 1)
+
+        if status:
+            log(f"""OPERACIÓN EJECUTADA
+
+{par} {direccion.upper()}
+Expiración 1M
+""")
+            ultima_entrada = time.time()
+            return True
+        else:
+            log("No ejecutó la orden")
+            return False
+
+    except Exception as e:
         try:
             iq.unsubscribe_strike_list(par, 1)
         except:
             pass
 
-        if status:
-            log(f"""🚀 ENTRADA CONFIRMADA
-
-{par} {direccion.upper()}
-Expiración: 1M
-Entrada: confirmación final
-""")
-            ultima_entrada = time.time()
-            return True
-        else:
-            log("❌ No ejecutó la orden")
-            return False
-
-    except Exception as e:
-        log(f"❌ Error operación: {e}")
+        log(f"Error operación: {e}")
         return False
 
 
@@ -213,6 +179,7 @@ def run():
 
             for par in PARES:
                 velas = obtener_velas(iq, par)
+
                 if velas:
                     data[par] = velas
 
@@ -225,10 +192,7 @@ def run():
             if señal:
                 par, direccion, score = señal
 
-                if score < 80:
-                    continue
-
-                log(f"""📊 SEÑAL DETECTADA
+                log(f"""SEÑAL DETECTADA
 
 {par} {direccion}
 Score: {score}
@@ -236,10 +200,10 @@ Score: {score}
 
                 operar(iq, par, direccion)
 
-            time.sleep(0.3)
+            time.sleep(0.2)
 
         except Exception as e:
-            log(f"❌ Error general: {e}")
+            log(f"Error general: {e}")
             time.sleep(2)
 
 
