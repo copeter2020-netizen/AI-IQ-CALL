@@ -18,28 +18,23 @@ CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 if not all([EMAIL, PASSWORD, TOKEN, CHAT_ID]):
     raise Exception("Faltan variables de entorno")
 
-MONTO = 3
+MONTO = 9
 CUENTA = "PRACTICE"
 
 ultima_entrada = 0
 ultimo_par = None
 operando = False
-api_estable = True
 
 
 # =========================
-# TELEGRAM (NO BLOQUEANTE)
+# TELEGRAM
 # =========================
 def enviar_telegram(msg):
     def enviar():
         try:
-            url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
             requests.post(
-                url,
-                data={
-                    "chat_id": CHAT_ID,
-                    "text": msg
-                },
+                f"https://api.telegram.org/bot{TOKEN}/sendMessage",
+                data={"chat_id": CHAT_ID, "text": msg},
                 timeout=5
             )
         except:
@@ -48,9 +43,6 @@ def enviar_telegram(msg):
     threading.Thread(target=enviar, daemon=True).start()
 
 
-# =========================
-# LOG
-# =========================
 def log(msg):
     print(msg)
     enviar_telegram(msg)
@@ -60,8 +52,6 @@ def log(msg):
 # CONEXIÓN
 # =========================
 def conectar():
-    global api_estable
-
     while True:
         try:
             iq = IQ_Option(EMAIL, PASSWORD)
@@ -70,16 +60,6 @@ def conectar():
             if iq.check_connect():
                 iq.change_balance(CUENTA)
 
-                log("🔌 Conectando y calentando API...")
-
-                for _ in range(5):
-                    try:
-                        iq.get_all_open_time()
-                        time.sleep(1)
-                    except:
-                        pass
-
-                api_estable = True
                 log("✅ BOT CONECTADO")
                 return iq
 
@@ -90,16 +70,12 @@ def conectar():
 
 
 def asegurar_conexion(iq):
-    global api_estable
-
     try:
         if not iq.check_connect():
-            api_estable = False
             log("🔄 Reconectando...")
             return conectar()
         return iq
     except:
-        api_estable = False
         return conectar()
 
 
@@ -121,7 +97,7 @@ PARES = [
 # =========================
 def activo_abierto(iq, par):
     try:
-        return iq.get_all_open_time()["digital"][par]["open"]
+        return iq.get_all_open_time()["binary"][par]["open"]
     except:
         return False
 
@@ -145,10 +121,10 @@ def obtener_velas(iq, par):
 
 
 # =========================
-# OPERAR
+# OPERAR (SIN DIGITAL)
 # =========================
 def operar(iq, par, direccion):
-    global ultima_entrada, operando, api_estable
+    global ultima_entrada, operando
 
     if operando:
         return False
@@ -164,30 +140,19 @@ def operar(iq, par, direccion):
     esperar_entrada()
 
     try:
-        iq.subscribe_strike_list(par, 1)
-        time.sleep(1)
-
-        status, order_id = iq.buy_digital_spot(par, MONTO, direccion, 1)
-
-        iq.unsubscribe_strike_list(par, 1)
+        status, order_id = iq.buy(MONTO, par, direccion, 1)
 
         if status:
-            mensaje = f"""✅ OPERACIÓN EJECUTADA
+            log(f"""✅ OPERACIÓN EJECUTADA
 
 Par: {par}
 Dirección: {direccion.upper()}
 Monto: ${MONTO}
 ID: {order_id}
-"""
-            log(mensaje)
+""")
             ultima_entrada = time.time()
         else:
             log("❌ No ejecutó la operación")
-
-    except KeyError:
-        log("⚠️ ERROR UNDERLYING → REINICIANDO API")
-        api_estable = False
-        iq = conectar()
 
     except Exception as e:
         log(f"❌ Error operación: {e}")
@@ -200,17 +165,13 @@ ID: {order_id}
 # MAIN
 # =========================
 def run():
-    global ultimo_par, api_estable
+    global ultimo_par
 
     iq = conectar()
 
     while True:
         try:
             iq = asegurar_conexion(iq)
-
-            if not api_estable:
-                time.sleep(2)
-                continue
 
             data = {}
 
@@ -230,13 +191,12 @@ def run():
                 if par == ultimo_par:
                     continue
 
-                mensaje = f"""📊 SEÑAL DETECTADA
+                log(f"""📊 SEÑAL DETECTADA
 
 Par: {par}
 Dirección: {direccion.upper()}
 Score: {score}
-"""
-                log(mensaje)
+""")
 
                 velas_final = obtener_velas(iq, par)
 
