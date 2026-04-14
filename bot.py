@@ -18,7 +18,7 @@ CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 if not all([EMAIL, PASSWORD, TOKEN, CHAT_ID]):
     raise Exception("Faltan variables de entorno")
 
-MONTO = 1500
+MONTO = 1114
 CUENTA = "PRACTICE"
 
 ultima_entrada = 0
@@ -119,15 +119,18 @@ def activo_disponible(iq, par):
 
 
 # =========================
-# MOMENTO DE ENTRADA (VELA NUEVA)
+# ESPERA ÚLTIMOS SEGUNDOS
 # =========================
-def es_momento_entrada():
-    now = datetime.now()
-    return 0 <= now.second <= 3  # primeros segundos
+def esperar_confirmacion_final():
+    while True:
+        now = datetime.now()
+        if now.second >= 58:
+            return
+        time.sleep(0.01)
 
 
 # =========================
-# OPERAR
+# OPERAR CON CONFIRMACIÓN FINAL
 # =========================
 def operar(iq, par, direccion):
     global ultima_entrada
@@ -139,21 +142,38 @@ def operar(iq, par, direccion):
         log(f"❌ Activo no disponible: {par}")
         return False
 
-    if not es_momento_entrada():
+    log(f"⏳ Esperando confirmación final {par}")
+
+    # 🔥 esperar últimos segundos
+    esperar_confirmacion_final()
+
+    # 🔥 volver a analizar en tiempo real
+    data = {}
+    velas = obtener_velas(iq, par)
+
+    if not velas:
         return False
 
+    data[par] = velas
+    señal = detectar_entrada_oculta(data)
+
+    # 🔥 si ya no cumple → cancelar
+    if not señal:
+        log("❌ Señal desapareció")
+        return False
+
+    par2, direccion2, score2 = señal
+
+    if par2 != par or direccion2 != direccion or score2 < 80:
+        log("❌ Señal cambió o perdió fuerza")
+        return False
+
+    # 🔥 ENTRADA
     try:
         iq.subscribe_strike_list(par, 1)
         time.sleep(0.2)
 
-        EXPIRACION = 1
-
-        status, order_id = iq.buy_digital_spot(
-            par,
-            MONTO,
-            direccion,
-            EXPIRACION
-        )
+        status, order_id = iq.buy_digital_spot(par, MONTO, direccion, 1)
 
         try:
             iq.unsubscribe_strike_list(par, 1)
@@ -161,10 +181,11 @@ def operar(iq, par, direccion):
             pass
 
         if status:
-            log(f"""✅ OPERACIÓN EJECUTADA
+            log(f"""🚀 ENTRADA CONFIRMADA
 
 {par} {direccion.upper()}
 Expiración: 1M
+Entrada: confirmación final
 """)
             ultima_entrada = time.time()
             return True
@@ -192,7 +213,6 @@ def run():
 
             for par in PARES:
                 velas = obtener_velas(iq, par)
-
                 if velas:
                     data[par] = velas
 
@@ -205,8 +225,7 @@ def run():
             if señal:
                 par, direccion, score = señal
 
-                # 🔥 FILTRO DE CALIDAD
-                if score < 83:
+                if score < 80:
                     continue
 
                 log(f"""📊 SEÑAL DETECTADA
