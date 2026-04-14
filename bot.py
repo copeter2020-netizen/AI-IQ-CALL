@@ -18,7 +18,7 @@ CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 if not all([EMAIL, PASSWORD, TOKEN, CHAT_ID]):
     raise Exception("Faltan variables de entorno")
 
-MONTO = 9
+MONTO = 9000
 CUENTA = "PRACTICE"
 
 ultima_entrada = 0
