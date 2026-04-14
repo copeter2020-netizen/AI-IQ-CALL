@@ -1,78 +1,81 @@
+import numpy as np
 import pandas as pd
 
 
+# =========================
+# UTILIDADES
+# =========================
 def body(v):
     return abs(v["close"] - v["open"])
-
 
 def rango(v):
     return v["max"] - v["min"]
 
-
 def es_alcista(v):
     return v["close"] > v["open"]
-
 
 def es_bajista(v):
     return v["close"] < v["open"]
 
 
 # =========================
-# MECHAS
+# AGOTAMIENTO
 # =========================
-def mecha_superior(v):
-    return v["max"] - max(v["open"], v["close"])
+def agotamiento(v):
+    if rango(v) == 0:
+        return None
 
+    cuerpo = body(v)
+    rango_total = rango(v)
 
-def mecha_inferior(v):
-    return min(v["open"], v["close"]) - v["min"]
+    mecha_sup = v["max"] - max(v["open"], v["close"])
+    mecha_inf = min(v["open"], v["close"]) - v["min"]
 
+    # agotamiento bajista → posible subida
+    if (
+        es_bajista(v) and
+        cuerpo < rango_total * 0.4 and
+        mecha_inf > cuerpo * 2
+    ):
+        return "call"
 
-# =========================
-# ZONAS (SOPORTE / RESISTENCIA)
-# =========================
-def niveles(df):
-    resistencia = df["max"].rolling(20).max().iloc[-2]
-    soporte = df["min"].rolling(20).min().iloc[-2]
-    return soporte, resistencia
+    # agotamiento alcista → posible bajada
+    if (
+        es_alcista(v) and
+        cuerpo < rango_total * 0.4 and
+        mecha_sup > cuerpo * 2
+    ):
+        return "put"
 
-
-# =========================
-# TENDENCIA CORTA
-# =========================
-def tendencia_corta(df):
-    ultimas = df.iloc[-5:]
-
-    verdes = sum(v["close"] > v["open"] for _, v in ultimas.iterrows())
-    rojas = sum(v["close"] < v["open"] for _, v in ultimas.iterrows())
-
-    if verdes >= 3:
-        return "alcista"
-    if rojas >= 3:
-        return "bajista"
-
-    return "neutral"
+    return None
 
 
 # =========================
-# VALIDACIONES
+# CAMBIO DE TENDENCIA
 # =========================
-def vela_fuerte(v):
+def cambio_tendencia(v, tipo):
+
     if rango(v) == 0:
         return False
-    return body(v) > rango(v) * 0.5
 
+    cuerpo = body(v)
+    rango_total = rango(v)
 
-def rechazo_superior(v):
-    return mecha_superior(v) > body(v) * 1.2
+    # fuerza mínima real
+    if cuerpo < rango_total * 0.6:
+        return False
 
+    if tipo == "call":
+        return es_alcista(v)
 
-def rechazo_inferior(v):
-    return mecha_inferior(v) > body(v) * 1.2
+    if tipo == "put":
+        return es_bajista(v)
+
+    return False
 
 
 # =========================
-# ESTRATEGIA PRINCIPAL
+# DETECCIÓN PRINCIPAL
 # =========================
 def detectar_entrada_oculta(data):
 
@@ -81,63 +84,26 @@ def detectar_entrada_oculta(data):
 
     for par, velas in data.items():
 
-        if len(velas) < 25:
+        if len(velas) < 10:
             continue
 
         df = pd.DataFrame(velas)
 
-        soporte, resistencia = niveles(df)
-        tendencia = tendencia_corta(df)
+        v_prev = df.iloc[-2]   # vela de agotamiento
+        v_actual = df.iloc[-1] # vela de cambio
 
-        v_fake = df.iloc[-2]   # vela de ruptura falsa
-        v_conf = df.iloc[-1]   # vela confirmación
+        tipo = agotamiento(v_prev)
 
-        score = 0
+        if not tipo:
+            continue
 
-        # =========================
-        # 🔴 PUT (FAKE BREAKOUT ARRIBA)
-        # =========================
-        if tendencia == "alcista":
+        if not cambio_tendencia(v_actual, tipo):
+            continue
 
-            # rompe resistencia
-            if v_fake["max"] >= resistencia:
+        # score simple pero efectivo
+        score = 10
 
-                # cierra debajo (fake breakout)
-                if v_fake["close"] < resistencia:
-
-                    # rechazo fuerte
-                    if rechazo_superior(v_fake):
-                        score += 4
-
-                    # confirmación bajista
-                    if es_bajista(v_conf) and vela_fuerte(v_conf):
-                        score += 6
-
-                    if score >= 8 and score > mejor_score:
-                        mejor_score = score
-                        mejor = (par, "put", score)
-
-        # =========================
-        # 🟢 CALL (FAKE BREAKOUT ABAJO)
-        # =========================
-        if tendencia == "bajista":
-
-            # rompe soporte
-            if v_fake["min"] <= soporte:
-
-                # cierra arriba (fake)
-                if v_fake["close"] > soporte:
-
-                    # rechazo inferior
-                    if rechazo_inferior(v_fake):
-                        score += 4
-
-                    # confirmación alcista
-                    if es_alcista(v_conf) and vela_fuerte(v_conf):
-                        score += 6
-
-                    if score >= 8 and score > mejor_score:
-                        mejor_score = score
-                        mejor = (par, "call", score)
+        mejor = (par, tipo, score)
+        break
 
     return mejor
