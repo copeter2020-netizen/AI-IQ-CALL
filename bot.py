@@ -21,14 +21,14 @@ MONTO = 3
 CUENTA = "PRACTICE"
 
 ultima_entrada = 0
+api_estable = False
 
 
 # =========================
-# LOG + TELEGRAM
+# LOG
 # =========================
 def log(msg):
     print(msg)
-
     try:
         requests.post(
             f"https://api.telegram.org/bot{TOKEN}/sendMessage",
@@ -40,9 +40,11 @@ def log(msg):
 
 
 # =========================
-# CONEXIÓN ROBUSTA
+# CONEXIÓN + WARMUP
 # =========================
 def conectar():
+    global api_estable
+
     while True:
         try:
             iq = IQ_Option(EMAIL, PASSWORD)
@@ -51,17 +53,19 @@ def conectar():
             if iq.check_connect():
                 iq.change_balance(CUENTA)
 
-                log("Cargando datos del broker...")
+                log("Calentando API...")
 
-                # 🔥 CALENTAMIENTO (CLAVE)
-                for _ in range(5):
+                # 🔥 WARMUP REAL (CLAVE)
+                for i in range(6):
                     try:
                         iq.get_all_open_time()
+                        iq.get_candles("EURUSD-OTC", 60, 5, time.time())
                         time.sleep(1)
                     except:
                         pass
 
-                log("BOT CONECTADO ESTABLE")
+                api_estable = True
+                log("BOT CONECTADO Y ESTABLE")
                 return iq
 
         except Exception as e:
@@ -74,12 +78,16 @@ def conectar():
 # RECONEXIÓN
 # =========================
 def asegurar_conexion(iq):
+    global api_estable
+
     try:
         if not iq.check_connect():
+            api_estable = False
             log("Reconectando...")
             return conectar()
         return iq
     except:
+        api_estable = False
         return conectar()
 
 
@@ -108,12 +116,11 @@ def activo_abierto(iq, par):
 
 
 # =========================
-# ESPERA PRECISA
+# ESPERA
 # =========================
 def esperar_entrada():
     while True:
-        segundos = int(time.time() % 60)
-        if segundos >= 58:
+        if int(time.time() % 60) >= 58:
             break
         time.sleep(0.005)
 
@@ -124,84 +131,64 @@ def esperar_entrada():
 def obtener_velas(iq, par):
     try:
         velas = iq.get_candles(par, 60, 30, time.time())
-
-        if not velas:
-            return None
-
         return [{
             "open": v["open"],
             "close": v["close"],
             "max": v["max"],
             "min": v["min"]
         } for v in velas]
-
     except:
         return None
 
 
 # =========================
-# SUSCRIPCIÓN SEGURA
-# =========================
-def suscribir(iq, par):
-    for intento in range(3):
-        try:
-            iq.subscribe_strike_list(par, 1)
-            time.sleep(0.7)
-            return True
-        except:
-            log(f"Reintentando suscripción ({intento+1})")
-            time.sleep(1)
-    return False
-
-
-def desuscribir(iq, par):
-    try:
-        iq.unsubscribe_strike_list(par, 1)
-    except:
-        pass
-
-
-# =========================
-# OPERAR (ULTRA ESTABLE)
+# OPERAR (ANTI CRASH TOTAL)
 # =========================
 def operar(iq, par, direccion):
-    global ultima_entrada
+    global ultima_entrada, api_estable
+
+    if not api_estable:
+        log("API inestable - evitando operación")
+        return False
 
     if time.time() - ultima_entrada < 20:
         return False
 
     if not activo_abierto(iq, par):
-        log(f"{par} cerrado")
         return False
 
     esperar_entrada()
 
-    # 🔥 SUSCRIPCIÓN ROBUSTA
-    if not suscribir(iq, par):
-        log("No se pudo suscribir (evitando crash)")
-        return False
+    # 🔥 RETRY CONTROLADO
+    for intento in range(3):
+        try:
+            iq.subscribe_strike_list(par, 1)
+            time.sleep(0.8)
 
-    try:
-        status, order_id = iq.buy_digital_spot(par, MONTO, direccion, 1)
+            status, order_id = iq.buy_digital_spot(par, MONTO, direccion, 1)
 
-        desuscribir(iq, par)
+            iq.unsubscribe_strike_list(par, 1)
 
-        if status and order_id:
-            log(f"""✅ OPERACIÓN EJECUTADA
+            if status and order_id:
+                log(f"""✅ TRADE
 
-{par} {direccion.upper()}
+{par} {direccion}
 ID: {order_id}
 """)
-            ultima_entrada = time.time()
-            return True
-        else:
-            log("❌ Falló ejecución")
+                ultima_entrada = time.time()
+                return True
+
+        except KeyError:
+            log(f"Error underlying intento {intento+1}")
+            api_estable = False
+            time.sleep(2)
             return False
 
-    except Exception as e:
-        desuscribir(iq, par)
-        log(f"Error operación: {e}")
-        return False
+        except Exception as e:
+            log(f"Error trade: {e}")
+            time.sleep(1)
+
+    return False
 
 
 # =========================
@@ -215,16 +202,18 @@ def run():
         try:
             iq = asegurar_conexion(iq)
 
+            if not api_estable:
+                time.sleep(2)
+                continue
+
             data = {}
 
             for par in PARES:
                 velas = obtener_velas(iq, par)
-
                 if velas:
                     data[par] = velas
 
             if not data:
-                time.sleep(1)
                 continue
 
             señal = detectar_entrada_oculta(data)
@@ -232,11 +221,7 @@ def run():
             if señal:
                 par, direccion, score = señal
 
-                log(f"""📊 SEÑAL
-
-{par} {direccion}
-Score: {score}
-""")
+                log(f"SEÑAL {par} {direccion} score {score}")
 
                 # 🔥 CONFIRMACIÓN FINAL
                 velas_final = obtener_velas(iq, par)
@@ -248,8 +233,6 @@ Score: {score}
 
                 if confirmacion:
                     operar(iq, par, direccion)
-                else:
-                    log("Señal cancelada")
 
             time.sleep(0.2)
 
