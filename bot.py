@@ -40,7 +40,7 @@ def log(msg):
 
 
 # =========================
-# CONEXIÓN
+# CONEXIÓN ROBUSTA
 # =========================
 def conectar():
     while True:
@@ -51,15 +51,17 @@ def conectar():
             if iq.check_connect():
                 iq.change_balance(CUENTA)
 
-                # 🔥 FORZAR CARGA DE ACTIVOS
-                for _ in range(3):
+                log("Cargando datos del broker...")
+
+                # 🔥 CALENTAMIENTO (CLAVE)
+                for _ in range(5):
                     try:
                         iq.get_all_open_time()
                         time.sleep(1)
                     except:
                         pass
 
-                log("BOT CONECTADO DEMO")
+                log("BOT CONECTADO ESTABLE")
                 return iq
 
         except Exception as e:
@@ -106,18 +108,18 @@ def activo_abierto(iq, par):
 
 
 # =========================
-# ESPERA SEGUNDO 58
+# ESPERA PRECISA
 # =========================
 def esperar_entrada():
     while True:
         segundos = int(time.time() % 60)
         if segundos >= 58:
             break
-        time.sleep(0.01)
+        time.sleep(0.005)
 
 
 # =========================
-# OBTENER VELAS
+# VELAS
 # =========================
 def obtener_velas(iq, par):
     try:
@@ -138,7 +140,29 @@ def obtener_velas(iq, par):
 
 
 # =========================
-# OPERAR (ANTI ERROR UNDERLYING)
+# SUSCRIPCIÓN SEGURA
+# =========================
+def suscribir(iq, par):
+    for intento in range(3):
+        try:
+            iq.subscribe_strike_list(par, 1)
+            time.sleep(0.7)
+            return True
+        except:
+            log(f"Reintentando suscripción ({intento+1})")
+            time.sleep(1)
+    return False
+
+
+def desuscribir(iq, par):
+    try:
+        iq.unsubscribe_strike_list(par, 1)
+    except:
+        pass
+
+
+# =========================
+# OPERAR (ULTRA ESTABLE)
 # =========================
 def operar(iq, par, direccion):
     global ultima_entrada
@@ -150,26 +174,17 @@ def operar(iq, par, direccion):
         log(f"{par} cerrado")
         return False
 
-    log(f"Preparando entrada {par}")
-
     esperar_entrada()
 
-    try:
-        # 🔥 PROTECCIÓN CLAVE
-        try:
-            iq.subscribe_strike_list(par, 1)
-            time.sleep(0.7)
-        except KeyError:
-            log("⚠️ Error underlying (subscribe) - reintentando...")
-            time.sleep(2)
-            return False
+    # 🔥 SUSCRIPCIÓN ROBUSTA
+    if not suscribir(iq, par):
+        log("No se pudo suscribir (evitando crash)")
+        return False
 
+    try:
         status, order_id = iq.buy_digital_spot(par, MONTO, direccion, 1)
 
-        try:
-            iq.unsubscribe_strike_list(par, 1)
-        except:
-            pass
+        desuscribir(iq, par)
 
         if status and order_id:
             log(f"""✅ OPERACIÓN EJECUTADA
@@ -180,14 +195,11 @@ ID: {order_id}
             ultima_entrada = time.time()
             return True
         else:
-            log("❌ No ejecutó la orden")
+            log("❌ Falló ejecución")
             return False
 
-    except KeyError:
-        log("⚠️ Error underlying (buy) - ignorado")
-        return False
-
     except Exception as e:
+        desuscribir(iq, par)
         log(f"Error operación: {e}")
         return False
 
@@ -220,7 +232,7 @@ def run():
             if señal:
                 par, direccion, score = señal
 
-                log(f"""📊 SEÑAL DETECTADA
+                log(f"""📊 SEÑAL
 
 {par} {direccion}
 Score: {score}
@@ -237,7 +249,7 @@ Score: {score}
                 if confirmacion:
                     operar(iq, par, direccion)
                 else:
-                    log("⚠️ Señal cancelada")
+                    log("Señal cancelada")
 
             time.sleep(0.2)
 
