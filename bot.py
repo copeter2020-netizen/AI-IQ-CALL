@@ -7,65 +7,47 @@ from iqoptionapi.stable_api import IQ_Option
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(BASE_DIR)
 
-from estrategia import detectar_entrada_oculta
+try:
+    from estrategia import detectar_entrada_oculta
+except Exception as e:
+    print("❌ Error importando estrategia:", e)
+    detectar_entrada_oculta = None
+
 
 EMAIL = os.getenv("IQ_EMAIL")
 PASSWORD = os.getenv("IQ_PASSWORD")
+
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-if not all([EMAIL, PASSWORD, TOKEN, CHAT_ID]):
-    raise Exception("Faltan variables de entorno")
-
-MONTO = 3
+MONTO = 30
 CUENTA = "PRACTICE"
 
-ultima_entrada = 0
+PARES = [
+    "EURUSD-OTC",
+    "GBPUSD-OTC",
+    "EURJPY-OTC",
+    "EURGBP-OTC",
+    "GBPJPY-OTC",
+    "USDCHF-OTC"
+]
+
+# 🔥 CONTROL GLOBAL
 ultima_senal = None
 
 
 # =========================
-# LOG + TELEGRAM
+# TELEGRAM
 # =========================
-def log(msg):
-    print(msg)
+def enviar_mensaje(texto):
     try:
-        requests.post(
-            f"https://api.telegram.org/bot{TOKEN}/sendMessage",
-            data={"chat_id": CHAT_ID, "text": msg},
-            timeout=5
-        )
+        url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
+        requests.post(url, data={
+            "chat_id": CHAT_ID,
+            "text": texto
+        }, timeout=5)
     except:
         pass
-
-
-# =========================
-# TIEMPO SERVIDOR
-# =========================
-def tiempo_servidor(iq):
-    return int(iq.get_server_timestamp())
-
-
-# =========================
-# ESPERA NUEVA VELA (SYNC REAL)
-# =========================
-def esperar_cierre_vela(iq):
-    while True:
-        server_time = tiempo_servidor(iq)
-        if server_time % 60 == 0:
-            break
-        time.sleep(0.05)
-
-
-# =========================
-# ESPERA SEGUNDO 58
-# =========================
-def esperar_entrada(iq):
-    while True:
-        server_time = tiempo_servidor(iq)
-        if server_time % 60 >= 58:
-            break
-        time.sleep(0.01)
 
 
 # =========================
@@ -79,43 +61,29 @@ def conectar():
 
             if iq.check_connect():
                 iq.change_balance(CUENTA)
-                iq.update_ACTIVES_OPCODE()
-                time.sleep(2)
-
-                log("✅ BOT CONECTADO")
+                print("✅ CONECTADO")
                 return iq
 
         except Exception as e:
-            log(f"Error conexión: {e}")
+            print("Error conexión:", e)
 
         time.sleep(5)
 
 
 # =========================
-# RECONEXIÓN
+# TIMING PRECISO (NO TOCAR)
 # =========================
-def asegurar_conexion(iq):
-    try:
-        if not iq.check_connect():
-            log("Reconectando...")
-            return conectar()
+def esperar_apertura_real():
+    while True:
+        ahora = time.time()
+        segundos = int(ahora) % 60
+        milisegundos = ahora - int(ahora)
 
-        return iq
-    except:
-        return conectar()
+        # 🔥 Entrada ultra precisa
+        if segundos == 58 and milisegundos >= 0.95:
+            return
 
-
-# =========================
-# PARES OTC
-# =========================
-PARES = [
-    "EURUSD-OTC",
-    "GBPUSD-OTC",
-    "USDZAR-OTC",
-    "EURJPY-OTC",
-    "GBPJPY-OTC",
-    "USDCHF-OTC"
-]
+        time.sleep(0.002)
 
 
 # =========================
@@ -123,10 +91,7 @@ PARES = [
 # =========================
 def obtener_velas(iq, par):
     try:
-        velas = iq.get_candles(par, 60, 30, tiempo_servidor(iq))
-
-        if not velas:
-            return None
+        velas = iq.get_candles(par, 60, 40, time.time())
 
         return [{
             "open": v["open"],
@@ -135,28 +100,22 @@ def obtener_velas(iq, par):
             "min": v["min"]
         } for v in velas]
 
-    except:
-        return None
-
-
-# =========================
-# VALIDAR DIGITAL OTC
-# =========================
-def activo_abierto(iq, par):
-    try:
-        digital, _ = iq.get_digital_underlying_list_data()
-        return par in digital
-    except:
-        return False
+    except Exception as e:
+        print("Error velas:", e)
+        return []
 
 
 # =========================
 # FILTRO MERCADO MUERTO
 # =========================
 def mercado_activo(velas):
+    if not velas:
+        return False
+
     ultima = velas[-1]
     rango = ultima["max"] - ultima["min"]
-    return rango > 0.0002
+
+    return rango > 0.00015
 
 
 # =========================
@@ -174,53 +133,37 @@ def confirmar_direccion(velas, direccion):
 
 
 # =========================
-# OPERAR
+# OPERAR (DIGITAL OTC)
 # =========================
-def operar(iq, par, direccion, velas):
-    global ultima_entrada
-
-    if time.time() - ultima_entrada < 30:
-        return False
-
-    if not activo_abierto(iq, par):
-        log(f"❌ Activo no disponible: {par}")
-        return False
-
-    if not mercado_activo(velas):
-        log(f"⚠️ Mercado muerto: {par}")
-        return False
-
-    if not confirmar_direccion(velas, direccion):
-        log(f"❌ Sin confirmación: {par}")
-        return False
-
-    log(f"⏳ Esperando entrada {par}")
-
-    esperar_entrada(iq)
-
+def operar(iq, par, direccion):
     try:
+        esperar_apertura_real()
+
         iq.subscribe_strike_list(par, 1)
-        time.sleep(0.3)
+        time.sleep(0.2)
 
         status, order_id = iq.buy_digital_spot(par, MONTO, direccion, 1)
 
         iq.unsubscribe_strike_list(par, 1)
 
         if status:
-            log(f"""✅ OPERACIÓN EJECUTADA
+            print(f"🚀 DIGITAL {par} {direccion}")
 
-{par} {direccion.upper()}
-Expiración: 1M
+            enviar_mensaje(f"""
+🚀 ENTRADA DIGITAL
+
+Par: {par}
+Dirección: {direccion.upper()}
+Expiración: 1 MIN
+Monto: ${MONTO}
+
+⏱ Entrada precisa (segundo 58)
 """)
-            ultima_entrada = time.time()
-            return True
         else:
-            log("❌ No ejecutó")
-            return False
+            print("❌ No ejecutó operación")
 
     except Exception as e:
-        log(f"❌ Error operación: {e}")
-        return False
+        print("Error operar:", e)
 
 
 # =========================
@@ -229,24 +172,19 @@ Expiración: 1M
 def run():
     global ultima_senal
 
+    if detectar_entrada_oculta is None:
+        print("❌ No se puede ejecutar sin estrategia.py")
+        return
+
     iq = conectar()
 
     while True:
         try:
-            iq = asegurar_conexion(iq)
-
-            # 🔥 ESPERAR CIERRE REAL DE VELA
-            esperar_cierre_vela(iq)
-
             data = {}
 
             for par in PARES:
                 velas = obtener_velas(iq, par)
-                if velas:
-                    data[par] = velas
-
-            if not data:
-                continue
+                data[par] = velas
 
             señal = detectar_entrada_oculta(data)
 
@@ -254,28 +192,37 @@ def run():
                 par, direccion, score = señal
 
                 # 🔥 FILTRO DE CALIDAD
-                if score < 80:
+                if score < 75:
                     continue
 
                 # 🔥 EVITAR REPETICIÓN
                 if señal == ultima_senal:
                     continue
 
-                log(f"""📊 SEÑAL
+                # 🔥 FILTRO MERCADO
+                if not mercado_activo(data[par]):
+                    print(f"⚠️ Mercado muerto {par}")
+                    continue
 
-{par} {direccion}
-Score: {score}
-""")
+                # 🔥 CONFIRMACIÓN FINAL
+                if not confirmar_direccion(data[par], direccion):
+                    print(f"❌ Sin confirmación {par}")
+                    continue
 
-                operar(iq, par, direccion, data[par])
+                print(f"🎯 Señal {par} {direccion} Score:{score}")
+
+                operar(iq, par, direccion)
 
                 ultima_senal = señal
 
-            time.sleep(0.05)
+                time.sleep(60)
+
+            else:
+                time.sleep(0.1)
 
         except Exception as e:
-            log(f"❌ Error general: {e}")
-            time.sleep(2)
+            print("Error loop:", e)
+            time.sleep(5)
 
 
 if __name__ == "__main__":
