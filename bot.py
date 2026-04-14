@@ -2,6 +2,7 @@ import time
 import os
 import requests
 import sys
+from datetime import datetime
 from iqoptionapi.stable_api import IQ_Option
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -51,7 +52,7 @@ def conectar():
             if iq.check_connect():
                 iq.change_balance("PRACTICE")
 
-                iq.get_all_ACTIVES_OPCODE()
+                iq.update_ACTIVES_OPCODE()
                 time.sleep(2)
 
                 log("BOT CONECTADO DEMO")
@@ -71,7 +72,10 @@ def asegurar_conexion(iq):
         if not iq.check_connect():
             log("Reconectando...")
             return conectar()
+
+        iq.update_ACTIVES_OPCODE()
         return iq
+
     except:
         return conectar()
 
@@ -90,12 +94,23 @@ PARES = [
 
 
 # =========================
+# ESPERA NUEVA VELA
+# =========================
+def esperar_nueva_vela():
+    while True:
+        now = datetime.now()
+        if now.second == 0:
+            break
+        time.sleep(0.2)
+
+
+# =========================
 # ESPERA SEGUNDO 58
 # =========================
 def esperar_entrada():
     while True:
-        segundos = int(time.time() % 60)
-        if segundos >= 58:
+        now = datetime.now()
+        if now.second >= 58:
             break
         time.sleep(0.01)
 
@@ -122,6 +137,17 @@ def obtener_velas(iq, par):
 
 
 # =========================
+# VALIDAR ACTIVO
+# =========================
+def activo_disponible(iq, par):
+    try:
+        activos = iq.get_all_ACTIVES_OPCODE()
+        return par in activos
+    except:
+        return False
+
+
+# =========================
 # OPERAR REAL
 # =========================
 def operar(iq, par, direccion):
@@ -130,28 +156,36 @@ def operar(iq, par, direccion):
     if time.time() - ultima_entrada < 30:
         return False
 
-    log(f"Esperando entrada {par}")
+    if not activo_disponible(iq, par):
+        log(f"❌ Activo no disponible: {par}")
+        return False
 
+    log(f"Esperando nueva vela {par}")
+
+    esperar_nueva_vela()
     esperar_entrada()
 
     try:
         iq.subscribe_strike_list(par, 1)
-        time.sleep(0.3)
+        time.sleep(0.5)
 
         status, order_id = iq.buy_digital_spot(par, MONTO, direccion, 1)
 
-        iq.unsubscribe_strike_list(par, 1)
+        try:
+            iq.unsubscribe_strike_list(par, 1)
+        except:
+            pass
 
         if status:
-            log(f"""OPERACIÓN EJECUTADA
+            log(f"""✅ OPERACIÓN EJECUTADA
 
 {par} {direccion.upper()}
-Expiración 1M
+Expiración: 1M
 """)
             ultima_entrada = time.time()
             return True
         else:
-            log("No ejecutó la orden")
+            log("❌ No ejecutó la orden")
             return False
 
     except Exception as e:
@@ -160,7 +194,7 @@ Expiración 1M
         except:
             pass
 
-        log(f"Error operación: {e}")
+        log(f"❌ Error operación: {e}")
         return False
 
 
@@ -192,7 +226,7 @@ def run():
             if señal:
                 par, direccion, score = señal
 
-                log(f"""SEÑAL DETECTADA
+                log(f"""📊 SEÑAL DETECTADA
 
 {par} {direccion}
 Score: {score}
@@ -203,7 +237,7 @@ Score: {score}
             time.sleep(0.2)
 
         except Exception as e:
-            log(f"Error general: {e}")
+            log(f"❌ Error general: {e}")
             time.sleep(2)
 
 
