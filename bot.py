@@ -1,211 +1,186 @@
 import time
-import os
-import requests
-import sys
+from datetime import datetime
+import pandas as pd
 from iqoptionapi.stable_api import IQ_Option
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-sys.path.append(BASE_DIR)
-
-from estrategia import detectar_entrada_oculta
-
-EMAIL = os.getenv("IQ_EMAIL")
-PASSWORD = os.getenv("IQ_PASSWORD")
-TOKEN = os.getenv("TELEGRAM_TOKEN")
-CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
-
-if not all([EMAIL, PASSWORD, TOKEN, CHAT_ID]):
-    raise Exception("Faltan variables de entorno")
-
-MONTO = 3
-CUENTA = "PRACTICE"
-
-ultima_entrada = 0
-
-
 # =========================
-# LOG + TELEGRAM
+# CONFIG
 # =========================
-def log(msg):
-    print(msg)
+EMAIL = "TU_EMAIL"
+PASSWORD = "TU_PASSWORD"
+MONTO = 6
 
-    try:
-        requests.post(
-            f"https://api.telegram.org/bot{TOKEN}/sendMessage",
-            data={"chat_id": CHAT_ID, "text": msg},
-            timeout=5
-        )
-    except:
-        pass
-
+PARES = [
+    "EURUSD-OTC",
+    "USDCHF-OTC",
+    "GBPUSD-OTC",
+    "USDJPY-OTC"
+]
 
 # =========================
 # CONEXIÓN
 # =========================
-def conectar():
-    while True:
-        try:
-            iq = IQ_Option(EMAIL, PASSWORD)
-            iq.connect()
+API = IQ_Option(EMAIL, PASSWORD)
+API.connect()
 
-            if iq.check_connect():
-                iq.change_balance("PRACTICE")
-
-                iq.get_all_ACTIVES_OPCODE()
-                time.sleep(2)
-
-                log("BOT CONECTADO DEMO")
-                return iq
-
-        except Exception as e:
-            log(f"Error conexión: {e}")
-
-        time.sleep(5)
-
+API.change_balance("PRACTICE")
+print("✅ BOT CONECTADO A DEMO")
 
 # =========================
-# RECONEXIÓN
+# UTILIDADES
 # =========================
-def asegurar_conexion(iq):
-    try:
-        if not iq.check_connect():
-            log("Reconectando...")
-            return conectar()
-        return iq
-    except:
-        return conectar()
+def body(v):
+    return abs(v["close"] - v["open"])
 
+def rango(v):
+    return v["max"] - v["min"]
 
-# =========================
-# PARES ESTABLES
-# =========================
-PARES = [
-    "EURUSD-OTC",
-    "GBPUSD-OTC",
-    "USDZAR-OTC",
-    "EURJPY-OTC",
-    "GBPJPY-OTC",
-    "USDCHF-OTC"
-]
+def es_alcista(v):
+    return v["close"] > v["open"]
 
+def es_bajista(v):
+    return v["close"] < v["open"]
 
 # =========================
-# ESPERA SEGUNDO 58
+# AGOTAMIENTO
 # =========================
-def esperar_entrada():
-    while True:
-        segundos = int(time.time() % 60)
-        if segundos >= 58:
-            break
-        time.sleep(0.01)
+def agotamiento(v):
+    if rango(v) == 0:
+        return None
 
+    cuerpo = body(v)
+    rango_total = rango(v)
+
+    mecha_sup = v["max"] - max(v["open"], v["close"])
+    mecha_inf = min(v["open"], v["close"]) - v["min"]
+
+    # CALL
+    if (
+        es_bajista(v) and
+        cuerpo < rango_total * 0.4 and
+        mecha_inf > cuerpo * 2
+    ):
+        return "call"
+
+    # PUT
+    if (
+        es_alcista(v) and
+        cuerpo < rango_total * 0.4 and
+        mecha_sup > cuerpo * 2
+    ):
+        return "put"
+
+    return None
+
+# =========================
+# CAMBIO TENDENCIA
+# =========================
+def cambio_tendencia(v, tipo):
+
+    if rango(v) == 0:
+        return False
+
+    cuerpo = body(v)
+    rango_total = rango(v)
+
+    if cuerpo < rango_total * 0.6:
+        return False
+
+    if tipo == "call":
+        return es_alcista(v)
+
+    if tipo == "put":
+        return es_bajista(v)
+
+    return False
 
 # =========================
 # OBTENER VELAS
 # =========================
-def obtener_velas(iq, par):
-    try:
-        velas = iq.get_candles(par, 60, 30, time.time())
-
-        if not velas:
-            return None
-
-        return [{
-            "open": v["open"],
-            "close": v["close"],
-            "max": v["max"],
-            "min": v["min"]
-        } for v in velas]
-
-    except:
-        return None
-
+def obtener_velas(par):
+    velas = API.get_candles(par, 60, 10, time.time())
+    return pd.DataFrame(velas)
 
 # =========================
-# OPERAR REAL
+# DETECTAR SEÑAL
 # =========================
-def operar(iq, par, direccion):
-    global ultima_entrada
+def detectar_entrada():
 
-    if time.time() - ultima_entrada < 30:
-        return False
+    for par in PARES:
 
-    log(f"Esperando entrada {par}")
-
-    esperar_entrada()
-
-    try:
-        iq.subscribe_strike_list(par, 1)
-        time.sleep(0.3)
-
-        status, order_id = iq.buy_digital_spot(par, MONTO, direccion, 1)
-
-        iq.unsubscribe_strike_list(par, 1)
-
-        if status:
-            log(f"""OPERACIÓN EJECUTADA
-
-{par} {direccion.upper()}
-Expiración 1M
-""")
-            ultima_entrada = time.time()
-            return True
-        else:
-            log("No ejecutó la orden")
-            return False
-
-    except Exception as e:
         try:
-            iq.unsubscribe_strike_list(par, 1)
-        except:
-            pass
+            df = obtener_velas(par)
 
-        log(f"Error operación: {e}")
-        return False
+            v_prev = df.iloc[-2]
+            v_actual = df.iloc[-1]
 
+            tipo = agotamiento(v_prev)
 
-# =========================
-# MAIN
-# =========================
-def run():
-
-    iq = conectar()
-
-    while True:
-        try:
-            iq = asegurar_conexion(iq)
-
-            data = {}
-
-            for par in PARES:
-                velas = obtener_velas(iq, par)
-
-                if velas:
-                    data[par] = velas
-
-            if not data:
-                time.sleep(1)
+            if not tipo:
                 continue
 
-            señal = detectar_entrada_oculta(data)
+            if not cambio_tendencia(v_actual, tipo):
+                continue
 
-            if señal:
-                par, direccion, score = señal
-
-                log(f"""SEÑAL DETECTADA
-
-{par} {direccion}
-Score: {score}
-""")
-
-                operar(iq, par, direccion)
-
-            time.sleep(0.2)
+            print(f"🎯 SEÑAL DETECTADA: {par} {tipo}")
+            return par, tipo
 
         except Exception as e:
-            log(f"Error general: {e}")
-            time.sleep(2)
+            print(f"⚠️ Error en {par}: {e}")
 
+    return None
 
-if __name__ == "__main__":
-    run()
+# =========================
+# ESPERAR SEGUNDO 58
+# =========================
+def esperar_segundo_58():
+    while True:
+        now = datetime.now()
+        if now.second >= 58:
+            break
+        time.sleep(0.2)
+
+# =========================
+# EJECUTAR OPERACIÓN
+# =========================
+def ejecutar_operacion(par, direccion):
+
+    print(f"⏳ Esperando ejecución en {par}...")
+
+    esperar_segundo_58()
+
+    print(f"🚀 EJECUTANDO {direccion.upper()} en {par}")
+
+    try:
+        status, order_id = API.buy(MONTO, par, direccion, 1)
+
+        if status:
+            print(f"✅ OPERACIÓN EJECUTADA ID: {order_id}")
+        else:
+            print("❌ ERROR AL EJECUTAR")
+
+    except Exception as e:
+        print(f"❌ ERROR: {e}")
+
+# =========================
+# LOOP PRINCIPAL
+# =========================
+print("🤖 BOT INICIADO...")
+
+while True:
+    try:
+        senal = detectar_entrada()
+
+        if senal:
+            par, direccion = senal
+
+            ejecutar_operacion(par, direccion)
+
+            # evitar múltiples entradas
+            time.sleep(60)
+
+        time.sleep(1)
+
+    except Exception as e:
+        print(f"❌ ERROR GENERAL: {e}")
+        time.sleep(5)
