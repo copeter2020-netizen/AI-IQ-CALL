@@ -84,7 +84,7 @@ def detectar_entrada_oculta(data):
 
     for par, velas in data.items():
 
-        if len(velas) < 15:
+        if len(velas) < 60:
             continue
 
         df = pd.DataFrame(velas)
