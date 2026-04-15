@@ -48,7 +48,7 @@ def agotamiento(v):
         return "put"
 
     return None
-
+S
 
 # =========================
 # CAMBIO DE TENDENCIA
