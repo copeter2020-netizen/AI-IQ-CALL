@@ -101,7 +101,7 @@ def detectar_entrada_oculta(data):
             continue
 
         # score simple pero efectivo
-        score = 10
+        score = 15
 
         mejor = (par, tipo, score)
         break
