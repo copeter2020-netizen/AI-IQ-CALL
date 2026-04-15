@@ -84,7 +84,7 @@ def detectar_entrada_oculta(data):
 
     for par, velas in data.items():
 
-        if len(velas) < 15:
+        if len(velas) < 12:
             continue
 
         df = pd.DataFrame(velas)
@@ -101,7 +101,7 @@ def detectar_entrada_oculta(data):
             continue
 
         # score simple pero efectivo
-        score = 10
+        score = 12
 
         mejor = (par, tipo, score)
         break
