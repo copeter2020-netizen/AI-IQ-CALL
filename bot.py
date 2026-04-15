@@ -120,8 +120,6 @@ PARES = [
     "GBPUSD-OTC",
     "USDJPY-OTC",
     "USDCHF-OTC",
-    "AUDUSD-OTC",
-    "USDCAD-OTC",
     "EURJPY-OTC",
     "GBPJPY-OTC",
     "EURGBP-OTC",
