@@ -9,10 +9,16 @@ sys.path.append(BASE_DIR)
 
 from estrategia import detectar_entrada_oculta
 
+# =========================
+# VARIABLES
+# =========================
 EMAIL = os.getenv("IQ_EMAIL")
 PASSWORD = os.getenv("IQ_PASSWORD")
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+
+if not all([EMAIL, PASSWORD, TOKEN, CHAT_ID]):
+    raise Exception("❌ Faltan variables de entorno")
 
 MONTO = 50
 CUENTA = "PRACTICE"
@@ -23,42 +29,7 @@ update_id = None
 
 
 # =========================
-# TELEGRAM CONTROL
-# =========================
-def verificar_comandos():
-    global bot_activo, update_id
-
-    try:
-        url = f"https://api.telegram.org/bot{TOKEN}/getUpdates"
-        params = {"timeout": 1, "offset": update_id}
-
-        res = requests.get(url, params=params, timeout=2).json()
-
-        if "result" not in res:
-            return
-
-        for update in res["result"]:
-            update_id = update["update_id"] + 1
-
-            if "message" not in update:
-                continue
-
-            msg = update["message"].get("text", "")
-
-            if msg == "/startbot":
-                bot_activo = True
-                enviar_telegram("🟢 BOT ACTIVADO")
-
-            elif msg == "/stopbot":
-                bot_activo = False
-                enviar_telegram("🔴 BOT DETENIDO")
-
-    except:
-        pass
-
-
-# =========================
-# TELEGRAM MENSAJES
+# TELEGRAM
 # =========================
 def enviar_telegram(msg):
     try:
@@ -76,6 +47,38 @@ def log(msg):
     enviar_telegram(msg)
 
 
+def verificar_comandos():
+    global bot_activo, update_id
+
+    try:
+        url = f"https://api.telegram.org/bot{TOKEN}/getUpdates"
+        params = {"timeout": 1, "offset": update_id}
+
+        res = requests.get(url, params=params, timeout=3).json()
+
+        if "result" not in res:
+            return
+
+        for update in res["result"]:
+            update_id = update["update_id"] + 1
+
+            if "message" not in update:
+                continue
+
+            msg = update["message"].get("text", "")
+
+            if msg == "/startbot":
+                bot_activo = True
+                log("🟢 BOT ACTIVADO")
+
+            elif msg == "/stopbot":
+                bot_activo = False
+                log("🔴 BOT DETENIDO")
+
+    except Exception as e:
+        print(f"Error Telegram: {e}")
+
+
 # =========================
 # CONEXIÓN
 # =========================
@@ -86,7 +89,7 @@ def conectar():
             iq.connect()
 
             if iq.check_connect():
-                iq.change_balance("PRACTICE")
+                iq.change_balance(CUENTA)
                 iq.get_all_ACTIVES_OPCODE()
                 time.sleep(2)
 
@@ -99,13 +102,10 @@ def conectar():
         time.sleep(5)
 
 
-# =========================
-# RECONEXIÓN
-# =========================
 def asegurar_conexion(iq):
     try:
         if not iq.check_connect():
-            log("Reconectando...")
+            log("🔄 Reconectando...")
             return conectar()
         return iq
     except:
@@ -118,36 +118,10 @@ def asegurar_conexion(iq):
 PARES = [
     "EURUSD-OTC",
     "GBPUSD-OTC",
-    "USDCHF-OTC",
-    "AUDUSD-OTC",
-    "USDCAD-OTC",
-    "EURGBP-OTC",
-    "EURJPY-OTC",
-    "EURCHF-OTC",
-    "EURAUD-OTC",
-    "EURCAD-OTC",
-    "EURNZD-OTC",
-    "GBPJPY-OTC",
-    "GBPCHF-OTC",
-    "GBPAUD-OTC",
-    "GBPCAD-OTC",
-    "GBPNZD-OTC",
-    "AUDJPY-OTC",
-    "AUDCHF-OTC",
-    "AUDCAD-OTC",
-    "AUDNZD-OTC",
-    "CADJPY-OTC",
-    "CADCHF-OTC",
-    "CHFJPY-OTC",
-    "NZDJPY-OTC",
-    "NZDCHF-OTC",
-    "NZDCAD-OTC",
-    "USDNOK-OTC",
-    "USDSEK-OTC",
-    "USDSGD-OTC",
-    "USDTRY-OTC",
     "USDZAR-OTC",
-    "USDMXN-OTC, 
+    "EURJPY-OTC",
+    "GBPJPY-OTC",
+    "USDCHF-OTC"
 ]
 
 
@@ -156,8 +130,7 @@ PARES = [
 # =========================
 def esperar_entrada():
     while True:
-        segundos = int(time.time() % 60)
-        if segundos >= 58:
+        if int(time.time() % 60) >= 58:
             break
         time.sleep(0.01)
 
@@ -169,17 +142,18 @@ def obtener_velas(iq, par):
     try:
         velas = iq.get_candles(par, 60, 30, time.time())
 
-        if not velas:
+        if not velas or len(velas) < 10:
             return None
 
         return [{
-            "open": v["open"],
-            "close": v["close"],
-            "max": v["max"],
-            "min": v["min"]
+            "open": v.get("open"),
+            "close": v.get("close"),
+            "max": v.get("max"),
+            "min": v.get("min")
         } for v in velas]
 
-    except:
+    except Exception as e:
+        print(f"Error velas {par}: {e}")
         return None
 
 
@@ -192,23 +166,25 @@ def operar(iq, par, direccion):
     if time.time() - ultima_entrada < 30:
         return False
 
-    log(f"Esperando entrada {par}")
+    log(f"⏳ Esperando entrada {par}")
 
     esperar_entrada()
 
     try:
         iq.subscribe_strike_list(par, 1)
-        time.sleep(0.3)
+        time.sleep(0.5)
 
-        status, _ = iq.buy_digital_spot(par, MONTO, direccion, 1)
+        status, order_id = iq.buy_digital_spot(par, MONTO, direccion, 1)
 
         iq.unsubscribe_strike_list(par, 1)
 
         if status:
-            log(f"""🚀 OPERACIÓN
+            log(f"""🚀 OPERACIÓN EJECUTADA
 
-{par} {direccion.upper()}
-Expiración 1M
+📊 {par}
+📈 Dirección: {direccion.upper()}
+⏱ Expiración: 1M
+💰 Monto: {MONTO}
 """)
             ultima_entrada = time.time()
             return True
@@ -222,7 +198,7 @@ Expiración 1M
         except:
             pass
 
-        log(f"Error operación: {e}")
+        log(f"❌ Error operación: {e}")
         return False
 
 
@@ -259,10 +235,11 @@ def run():
             if señal:
                 par, direccion, score = señal
 
-                log(f"""🎯 SEÑAL
+                log(f"""🎯 SEÑAL DETECTADA
 
-{par} {direccion}
-Score: {score}
+📊 {par}
+📈 {direccion}
+⭐ Score: {score}
 """)
 
                 operar(iq, par, direccion)
@@ -270,7 +247,7 @@ Score: {score}
             time.sleep(0.2)
 
         except Exception as e:
-            log(f"Error general: {e}")
+            log(f"❌ Error general: {e}")
             time.sleep(2)
 
 
