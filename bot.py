@@ -2,6 +2,7 @@ import time
 import os
 import requests
 import sys
+import threading
 from iqoptionapi.stable_api import IQ_Option
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -14,61 +15,32 @@ PASSWORD = os.getenv("IQ_PASSWORD")
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-MONTO = 52
+if not all([EMAIL, PASSWORD, TOKEN, CHAT_ID]):
+    raise Exception("Faltan variables de entorno")
+
+MONTO = 12000
 CUENTA = "PRACTICE"
 
 ultima_entrada = 0
-bot_activo = True
-update_id = None
+ultimo_par = None
+operando = False
 
 
 # =========================
-# TELEGRAM CONTROL
-# =========================
-def verificar_comandos():
-    global bot_activo, update_id
-
-    try:
-        url = f"https://api.telegram.org/bot{TOKEN}/getUpdates"
-        params = {"timeout": 1, "offset": update_id}
-
-        res = requests.get(url, params=params, timeout=2).json()
-
-        if "result" not in res:
-            return
-
-        for update in res["result"]:
-            update_id = update["update_id"] + 1
-
-            if "message" not in update:
-                continue
-
-            msg = update["message"].get("text", "")
-
-            if msg == "/startbot":
-                bot_activo = True
-                enviar_telegram("🟢 BOT ACTIVADO")
-
-            elif msg == "/stopbot":
-                bot_activo = False
-                enviar_telegram("🔴 BOT DETENIDO")
-
-    except:
-        pass
-
-
-# =========================
-# TELEGRAM MENSAJES
+# TELEGRAM
 # =========================
 def enviar_telegram(msg):
-    try:
-        requests.post(
-            f"https://api.telegram.org/bot{TOKEN}/sendMessage",
-            data={"chat_id": CHAT_ID, "text": msg},
-            timeout=5
-        )
-    except:
-        pass
+    def enviar():
+        try:
+            requests.post(
+                f"https://api.telegram.org/bot{TOKEN}/sendMessage",
+                data={"chat_id": CHAT_ID, "text": msg},
+                timeout=5
+            )
+        except:
+            pass
+
+    threading.Thread(target=enviar, daemon=True).start()
 
 
 def log(msg):
@@ -87,25 +59,20 @@ def conectar():
 
             if iq.check_connect():
                 iq.change_balance(CUENTA)
-                iq.get_all_ACTIVES_OPCODE()
-                time.sleep(2)
 
-                log("✅ BOT CONECTADO DEMO")
+                log("✅ BOT CONECTADO")
                 return iq
 
         except Exception as e:
-            log(f"Error conexión: {e}")
+            log(f"❌ Error conexión: {e}")
 
         time.sleep(5)
 
 
-# =========================
-# RECONEXIÓN
-# =========================
 def asegurar_conexion(iq):
     try:
         if not iq.check_connect():
-            log("Reconectando...")
+            log("🔄 Reconectando...")
             return conectar()
         return iq
     except:
@@ -113,108 +80,107 @@ def asegurar_conexion(iq):
 
 
 # =========================
-# PARES (SOLO LOS QUE FUNCIONAN)
+# CONFIG
 # =========================
 PARES = [
     "EURUSD-OTC",
     "GBPUSD-OTC",
-    "USDJPY-OTC",
-    "USDCHF-OTC",
+    "USDZAR-OTC",
     "EURJPY-OTC",
     "GBPJPY-OTC",
-    "EURGBP-OTC",
-    "NZDUSD-OTC"
+    "USDCHF-OTC"
 ]
 
 
 # =========================
-# VELAS
+# FUNCIONES
 # =========================
+def activo_abierto(iq, par):
+    try:
+        return iq.get_all_open_time()["binary"][par]["open"]
+    except:
+        return False
+
+
+def esperar_entrada():
+    while int(time.time() % 60) < 59:
+        time.sleep(0.005)
+
+
 def obtener_velas(iq, par):
     try:
         velas = iq.get_candles(par, 60, 30, time.time())
-
-        if not velas:
-            return None
-
         return [{
             "open": v["open"],
             "close": v["close"],
             "max": v["max"],
             "min": v["min"]
         } for v in velas]
-
     except:
         return None
 
 
 # =========================
-# OPERAR (EJECUCIÓN INMEDIATA)
+# OPERAR (SIN DIGITAL)
 # =========================
 def operar(iq, par, direccion):
-    global ultima_entrada
+    global ultima_entrada, operando
 
-    # Evitar sobreoperar
-    if time.time() - ultima_entrada < 5:
+    if operando:
         return False
+
+    if time.time() - ultima_entrada < 30:
+        return False
+
+    if not activo_abierto(iq, par):
+        return False
+
+    operando = True
+
+    esperar_entrada()
 
     try:
-        iq.subscribe_strike_list(par, 1)
-        time.sleep(0.2)
-
-        status, _ = iq.buy_digital_spot(par, MONTO, direccion, 1)
-
-        iq.unsubscribe_strike_list(par, 1)
+        status, order_id = iq.buy(MONTO, par, direccion, 1)
 
         if status:
-            log(f"""🚀 OPERACIÓN EJECUTADA
+            log(f"""✅ OPERACIÓN EJECUTADA
 
-{par} {direccion.upper()}
-Expiración 1M
+Par: {par}
+Dirección: {direccion.upper()}
+Monto: ${MONTO}
+ID: {order_id}
 """)
             ultima_entrada = time.time()
-            return True
         else:
-            log("❌ No ejecutó la orden")
-            return False
+            log("❌ No ejecutó la operación")
 
     except Exception as e:
-        try:
-            iq.unsubscribe_strike_list(par, 1)
-        except:
-            pass
+        log(f"❌ Error operación: {e}")
 
-        log(f"Error operación: {e}")
-        return False
+    operando = False
+    return True
 
 
 # =========================
 # MAIN
 # =========================
 def run():
+    global ultimo_par
 
     iq = conectar()
 
     while True:
         try:
-            verificar_comandos()
-
-            if not bot_activo:
-                time.sleep(1)
-                continue
-
             iq = asegurar_conexion(iq)
 
             data = {}
 
             for par in PARES:
                 velas = obtener_velas(iq, par)
-
                 if velas:
                     data[par] = velas
 
             if not data:
-                time.sleep(1)
                 continue
 
             señal = detectar_entrada_oculta(data)
@@ -222,18 +188,33 @@ def run():
             if señal:
                 par, direccion, score = señal
 
-                log(f"""🎯 SEÑAL DETECTADA
+                if par == ultimo_par:
+                    continue
 
-{par} {direccion}
+                log(f"""📊 SEÑAL DETECTADA
+
+Par: {par}
+Dirección: {direccion.upper()}
 Score: {score}
 """)
 
-                operar(iq, par, direccion)
+                velas_final = obtener_velas(iq, par)
 
-            time.sleep(0.2)
+                if not velas_final:
+                    continue
+
+                confirmacion = detectar_entrada_oculta({par: velas_final})
+
+                if confirmacion:
+                    operar(iq, par, direccion)
+                    ultimo_par = par
+                else:
+                    log("⚠️ Señal cancelada")
+
+            time.sleep(0.3)
 
         except Exception as e:
-            log(f"Error general: {e}")
+            log(f"❌ Error general: {e}")
             time.sleep(2)
 
 
