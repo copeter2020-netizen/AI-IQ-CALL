@@ -118,10 +118,29 @@ def asegurar_conexion(iq):
 PARES = [
     "EURUSD-OTC",
     "GBPUSD-OTC",
-    "USDZAR-OTC",
+    "USDCHF-OTC",
+    "AUDUSD-OTC",
+    "USDCAD-OTC",
+    "EURGBP-OTC",
     "EURJPY-OTC",
+    "EURCHF-OTC",
+    "EURAUD-OTC",
+    "EURCAD-OTC",
     "GBPJPY-OTC",
-    "USDCHF-OTC"
+    "GBPCHF-OTC",
+    "GBPAUD-OTC",
+    "GBPCAD-OTC",
+    "AUDJPY-OTC",
+    "AUDCHF-OTC",
+    "AUDCAD-OTC",
+    "CADJPY-OTC",
+    "CADCHF-OTC",
+    "CHFJPY-OTC",
+    "NZDJPY-OTC",
+    "NZDCHF-OTC",
+    "NZDCAD-OTC",
+    "USDZAR-OTC",
+    "USDMXN-OTC"
 ]
 
 
