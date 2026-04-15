@@ -123,24 +123,7 @@ PARES = [
     "USDCAD-OTC",
     "EURGBP-OTC",
     "EURJPY-OTC",
-    "EURCHF-OTC",
-    "EURAUD-OTC",
-    "EURCAD-OTC",
-    "GBPJPY-OTC",
-    "GBPCHF-OTC",
-    "GBPAUD-OTC",
-    "GBPCAD-OTC",
-    "AUDJPY-OTC",
-    "AUDCHF-OTC",
-    "AUDCAD-OTC",
-    "CADJPY-OTC",
-    "CADCHF-OTC",
-    "CHFJPY-OTC",
-    "NZDJPY-OTC",
-    "NZDCHF-OTC",
-    "NZDCAD-OTC",
-    "USDZAR-OTC",
-    "USDMXN-OTC"
+    "EURCHF-OTC"
 ]
 
 
