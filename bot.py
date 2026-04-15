@@ -18,7 +18,7 @@ CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 if not all([EMAIL, PASSWORD, TOKEN, CHAT_ID]):
     raise Exception("Faltan variables de entorno")
 
-MONTO = 1200
+MONTO = 12000
 CUENTA = "PRACTICE"
 
 ultima_entrada = 0
@@ -103,7 +103,7 @@ def activo_abierto(iq, par):
 
 
 def esperar_entrada():
-    while int(time.time() % 60) < 58:
+    while int(time.time() % 60) < 59:
         time.sleep(0.005)
 
 
