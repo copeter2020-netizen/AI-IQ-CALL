@@ -2,7 +2,6 @@ import time
 import os
 import requests
 import sys
-import threading
 from iqoptionapi.stable_api import IQ_Option
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -10,42 +9,74 @@ sys.path.append(BASE_DIR)
 
 from estrategia import detectar_entrada_oculta
 
+# =========================
+# VARIABLES
+# =========================
 EMAIL = os.getenv("IQ_EMAIL")
 PASSWORD = os.getenv("IQ_PASSWORD")
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 if not all([EMAIL, PASSWORD, TOKEN, CHAT_ID]):
-    raise Exception("Faltan variables de entorno")
+    raise Exception("❌ Faltan variables de entorno")
 
-MONTO = 12000
+MONTO = 500
 CUENTA = "PRACTICE"
 
 ultima_entrada = 0
-ultimo_par = None
-operando = False
+bot_activo = True
+update_id = None
 
 
 # =========================
 # TELEGRAM
 # =========================
 def enviar_telegram(msg):
-    def enviar():
-        try:
-            requests.post(
-                f"https://api.telegram.org/bot{TOKEN}/sendMessage",
-                data={"chat_id": CHAT_ID, "text": msg},
-                timeout=5
-            )
-        except:
-            pass
-
-    threading.Thread(target=enviar, daemon=True).start()
+    try:
+        requests.post(
+            f"https://api.telegram.org/bot{TOKEN}/sendMessage",
+            data={"chat_id": CHAT_ID, "text": msg},
+            timeout=5
+        )
+    except:
+        pass
 
 
 def log(msg):
     print(msg)
     enviar_telegram(msg)
+
+
+def verificar_comandos():
+    global bot_activo, update_id
+
+    try:
+        url = f"https://api.telegram.org/bot{TOKEN}/getUpdates"
+        params = {"timeout": 1, "offset": update_id}
+
+        res = requests.get(url, params=params, timeout=3).json()
+
+        if "result" not in res:
+            return
+
+        for update in res["result"]:
+            update_id = update["update_id"] + 1
+
+            if "message" not in update:
+                continue
+
+            msg = update["message"].get("text", "")
+
+            if msg == "/startbot":
+                bot_activo = True
+                log("🟢 BOT ACTIVADO")
+
+            elif msg == "/stopbot":
+                bot_activo = False
+                log("🔴 BOT DETENIDO")
+
+    except Exception as e:
+        print(f"Error Telegram: {e}")
 
 
 # =========================
@@ -59,12 +90,14 @@ def conectar():
 
             if iq.check_connect():
                 iq.change_balance(CUENTA)
+                iq.get_all_ACTIVES_OPCODE()
+                time.sleep(2)
 
-                log("✅ BOT CONECTADO")
+                log("✅ BOT CONECTADO DEMO")
                 return iq
 
         except Exception as e:
-            log(f"❌ Error conexión: {e}")
+            log(f"Error conexión: {e}")
 
         time.sleep(5)
 
@@ -80,7 +113,7 @@ def asegurar_conexion(iq):
 
 
 # =========================
-# CONFIG
+# PARES
 # =========================
 PARES = [
     "EURUSD-OTC",
@@ -93,84 +126,97 @@ PARES = [
 
 
 # =========================
-# FUNCIONES
+# TIMING
 # =========================
-def activo_abierto(iq, par):
-    try:
-        return iq.get_all_open_time()["binary"][par]["open"]
-    except:
-        return False
-
-
 def esperar_entrada():
-    while int(time.time() % 60) < 59:
-        time.sleep(0.005)
+    while True:
+        if int(time.time() % 60) >= 58:
+            break
+        time.sleep(0.01)
 
 
+# =========================
+# VELAS
+# =========================
 def obtener_velas(iq, par):
     try:
         velas = iq.get_candles(par, 60, 30, time.time())
+
+        if not velas or len(velas) < 10:
+            return None
+
         return [{
-            "open": v["open"],
-            "close": v["close"],
-            "max": v["max"],
-            "min": v["min"]
+            "open": v.get("open"),
+            "close": v.get("close"),
+            "max": v.get("max"),
+            "min": v.get("min")
         } for v in velas]
-    except:
+
+    except Exception as e:
+        print(f"Error velas {par}: {e}")
         return None
 
 
 # =========================
-# OPERAR (SIN DIGITAL)
+# OPERAR
 # =========================
 def operar(iq, par, direccion):
-    global ultima_entrada, operando
-
-    if operando:
-        return False
+    global ultima_entrada
 
     if time.time() - ultima_entrada < 30:
         return False
 
-    if not activo_abierto(iq, par):
-        return False
-
-    operando = True
+    log(f"⏳ Esperando entrada {par}")
 
     esperar_entrada()
 
     try:
-        status, order_id = iq.buy(MONTO, par, direccion, 1)
+        iq.subscribe_strike_list(par, 1)
+        time.sleep(0.5)
+
+        status, order_id = iq.buy_digital_spot(par, MONTO, direccion, 1)
+
+        iq.unsubscribe_strike_list(par, 1)
 
         if status:
-            log(f"""✅ OPERACIÓN EJECUTADA
+            log(f"""🚀 OPERACIÓN EJECUTADA
 
-Par: {par}
-Dirección: {direccion.upper()}
-Monto: ${MONTO}
-ID: {order_id}
+📊 {par}
+📈 Dirección: {direccion.upper()}
+⏱ Expiración: 1M
+💰 Monto: {MONTO}
 """)
             ultima_entrada = time.time()
+            return True
         else:
-            log("❌ No ejecutó la operación")
+            log("❌ No ejecutó la orden")
+            return False
 
     except Exception as e:
-        log(f"❌ Error operación: {e}")
+        try:
+            iq.unsubscribe_strike_list(par, 1)
+        except:
+            pass
 
-    operando = False
-    return True
+        log(f"❌ Error operación: {e}")
+        return False
 
 
 # =========================
 # MAIN
 # =========================
 def run():
-    global ultimo_par
 
     iq = conectar()
 
     while True:
         try:
+            verificar_comandos()
+
+            if not bot_activo:
+                time.sleep(1)
+                continue
+
             iq = asegurar_conexion(iq)
 
             data = {}
@@ -181,6 +227,7 @@ def run():
                     data[par] = velas
 
             if not data:
+                time.sleep(1)
                 continue
 
             señal = detectar_entrada_oculta(data)
@@ -188,30 +235,16 @@ def run():
             if señal:
                 par, direccion, score = señal
 
-                if par == ultimo_par:
-                    continue
+                log(f"""🎯 SEÑAL DETECTADA
 
-                log(f"""📊 SEÑAL DETECTADA
-
-Par: {par}
-Dirección: {direccion.upper()}
-Score: {score}
+📊 {par}
+📈 {direccion}
+⭐ Score: {score}
 """)
 
-                velas_final = obtener_velas(iq, par)
+                operar(iq, par, direccion)
 
-                if not velas_final:
-                    continue
-
-                confirmacion = detectar_entrada_oculta({par: velas_final})
-
-                if confirmacion:
-                    operar(iq, par, direccion)
-                    ultimo_par = par
-                else:
-                    log("⚠️ Señal cancelada")
-
-            time.sleep(0.3)
+            time.sleep(0.2)
 
         except Exception as e:
             log(f"❌ Error general: {e}")
