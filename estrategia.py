@@ -1,109 +1,114 @@
-import numpy as np
-import pandas as pd
-
-
-# =========================
-# UTILIDADES
-# =========================
-def body(v):
-    return abs(v["close"] - v["open"])
-
-def rango(v):
-    return v["max"] - v["min"]
-
-def es_alcista(v):
-    return v["close"] > v["open"]
-
-def es_bajista(v):
-    return v["close"] < v["open"]
-
-
-# =========================
-# AGOTAMIENTO
-# =========================
-def agotamiento(v):
-    if rango(v) == 0:
-        return None
-
-    cuerpo = body(v)
-    rango_total = rango(v)
-
-    mecha_sup = v["max"] - max(v["open"], v["close"])
-    mecha_inf = min(v["open"], v["close"]) - v["min"]
-
-    # agotamiento bajista → posible subida
-    if (
-        es_bajista(v) and
-        cuerpo < rango_total * 0.4 and
-        mecha_inf > cuerpo * 2
-    ):
-        return "call"
-
-    # agotamiento alcista → posible bajada
-    if (
-        es_alcista(v) and
-        cuerpo < rango_total * 0.4 and
-        mecha_sup > cuerpo * 2
-    ):
-        return "put"
-
-    return None
-S
-
-# =========================
-# CAMBIO DE TENDENCIA
-# =========================
-def cambio_tendencia(v, tipo):
-
-    if rango(v) == 0:
-        return False
-
-    cuerpo = body(v)
-    rango_total = rango(v)
-
-    # fuerza mínima real
-    if cuerpo < rango_total * 0.6:
-        return False
-
-    if tipo == "call":
-        return es_alcista(v)
-
-    if tipo == "put":
-        return es_bajista(v)
-
-    return False
-
-
-# =========================
-# DETECCIÓN PRINCIPAL
-# =========================
 def detectar_entrada_oculta(data):
 
-    mejor = None
+    mejor_par = None
+    mejor_direccion = None
     mejor_score = 0
 
     for par, velas in data.items():
 
-        if len(velas) < 12:
+        # =========================
+        # VALIDACIÓN
+        # =========================
+        if not velas or len(velas) < 20:
             continue
 
-        df = pd.DataFrame(velas)
+        try:
+            cierres = [v["close"] for v in velas]
 
-        v_prev = df.iloc[-2]   # vela de agotamiento
-        v_actual = df.iloc[-1] # vela de cambio
+            # =========================
+            # TENDENCIA (SMA)
+            # =========================
+            sma_rapida = sum(cierres[-5:]) / 5
+            sma_lenta = sum(cierres[-15:]) / 15
 
-        tipo = agotamiento(v_prev)
+            if sma_rapida > sma_lenta:
+                tendencia = "call"
+            elif sma_rapida < sma_lenta:
+                tendencia = "put"
+            else:
+                continue
 
-        if not tipo:
+            # =========================
+            # VELA ACTUAL
+            # =========================
+            vela = velas[-1]
+
+            open_ = vela["open"]
+            close_ = vela["close"]
+            high_ = vela["max"]
+            low_ = vela["min"]
+
+            cuerpo = abs(close_ - open_)
+            rango = high_ - low_
+
+            if rango <= 0:
+                continue
+
+            fuerza = cuerpo / rango
+
+            # ✔ Solo velas fuertes
+            if fuerza < 0.6:
+                continue
+
+            # =========================
+            # FILTRO DE AGOTAMIENTO
+            # =========================
+            ultimos = cierres[-5:]
+
+            if tendencia == "call":
+                # evita comprar en techo
+                if close_ >= max(ultimos):
+                    continue
+            else:
+                # evita vender en suelo
+                if close_ <= min(ultimos):
+                    continue
+
+            # =========================
+            # CONFIRMACIÓN DE PATRÓN
+            # =========================
+            confirmaciones = 0
+
+            for i in range(-6, -1):
+                v = velas[i]
+
+                o = v["open"]
+                c = v["close"]
+                h = v["max"]
+                l = v["min"]
+
+                rango_i = h - l
+                if rango_i <= 0:
+                    continue
+
+                cuerpo_i = abs(c - o)
+                fuerza_i = cuerpo_i / rango_i
+
+                if fuerza_i > 0.5:
+                    if tendencia == "call" and c > o:
+                        confirmaciones += 1
+                    elif tendencia == "put" and c < o:
+                        confirmaciones += 1
+
+            # ✔ mínimo repetición
+            if confirmaciones < 2:
+                continue
+
+            # =========================
+            # SCORE FINAL
+            # =========================
+            score = (fuerza * 10) + confirmaciones
+
+            if score > mejor_score:
+                mejor_score = score
+                mejor_par = par
+                mejor_direccion = tendencia
+
+        except Exception:
+            # evita que un par rompa todo el bot
             continue
 
-        if not cambio_tendencia(v_actual, tipo):
-            continue
+    if mejor_par:
+        return mejor_par, mejor_direccion, round(mejor_score, 2)
 
-        # score simple pero efectivo
-        score = 12
-
-        mejor = (par, tipo, score)
-        break
-
-    return mejor
+    return None
