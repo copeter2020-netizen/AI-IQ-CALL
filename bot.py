@@ -107,11 +107,7 @@ def operar(iq, par, direccion):
 PARES = [
     "EURUSD-OTC",
     "GBPUSD-OTC",
-    "USDJPY-OTC",
     "USDCHF-OTC",
-    "AUDUSD-OTC",
-    "USDCAD-OTC",
-    "NZDUSD-OTC",
     "EURJPY-OTC",
     "GBPJPY-OTC",
     "EURGBP-OTC"
