@@ -1,7 +1,12 @@
 import time
 import os
 import requests
+import sys
+import threading
 from iqoptionapi.stable_api import IQ_Option
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.append(BASE_DIR)
 
 from estrategia import detectar_entrada_oculta
 
@@ -10,23 +15,32 @@ PASSWORD = os.getenv("IQ_PASSWORD")
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-MONTO = 200
+if not all([EMAIL, PASSWORD, TOKEN, CHAT_ID]):
+    raise Exception("Faltan variables de entorno")
+
+MONTO = 12000
+CUENTA = "PRACTICE"
 
 ultima_entrada = 0
+ultimo_par = None
+operando = False
 
 
 # =========================
-# TELEGRAM (SIN ERRORES)
+# TELEGRAM
 # =========================
 def enviar_telegram(msg):
-    try:
-        requests.post(
-            f"https://api.telegram.org/bot{TOKEN}/sendMessage",
-            data={"chat_id": CHAT_ID, "text": msg},
-            timeout=10
-        )
-    except:
-        pass  # 🔥 elimina spam error
+    def enviar():
+        try:
+            requests.post(
+                f"https://api.telegram.org/bot{TOKEN}/sendMessage",
+                data={"chat_id": CHAT_ID, "text": msg},
+                timeout=5
+            )
+        except:
+            pass
+
+    threading.Thread(target=enviar, daemon=True).start()
 
 
 def log(msg):
@@ -44,84 +58,118 @@ def conectar():
             iq.connect()
 
             if iq.check_connect():
-                iq.change_balance("PRACTICE")
+                iq.change_balance(CUENTA)
 
-                print("✅ BOT CONECTADO")
+                log("✅ BOT CONECTADO")
                 return iq
 
         except Exception as e:
-            print("Error conexión:", e)
+            log(f"❌ Error conexión: {e}")
 
         time.sleep(5)
 
 
+def asegurar_conexion(iq):
+    try:
+        if not iq.check_connect():
+            log("🔄 Reconectando...")
+            return conectar()
+        return iq
+    except:
+        return conectar()
+
+
 # =========================
-# VELAS
+# CONFIG
 # =========================
+PARES = [
+    "EURUSD-OTC",
+    "GBPUSD-OTC",
+    "USDZAR-OTC",
+    "EURJPY-OTC",
+    "GBPJPY-OTC",
+    "USDCHF-OTC"
+]
+
+
+# =========================
+# FUNCIONES
+# =========================
+def activo_abierto(iq, par):
+    try:
+        return iq.get_all_open_time()["binary"][par]["open"]
+    except:
+        return False
+
+
 def obtener_velas(iq, par):
     try:
         velas = iq.get_candles(par, 60, 30, time.time())
-
-        if not velas:
-            return None
-
         return [{
             "open": v["open"],
             "close": v["close"],
             "max": v["max"],
             "min": v["min"]
         } for v in velas]
-
     except:
         return None
 
 
 # =========================
-# OPERAR (INMEDIATO)
+# 🔥 OPERAR (CORREGIDO)
 # =========================
 def operar(iq, par, direccion):
-    global ultima_entrada
+    global ultima_entrada, operando
 
-    if time.time() - ultima_entrada < 20:
-        return
+    # evitar múltiples entradas simultáneas
+    if operando:
+        return False
+
+    # evitar sobreoperar pero sin retrasar demasiado
+    if time.time() - ultima_entrada < 10:
+        return False
+
+    # validar activo abierto
+    if not activo_abierto(iq, par):
+        return False
+
+    operando = True
 
     try:
-        status, _ = iq.buy_digital_spot(par, MONTO, direccion, 1)
+        # 🔥 ENTRADA INMEDIATA (CLAVE)
+        status, order_id = iq.buy(MONTO, par, direccion, 1)
 
         if status:
-            log(f"""
-🚀 OPERACIÓN EJECUTADA
-{par} {direccion.upper()}
+            log(f"""🚀 OPERACIÓN EJECUTADA
+
+Par: {par}
+Dirección: {direccion.upper()}
+Monto: ${MONTO}
+ID: {order_id}
 """)
             ultima_entrada = time.time()
         else:
-            print("❌ No ejecutó")
+            log("❌ No ejecutó la operación")
 
     except Exception as e:
-        print("Error operación:", e)
+        log(f"❌ Error operación: {e}")
 
-
-# =========================
-# PARES OTC REALES (SIN ERROR)
-# =========================
-PARES = [
-    "EURUSD-OTC",
-    "GBPUSD-OTC",
-    "USDCHF-OTC",
-    "EURJPY-OTC",
-    "GBPJPY-OTC",
-    "EURGBP-OTC"
-]
+    operando = False
+    return True
 
 
 # =========================
 # MAIN
 # =========================
 def run():
+    global ultimo_par
+
     iq = conectar()
 
     while True:
         try:
+            iq = asegurar_conexion(iq)
+
             data = {}
 
             for par in PARES:
@@ -130,7 +178,6 @@ def run():
                     data[par] = velas
 
             if not data:
-                time.sleep(1)
                 continue
 
             señal = detectar_entrada_oculta(data)
@@ -138,18 +185,25 @@ def run():
             if señal:
                 par, direccion, score = señal
 
-                log(f"""
-🎯 SEÑAL DETECTADA
-{par} {direccion}
+                # evitar repetir el mismo par seguido
+                if par == ultimo_par:
+                    continue
+
+                log(f"""📊 SEÑAL DETECTADA
+
+Par: {par}
+Dirección: {direccion.upper()}
 Score: {score}
 """)
 
+                # 🔥 EJECUTA DIRECTO (SIN DOBLE CONFIRMACIÓN)
                 operar(iq, par, direccion)
+                ultimo_par = par
 
-            time.sleep(0.5)
+            time.sleep(0.3)
 
         except Exception as e:
-            print("Error general:", e)
+            log(f"❌ Error general: {e}")
             time.sleep(2)
 
 
