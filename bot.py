@@ -15,10 +15,10 @@ PASSWORD = os.getenv("IQ_PASSWORD")
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-if not all([EMAIL, PASSWORD]):
-    raise Exception("Faltan credenciales IQ Option")
+if not all([EMAIL, PASSWORD, TOKEN, CHAT_ID]):
+    raise Exception("Faltan variables de entorno")
 
-MONTO = 300
+MONTO = 1200
 CUENTA = "PRACTICE"
 
 ultima_entrada = 0
@@ -27,12 +27,9 @@ operando = False
 
 
 # =========================
-# TELEGRAM
+# TELEGRAM (NO BLOQUEANTE)
 # =========================
 def enviar_telegram(msg):
-    if not TOKEN or not CHAT_ID:
-        return
-
     def enviar():
         try:
             requests.post(
@@ -52,7 +49,7 @@ def log(msg):
 
 
 # =========================
-# CONEXIÓN
+# CONEXIÓN ROBUSTA
 # =========================
 def conectar():
     while True:
@@ -62,6 +59,7 @@ def conectar():
 
             if iq.check_connect():
                 iq.change_balance(CUENTA)
+
                 log("✅ BOT CONECTADO")
                 return iq
 
@@ -82,43 +80,60 @@ def asegurar_conexion(iq):
 
 
 # =========================
-# CONFIG
+# PARES SEGUROS (SIN ERRORES)
 # =========================
 PARES = [
     "EURUSD-OTC",
     "GBPUSD-OTC",
-    "USDZAR-OTC",
+    "USDJPY-OTC",
+    "USDCHF-OTC",
     "EURJPY-OTC",
-    "GBPJPY-OTC",
-    "USDCHF-OTC"
+    "GBPJPY-OTC"
 ]
 
 
 # =========================
-# FUNCIONES
+# VALIDAR ACTIVO ABIERTO
 # =========================
 def activo_abierto(iq, par):
     try:
-        return iq.get_all_open_time()["binary"][par]["open"]
+        data = iq.get_all_open_time()
+        return data["binary"][par]["open"]
     except:
         return False
 
 
+# =========================
+# TIMING PRECISO
+# =========================
+def esperar_entrada():
+    while int(time.time() % 60) < 59:
+        time.sleep(0.01)
+
+
+# =========================
+# VELAS
+# =========================
 def obtener_velas(iq, par):
     try:
         velas = iq.get_candles(par, 60, 30, time.time())
+
+        if not velas:
+            return None
+
         return [{
             "open": v["open"],
             "close": v["close"],
             "max": v["max"],
             "min": v["min"]
         } for v in velas]
+
     except:
         return None
 
 
 # =========================
-# OPERAR
+# OPERAR (ESTABLE)
 # =========================
 def operar(iq, par, direccion):
     global ultima_entrada, operando
@@ -126,7 +141,7 @@ def operar(iq, par, direccion):
     if operando:
         return False
 
-    if time.time() - ultima_entrada < 10:
+    if time.time() - ultima_entrada < 30:
         return False
 
     if not activo_abierto(iq, par):
@@ -134,18 +149,22 @@ def operar(iq, par, direccion):
 
     operando = True
 
+    esperar_entrada()
+
     try:
         status, order_id = iq.buy(MONTO, par, direccion, 1)
 
         if status:
             log(f"""🚀 OPERACIÓN
 
-{par} {direccion.upper()}
+Par: {par}
+Dirección: {direccion.upper()}
+Monto: ${MONTO}
 ID: {order_id}
 """)
             ultima_entrada = time.time()
         else:
-            print("No ejecutó")
+            print("❌ No ejecutó la orden")
 
     except Exception as e:
         print(f"Error operación: {e}")
@@ -155,7 +174,7 @@ ID: {order_id}
 
 
 # =========================
-# LOOP PRINCIPAL
+# LOOP PRINCIPAL (ANTI-CRASH)
 # =========================
 def run():
     global ultimo_par
@@ -182,32 +201,42 @@ def run():
             if señal:
                 par, direccion, score = señal
 
+                # evitar repetir mismo par
                 if par == ultimo_par:
                     continue
 
                 log(f"""📊 SEÑAL
 
-{par} {direccion}
+Par: {par}
+Dirección: {direccion.upper()}
 Score: {score}
 """)
 
-                operar(iq, par, direccion)
-                ultimo_par = par
+                # confirmación inmediata
+                velas_final = obtener_velas(iq, par)
 
-            time.sleep(0.2)
+                if not velas_final:
+                    continue
+
+                confirmacion = detectar_entrada_oculta({par: velas_final})
+
+                if confirmacion:
+                    operar(iq, par, direccion)
+                    ultimo_par = par
+                else:
+                    print("Señal cancelada")
+
+            time.sleep(0.3)
 
         except Exception as e:
-            print(f"Error loop: {e}")
+            print(f"Error general: {e}")
             time.sleep(2)
 
 
-# =========================
-# 🔥 ANTI-CRASH LOOP (CLAVE)
-# =========================
 if __name__ == "__main__":
     while True:
         try:
             run()
         except Exception as e:
-            print(f"🔥 BOT CRASH: {e}")
+            print(f"Reiniciando bot por error crítico: {e}")
             time.sleep(5)
