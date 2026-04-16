@@ -14,7 +14,7 @@ PASSWORD = os.getenv("IQ_PASSWORD")
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-MONTO = 50
+MONTO = 55
 CUENTA = "PRACTICE"
 
 ultima_entrada = 0
@@ -23,20 +23,19 @@ update_id = None
 
 
 # =========================
-# TELEGRAM (ANTI-ERROR)
+# TELEGRAM
 # =========================
 def enviar_telegram(msg):
     if not TOKEN or not CHAT_ID:
         return
-
     try:
         requests.post(
             f"https://api.telegram.org/bot{TOKEN}/sendMessage",
             data={"chat_id": CHAT_ID, "text": msg},
-            timeout=10  # 🔥 aumentamos timeout
+            timeout=10
         )
     except:
-        pass  # 🔥 NO mostrar error
+        pass
 
 
 def verificar_comandos():
@@ -71,7 +70,7 @@ def verificar_comandos():
                 enviar_telegram("🔴 BOT DETENIDO")
 
     except:
-        pass  # 🔥 silenciar errores
+        pass
 
 
 def log(msg):
@@ -93,22 +92,18 @@ def conectar():
                 iq.get_all_ACTIVES_OPCODE()
                 time.sleep(2)
 
-                log("✅ BOT CONECTADO DEMO")
+                log("✅ BOT CONECTADO")
                 return iq
 
         except Exception as e:
-            print(f"Error conexión: {e}")  # 🔥 solo consola
+            print(f"Error conexión: {e}")
 
         time.sleep(5)
 
 
-# =========================
-# RECONEXIÓN
-# =========================
 def asegurar_conexion(iq):
     try:
         if not iq.check_connect():
-            print("Reconectando...")
             return conectar()
         return iq
     except:
@@ -116,13 +111,15 @@ def asegurar_conexion(iq):
 
 
 # =========================
-# PARES ESTABLES
+# PARES
 # =========================
 PARES = [
     "EURUSD-OTC",
     "GBPUSD-OTC",
     "USDJPY-OTC",
     "USDCHF-OTC",
+    "AUDUSD-OTC",
+    "USDCAD-OTC",
     "EURJPY-OTC",
     "GBPJPY-OTC"
 ]
@@ -170,20 +167,13 @@ def operar(iq, par, direccion):
             log(f"""🚀 OPERACIÓN
 
 {par} {direccion.upper()}
-Expiración 1M
 """)
             ultima_entrada = time.time()
             return True
-        else:
-            print("❌ No ejecutó la orden")
-            return False
+
+        return False
 
     except Exception as e:
-        try:
-            iq.unsubscribe_strike_list(par, 1)
-        except:
-            pass
-
         print(f"Error operación: {e}")
         return False
 
@@ -212,10 +202,6 @@ def run():
                 if velas:
                     data[par] = velas
 
-            if not data:
-                time.sleep(1)
-                continue
-
             señal = detectar_entrada_oculta(data)
 
             if señal:
@@ -232,7 +218,7 @@ Score: {score}
             time.sleep(0.2)
 
         except Exception as e:
-            print(f"Error general: {e}")  # 🔥 sin spam telegram
+            print(f"Error general: {e}")
             time.sleep(2)
 
 
