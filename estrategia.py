@@ -6,109 +6,98 @@ def detectar_entrada_oculta(data):
 
     for par, velas in data.items():
 
-        # =========================
-        # VALIDACIÓN
-        # =========================
-        if not velas or len(velas) < 20:
+        if len(velas) < 20:
             continue
 
-        try:
-            cierres = [v["close"] for v in velas]
+        cierre = [v["close"] for v in velas]
 
-            # =========================
-            # TENDENCIA (SMA)
-            # =========================
-            sma_rapida = sum(cierres[-5:]) / 5
-            sma_lenta = sum(cierres[-15:]) / 15
+        # =========================
+        # TENDENCIA
+        # =========================
+        ema_rapida = sum(cierre[-5:]) / 5
+        ema_lenta = sum(cierre[-15:]) / 15
 
-            if sma_rapida > sma_lenta:
-                tendencia = "call"
-            elif sma_rapida < sma_lenta:
-                tendencia = "put"
-            else:
-                continue
+        tendencia_alcista = ema_rapida > ema_lenta
+        tendencia_bajista = ema_rapida < ema_lenta
 
-            # =========================
-            # VELA ACTUAL
-            # =========================
-            vela = velas[-1]
+        # =========================
+        # VELA ACTUAL
+        # =========================
+        ultima = velas[-1]
+        anterior = velas[-2]
 
-            open_ = vela["open"]
-            close_ = vela["close"]
-            high_ = vela["max"]
-            low_ = vela["min"]
+        cuerpo = abs(ultima["close"] - ultima["open"])
+        rango = ultima["max"] - ultima["min"]
 
-            cuerpo = abs(close_ - open_)
-            rango = high_ - low_
-
-            if rango <= 0:
-                continue
-
-            fuerza = cuerpo / rango
-
-            # ✔ Solo velas fuertes
-            if fuerza < 0.6:
-                continue
-
-            # =========================
-            # FILTRO DE AGOTAMIENTO
-            # =========================
-            ultimos = cierres[-5:]
-
-            if tendencia == "call":
-                # evita comprar en techo
-                if close_ >= max(ultimos):
-                    continue
-            else:
-                # evita vender en suelo
-                if close_ <= min(ultimos):
-                    continue
-
-            # =========================
-            # CONFIRMACIÓN DE PATRÓN
-            # =========================
-            confirmaciones = 0
-
-            for i in range(-6, -1):
-                v = velas[i]
-
-                o = v["open"]
-                c = v["close"]
-                h = v["max"]
-                l = v["min"]
-
-                rango_i = h - l
-                if rango_i <= 0:
-                    continue
-
-                cuerpo_i = abs(c - o)
-                fuerza_i = cuerpo_i / rango_i
-
-                if fuerza_i > 0.5:
-                    if tendencia == "call" and c > o:
-                        confirmaciones += 1
-                    elif tendencia == "put" and c < o:
-                        confirmaciones += 1
-
-            # ✔ mínimo repetición
-            if confirmaciones < 2:
-                continue
-
-            # =========================
-            # SCORE FINAL
-            # =========================
-            score = (fuerza * 10) + confirmaciones
-
-            if score > mejor_score:
-                mejor_score = score
-                mejor_par = par
-                mejor_direccion = tendencia
-
-        except Exception:
-            # evita que un par rompa todo el bot
+        if rango == 0:
             continue
+
+        fuerza = cuerpo / rango
+
+        # =========================
+        # FILTRO VELA FUERTE
+        # =========================
+        if fuerza < 0.6:
+            continue
+
+        # =========================
+        # SOPORTE / RESISTENCIA
+        # =========================
+        maximo = max(v["max"] for v in velas[-10:])
+        minimo = min(v["min"] for v in velas[-10:])
+
+        cerca_resistencia = ultima["close"] >= maximo * 0.998
+        cerca_soporte = ultima["close"] <= minimo * 1.002
+
+        # =========================
+        # REPETICIÓN PATRÓN
+        # =========================
+        repeticiones = 0
+
+        for i in range(-6, -1):
+            v = velas[i]
+            c = abs(v["close"] - v["open"])
+            r = v["max"] - v["min"]
+
+            if r == 0:
+                continue
+
+            if c / r > 0.5:
+                repeticiones += 1
+
+        if repeticiones < 2:
+            continue
+
+        # =========================
+        # DECISIÓN FINAL
+        # =========================
+        score = 0
+
+        if tendencia_alcista and ultima["close"] > ultima["open"]:
+
+            if cerca_resistencia:
+                continue  # ❌ NO COMPRAR ARRIBA
+
+            direccion = "call"
+            score = 10 + repeticiones
+
+        elif tendencia_bajista and ultima["close"] < ultima["open"]:
+
+            if cerca_soporte:
+                continue  # ❌ NO VENDER ABAJO
+
+            direccion = "put"
+            score = 10 + repeticiones
+
+        else:
+            continue
+
+        if score > mejor_score:
+            mejor_par = par
+            mejor_direccion = direccion
+            mejor_score = score
 
     if mejor_par:
-        return mejor_par, mejor_direccion, round(mejor_score, 2)
+        return mejor_par, mejor_direccion, mejor_score
 
     return None
