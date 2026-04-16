@@ -16,7 +16,7 @@ PASSWORD = os.getenv("IQ_PASSWORD")
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-MONTO = 6000
+MONTO = 6500
 CUENTA = "PRACTICE"
 
 ultima_entrada = 0
@@ -25,22 +25,21 @@ operando = False
 
 
 # =========================
-# 🔥 BLOQUEAR ERROR UNDERLYING
+# IGNORAR ERROR UNDERLYING
 # =========================
 def ignorar_errores_hilos():
     def custom_hook(args):
         if "underlying" in str(args.exc_value):
-            return  # 🔥 ignorar completamente
+            return
         print("Thread error:", args.exc_value)
 
     threading.excepthook = custom_hook
-
 
 ignorar_errores_hilos()
 
 
 # =========================
-# TELEGRAM NO BLOQUEANTE
+# TELEGRAM
 # =========================
 def enviar_telegram(msg):
     def enviar():
@@ -62,7 +61,7 @@ def log(msg):
 
 
 # =========================
-# CONEXIÓN ROBUSTA
+# CONEXIÓN
 # =========================
 def conectar():
     while True:
@@ -97,29 +96,11 @@ def asegurar_conexion(iq):
 PARES = [
     "EURUSD-OTC",
     "GBPUSD-OTC",
-    "USDHKD-OTC", 
+    "USDJPY-OTC",
     "USDCHF-OTC",
     "EURJPY-OTC",
     "GBPJPY-OTC"
 ]
-
-
-# =========================
-# ACTIVO ABIERTO
-# =========================
-def activo_abierto(iq, par):
-    try:
-        return iq.get_all_open_time()["binary"][par]["open"]
-    except:
-        return False
-
-
-# =========================
-# TIMING
-# =========================
-def esperar_entrada():
-    while int(time.time() % 60) < 59:
-        time.sleep(0.005)
 
 
 # =========================
@@ -144,7 +125,7 @@ def obtener_velas(iq, par):
 
 
 # =========================
-# 🔥 OPERAR CON REINTENTO
+# 🚀 OPERAR INMEDIATO (FIX REAL)
 # =========================
 def operar(iq, par, direccion):
     global ultima_entrada, operando
@@ -152,21 +133,21 @@ def operar(iq, par, direccion):
     if operando:
         return False
 
-    if time.time() - ultima_entrada < 20:
-        return False
-
-    if not activo_abierto(iq, par):
+    # 🔥 bajar restricción
+    if time.time() - ultima_entrada < 10:
         return False
 
     operando = True
-    esperar_entrada()
 
-    for intento in range(3):  # 🔥 reintenta hasta 3 veces
+    log(f"⚡ Intentando operar {par} {direccion}")
+
+    # 🔥 REINTENTO REAL
+    for intento in range(5):
         try:
             status, order_id = iq.buy(MONTO, par, direccion, 1)
 
             if status:
-                log(f"""🚀 OPERACIÓN
+                log(f"""🚀 OPERACIÓN EJECUTADA
 
 Par: {par}
 Dirección: {direccion.upper()}
@@ -176,7 +157,6 @@ ID: {order_id}
                 ultima_entrada = time.time()
                 operando = False
                 return True
-
             else:
                 print(f"Intento {intento+1}: no ejecutó")
 
@@ -185,7 +165,7 @@ ID: {order_id}
 
         time.sleep(1)
 
-    log("❌ Falló la operación")
+    log("❌ NO SE PUDO EJECUTAR")
     operando = False
     return False
 
@@ -221,27 +201,20 @@ def run():
                 if par == ultimo_par:
                     continue
 
-                log(f"""📊 SEÑAL
+                log(f"""📈 SEÑAL
 
 Par: {par}
 Dirección: {direccion.upper()}
 Score: {score}
 """)
 
-                velas_final = obtener_velas(iq, par)
+                # 🔥 EJECUCIÓN DIRECTA (SIN FILTROS QUE BLOQUEAN)
+                ejecutar = operar(iq, par, direccion)
 
-                if not velas_final:
-                    continue
-
-                confirmacion = detectar_entrada_oculta({par: velas_final})
-
-                if confirmacion:
-                    operar(iq, par, direccion)
+                if ejecutar:
                     ultimo_par = par
-                else:
-                    print("Señal cancelada")
 
-            time.sleep(0.3)
+            time.sleep(0.2)
 
         except Exception as e:
             print("Error general:", e)
@@ -250,12 +223,12 @@ Score: {score}
 
 
 # =========================
-# 🔥 ANTI-CRASH RAILWAY
+# ANTI-CRASH
 # =========================
 if __name__ == "__main__":
     while True:
         try:
             run()
         except Exception as e:
-            print("Reiniciando bot:", e)
+            print("Reiniciando:", e)
             time.sleep(5)
