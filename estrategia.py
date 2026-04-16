@@ -1,164 +1,140 @@
-import time
-
 # =========================
-# CONFIG
+# UTILIDADES
 # =========================
-MAX_OPERACIONES_DIA = 2
-operaciones_hoy = 0
-ultimo_reset = time.strftime("%Y-%m-%d")
+def cuerpo(v):
+    return abs(v["close"] - v["open"])
 
+def rango(v):
+    return v["max"] - v["min"]
 
-# =========================
-# RESET DIARIO
-# =========================
-def reset_dia():
-    global operaciones_hoy, ultimo_reset
+def es_fuerte(v):
+    return cuerpo(v) > (rango(v) * 0.6)
 
-    hoy = time.strftime("%Y-%m-%d")
+def es_debil(v):
+    return cuerpo(v) < (rango(v) * 0.3)
 
-    if hoy != ultimo_reset:
-        operaciones_hoy = 0
-        ultimo_reset = hoy
+def es_alcista(v):
+    return v["close"] > v["open"]
 
-
-# =========================
-# DETECTAR TENDENCIA
-# =========================
-def detectar_tendencia(velas):
-    closes = [v["close"] for v in velas[-10:]]
-
-    if closes[-1] > closes[0]:
-        return "alcista"
-    elif closes[-1] < closes[0]:
-        return "bajista"
-    else:
-        return None
+def es_bajista(v):
+    return v["close"] < v["open"]
 
 
 # =========================
-# VELA FUERTE
+# ESTRUCTURA DE MERCADO
 # =========================
-def es_vela_fuerte(v):
-    cuerpo = abs(v["close"] - v["open"])
-    rango = v["max"] - v["min"]
+def estructura_alcista(velas):
+    # Higher High + Higher Low
+    return (
+        velas[-1]["max"] > velas[-3]["max"] and
+        velas[-2]["min"] > velas[-4]["min"]
+    )
 
-    if rango == 0:
-        return False
-
-    return cuerpo > (rango * 0.7)
-
-
-# =========================
-# EVITAR AGOTAMIENTO
-# =========================
-def hay_agotamiento(v):
-    cuerpo = abs(v["close"] - v["open"])
-    mecha_sup = v["max"] - max(v["close"], v["open"])
-    mecha_inf = min(v["close"], v["open"]) - v["min"]
-
-    return mecha_sup > cuerpo or mecha_inf > cuerpo
+def estructura_bajista(velas):
+    # Lower Low + Lower High
+    return (
+        velas[-1]["min"] < velas[-3]["min"] and
+        velas[-2]["max"] < velas[-4]["max"]
+    )
 
 
 # =========================
-# SOPORTE / RESISTENCIA SIMPLE
+# LIQUIDEZ (BARRIDAS)
 # =========================
-def cerca_soporte_resistencia(velas):
-    maximo = max(v["max"] for v in velas[-15:])
-    minimo = min(v["min"] for v in velas[-15:])
-    actual = velas[-1]["close"]
+def barrida_minimo(velas):
+    # rompe mínimo y recupera
+    return (
+        velas[-2]["min"] < velas[-4]["min"] and
+        velas[-2]["close"] > velas[-4]["min"]
+    )
 
-    margen = (maximo - minimo) * 0.1
-
-    if abs(actual - maximo) < margen:
-        return True
-
-    if abs(actual - minimo) < margen:
-        return True
-
-    return False
+def barrida_maximo(velas):
+    return (
+        velas[-2]["max"] > velas[-4]["max"] and
+        velas[-2]["close"] < velas[-4]["max"]
+    )
 
 
 # =========================
-# PATRÓN CONTINUIDAD
+# FILTROS AVANZADOS
 # =========================
-def patron_continuidad(velas, tendencia):
-    v1, v2, v3 = velas[-3:]
+def evitar_rango(velas):
+    # evita mercado lateral (sin desplazamiento real)
+    rango_total = max(v["max"] for v in velas[-6:]) - min(v["min"] for v in velas[-6:])
+    cuerpo_total = sum(cuerpo(v) for v in velas[-6:])
+    
+    return cuerpo_total > (rango_total * 1.2)
 
-    if tendencia == "alcista":
-        return (
-            v1["close"] < v1["open"] and  # retroceso
-            es_vela_fuerte(v2) and v2["close"] > v2["open"] and
-            v3["close"] > v2["close"]
-        )
 
-    if tendencia == "bajista":
-        return (
-            v1["close"] > v1["open"] and
-            es_vela_fuerte(v2) and v2["close"] < v2["open"] and
-            v3["close"] < v2["close"]
-        )
-
-    return False
+def confirmar_impulso(v):
+    # vela institucional real
+    return es_fuerte(v) and rango(v) > 0
 
 
 # =========================
-# SCORE (FILTRO PREMIUM)
-# =========================
-def calcular_score(velas, tendencia):
-    score = 0
-
-    v2 = velas[-2]
-
-    if es_vela_fuerte(v2):
-        score += 4
-
-    if not hay_agotamiento(v2):
-        score += 3
-
-    if not cerca_soporte_resistencia(velas):
-        score += 3
-
-    if patron_continuidad(velas, tendencia):
-        score += 5
-
-    return score
-
-
-# =========================
-# FUNCIÓN PRINCIPAL
+# DETECCIÓN PRINCIPAL
 # =========================
 def detectar_entrada_oculta(data):
-    global operaciones_hoy
-
-    reset_dia()
-
-    if operaciones_hoy >= MAX_OPERACIONES_DIA:
-        return None
 
     mejor = None
-    mejor_score = 0
 
     for par, velas in data.items():
 
-        if len(velas) < 20:
+        if len(velas) < 15:
             continue
 
-        tendencia = detectar_tendencia(velas)
+        if not evitar_rango(velas):
+            continue  # ❌ evitar mercado muerto
 
-        if not tendencia:
-            continue
+        v_fuerza = velas[-2]
+        v_confirm = velas[-1]
 
-        score = calcular_score(velas, tendencia)
+        score = 0
 
-        if score >= 10:  # 🔥 SOLO ENTRADAS TOP
+        # =========================
+        # COMPRA (CALL)
+        # =========================
+        if estructura_alcista(velas):
 
-            direccion = "call" if tendencia == "alcista" else "put"
+            # liquidez
+            if barrida_minimo(velas):
+                score += 4
 
-            if score > mejor_score:
-                mejor_score = score
-                mejor = (par, direccion, score)
+            # impulso fuerte
+            if confirmar_impulso(v_fuerza) and es_alcista(v_fuerza):
+                score += 3
 
-    if mejor:
-        operaciones_hoy += 1
+            # continuidad
+            if v_confirm["close"] > v_fuerza["close"]:
+                score += 2
+
+            # evitar agotamiento
+            if es_debil(v_fuerza):
+                score -= 3
+
+            if score >= 7:
+                if not mejor or score > mejor[2]:
+                    mejor = (par, "call", score)
+
+        # =========================
+        # VENTA (PUT)
+        # =========================
+        if estructura_bajista(velas):
+
+            if barrida_maximo(velas):
+                score += 4
+
+            if confirmar_impulso(v_fuerza) and es_bajista(v_fuerza):
+                score += 3
+
+            if v_confirm["close"] < v_fuerza["close"]:
+                score += 2
+
+            if es_debil(v_fuerza):
+                score -= 3
+
+            if score >= 7:
+                if not mejor or score > mejor[2]:
+                    mejor = (par, "put", score)
 
     return mejor
