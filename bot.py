@@ -1,11 +1,7 @@
 import time
 import os
 import requests
-import sys
 from iqoptionapi.stable_api import IQ_Option
-
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-sys.path.append(BASE_DIR)
 
 from estrategia import detectar_entrada_oculta
 
@@ -14,20 +10,15 @@ PASSWORD = os.getenv("IQ_PASSWORD")
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-MONTO = 55
-CUENTA = "PRACTICE"
+MONTO = 200
 
 ultima_entrada = 0
-bot_activo = True
-update_id = None
 
 
 # =========================
-# TELEGRAM
+# TELEGRAM (SIN ERRORES)
 # =========================
 def enviar_telegram(msg):
-    if not TOKEN or not CHAT_ID:
-        return
     try:
         requests.post(
             f"https://api.telegram.org/bot{TOKEN}/sendMessage",
@@ -35,42 +26,7 @@ def enviar_telegram(msg):
             timeout=10
         )
     except:
-        pass
-
-
-def verificar_comandos():
-    global bot_activo, update_id
-
-    if not TOKEN:
-        return
-
-    try:
-        url = f"https://api.telegram.org/bot{TOKEN}/getUpdates"
-        params = {"timeout": 5, "offset": update_id}
-
-        res = requests.get(url, params=params, timeout=10).json()
-
-        if "result" not in res:
-            return
-
-        for update in res["result"]:
-            update_id = update["update_id"] + 1
-
-            if "message" not in update:
-                continue
-
-            msg = update["message"].get("text", "")
-
-            if msg == "/startbot":
-                bot_activo = True
-                enviar_telegram("🟢 BOT ACTIVADO")
-
-            elif msg == "/stopbot":
-                bot_activo = False
-                enviar_telegram("🔴 BOT DETENIDO")
-
-    except:
-        pass
+        pass  # 🔥 elimina spam error
 
 
 def log(msg):
@@ -88,41 +44,15 @@ def conectar():
             iq.connect()
 
             if iq.check_connect():
-                iq.change_balance(CUENTA)
-                iq.get_all_ACTIVES_OPCODE()
-                time.sleep(2)
+                iq.change_balance("PRACTICE")
 
-                log("✅ BOT CONECTADO")
+                print("✅ BOT CONECTADO")
                 return iq
 
         except Exception as e:
-            print(f"Error conexión: {e}")
+            print("Error conexión:", e)
 
         time.sleep(5)
-
-
-def asegurar_conexion(iq):
-    try:
-        if not iq.check_connect():
-            return conectar()
-        return iq
-    except:
-        return conectar()
-
-
-# =========================
-# PARES
-# =========================
-PARES = [
-    "EURUSD-OTC",
-    "GBPUSD-OTC",
-    "USDJPY-OTC",
-    "USDCHF-OTC",
-    "AUDUSD-OTC",
-    "USDCAD-OTC",
-    "EURJPY-OTC",
-    "GBPJPY-OTC"
-]
 
 
 # =========================
@@ -147,54 +77,55 @@ def obtener_velas(iq, par):
 
 
 # =========================
-# OPERAR INMEDIATO
+# OPERAR (INMEDIATO)
 # =========================
 def operar(iq, par, direccion):
     global ultima_entrada
 
-    if time.time() - ultima_entrada < 5:
-        return False
+    if time.time() - ultima_entrada < 20:
+        return
 
     try:
-        iq.subscribe_strike_list(par, 1)
-        time.sleep(0.2)
-
         status, _ = iq.buy_digital_spot(par, MONTO, direccion, 1)
 
-        iq.unsubscribe_strike_list(par, 1)
-
         if status:
-            log(f"""🚀 OPERACIÓN
-
+            log(f"""
+🚀 OPERACIÓN EJECUTADA
 {par} {direccion.upper()}
 """)
             ultima_entrada = time.time()
-            return True
-
-        return False
+        else:
+            print("❌ No ejecutó")
 
     except Exception as e:
-        print(f"Error operación: {e}")
-        return False
+        print("Error operación:", e)
+
+
+# =========================
+# PARES OTC REALES (SIN ERROR)
+# =========================
+PARES = [
+    "EURUSD-OTC",
+    "GBPUSD-OTC",
+    "USDJPY-OTC",
+    "USDCHF-OTC",
+    "AUDUSD-OTC",
+    "USDCAD-OTC",
+    "NZDUSD-OTC",
+    "EURJPY-OTC",
+    "GBPJPY-OTC",
+    "EURGBP-OTC"
+]
 
 
 # =========================
 # MAIN
 # =========================
 def run():
-
     iq = conectar()
 
     while True:
         try:
-            verificar_comandos()
-
-            if not bot_activo:
-                time.sleep(1)
-                continue
-
-            iq = asegurar_conexion(iq)
-
             data = {}
 
             for par in PARES:
@@ -202,23 +133,27 @@ def run():
                 if velas:
                     data[par] = velas
 
+            if not data:
+                time.sleep(1)
+                continue
+
             señal = detectar_entrada_oculta(data)
 
             if señal:
                 par, direccion, score = señal
 
-                log(f"""🎯 SEÑAL
-
+                log(f"""
+🎯 SEÑAL DETECTADA
 {par} {direccion}
 Score: {score}
 """)
 
                 operar(iq, par, direccion)
 
-            time.sleep(0.2)
+            time.sleep(0.5)
 
         except Exception as e:
-            print(f"Error general: {e}")
+            print("Error general:", e)
             time.sleep(2)
 
 
