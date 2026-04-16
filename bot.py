@@ -15,10 +15,10 @@ PASSWORD = os.getenv("IQ_PASSWORD")
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-if not all([EMAIL, PASSWORD, TOKEN, CHAT_ID]):
-    raise Exception("Faltan variables de entorno")
+if not all([EMAIL, PASSWORD]):
+    raise Exception("Faltan credenciales IQ Option")
 
-MONTO = 12000
+MONTO = 300
 CUENTA = "PRACTICE"
 
 ultima_entrada = 0
@@ -30,6 +30,9 @@ operando = False
 # TELEGRAM
 # =========================
 def enviar_telegram(msg):
+    if not TOKEN or not CHAT_ID:
+        return
+
     def enviar():
         try:
             requests.post(
@@ -59,12 +62,11 @@ def conectar():
 
             if iq.check_connect():
                 iq.change_balance(CUENTA)
-
                 log("✅ BOT CONECTADO")
                 return iq
 
         except Exception as e:
-            log(f"❌ Error conexión: {e}")
+            print(f"Error conexión: {e}")
 
         time.sleep(5)
 
@@ -72,7 +74,7 @@ def conectar():
 def asegurar_conexion(iq):
     try:
         if not iq.check_connect():
-            log("🔄 Reconectando...")
+            print("Reconectando...")
             return conectar()
         return iq
     except:
@@ -116,50 +118,44 @@ def obtener_velas(iq, par):
 
 
 # =========================
-# 🔥 OPERAR (CORREGIDO)
+# OPERAR
 # =========================
 def operar(iq, par, direccion):
     global ultima_entrada, operando
 
-    # evitar múltiples entradas simultáneas
     if operando:
         return False
 
-    # evitar sobreoperar pero sin retrasar demasiado
     if time.time() - ultima_entrada < 10:
         return False
 
-    # validar activo abierto
     if not activo_abierto(iq, par):
         return False
 
     operando = True
 
     try:
-        # 🔥 ENTRADA INMEDIATA (CLAVE)
         status, order_id = iq.buy(MONTO, par, direccion, 1)
 
         if status:
-            log(f"""🚀 OPERACIÓN EJECUTADA
+            log(f"""🚀 OPERACIÓN
 
-Par: {par}
-Dirección: {direccion.upper()}
-Monto: ${MONTO}
+{par} {direccion.upper()}
 ID: {order_id}
 """)
             ultima_entrada = time.time()
         else:
-            log("❌ No ejecutó la operación")
+            print("No ejecutó")
 
     except Exception as e:
-        log(f"❌ Error operación: {e}")
+        print(f"Error operación: {e}")
 
     operando = False
     return True
 
 
 # =========================
-# MAIN
+# LOOP PRINCIPAL
 # =========================
 def run():
     global ultimo_par
@@ -178,6 +174,7 @@ def run():
                     data[par] = velas
 
             if not data:
+                time.sleep(1)
                 continue
 
             señal = detectar_entrada_oculta(data)
@@ -185,27 +182,32 @@ def run():
             if señal:
                 par, direccion, score = señal
 
-                # evitar repetir el mismo par seguido
                 if par == ultimo_par:
                     continue
 
-                log(f"""📊 SEÑAL DETECTADA
+                log(f"""📊 SEÑAL
 
-Par: {par}
-Dirección: {direccion.upper()}
+{par} {direccion}
 Score: {score}
 """)
 
-                # 🔥 EJECUTA DIRECTO (SIN DOBLE CONFIRMACIÓN)
                 operar(iq, par, direccion)
                 ultimo_par = par
 
-            time.sleep(0.3)
+            time.sleep(0.2)
 
         except Exception as e:
-            log(f"❌ Error general: {e}")
+            print(f"Error loop: {e}")
             time.sleep(2)
 
 
+# =========================
+# 🔥 ANTI-CRASH LOOP (CLAVE)
+# =========================
 if __name__ == "__main__":
-    run()
+    while True:
+        try:
+            run()
+        except Exception as e:
+            print(f"🔥 BOT CRASH: {e}")
+            time.sleep(5)
