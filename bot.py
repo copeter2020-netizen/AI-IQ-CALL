@@ -20,7 +20,7 @@ CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 if not all([EMAIL, PASSWORD, TOKEN, CHAT_ID]):
     raise Exception("❌ Faltan variables de entorno")
 
-MONTO = 5000
+MONTO = 500
 CUENTA = "PRACTICE"
 
 ultima_entrada = 0
@@ -75,8 +75,8 @@ def verificar_comandos():
                 bot_activo = False
                 log("🔴 BOT DETENIDO")
 
-    except:
-        pass
+    except Exception as e:
+        print(f"Error Telegram: {e}")
 
 
 # =========================
@@ -152,28 +152,27 @@ def obtener_velas(iq, par):
             "min": v.get("min")
         } for v in velas]
 
-    except:
+    except Exception as e:
+        print(f"Error velas {par}: {e}")
         return None
 
 
 # =========================
-# 🔥 EJECUCIÓN CORREGIDA
+# OPERAR
 # =========================
 def operar(iq, par, direccion):
     global ultima_entrada
 
-    # evitar spam de entradas
-    if time.time() - ultima_entrada < 20:
+    if time.time() - ultima_entrada < 30:
         return False
 
-    log(f"⏳ Preparando entrada en {par}")
+    log(f"⏳ Esperando entrada {par}")
 
     esperar_entrada()
 
     try:
-        # 🔥 clave para que IQ Option acepte la orden
         iq.subscribe_strike_list(par, 1)
-        time.sleep(1)  # ← MUY IMPORTANTE
+        time.sleep(0.5)
 
         status, order_id = iq.buy_digital_spot(par, MONTO, direccion, 1)
 
@@ -183,15 +182,14 @@ def operar(iq, par, direccion):
             log(f"""🚀 OPERACIÓN EJECUTADA
 
 📊 {par}
-📈 {direccion.upper()}
-⏱ Expiración 1M
+📈 Dirección: {direccion.upper()}
+⏱ Expiración: 1M
 💰 Monto: {MONTO}
-🆔 ID: {order_id}
 """)
             ultima_entrada = time.time()
             return True
         else:
-            log("❌ No ejecutó la orden (rechazada por IQ)")
+            log("❌ No ejecutó la orden")
             return False
 
     except Exception as e:
