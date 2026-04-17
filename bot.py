@@ -1,15 +1,43 @@
 import time
 import os
+import requests
 from iqoptionapi.stable_api import IQ_Option
 from estrategia import detectar_entrada_oculta
 
+# =========================
+# VARIABLES
+# =========================
 EMAIL = os.getenv("IQ_EMAIL")
 PASSWORD = os.getenv("IQ_PASSWORD")
+TOKEN = os.getenv("TELEGRAM_TOKEN")
+CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-MONTO = 508
+MONTO = 1700
 CUENTA = "PRACTICE"
 
 ultima_entrada = 0
+
+
+# =========================
+# TELEGRAM (LOG EN RAILWAY)
+# =========================
+def enviar_telegram(msg):
+    if not TOKEN or not CHAT_ID:
+        return
+
+    try:
+        requests.post(
+            f"https://api.telegram.org/bot{TOKEN}/sendMessage",
+            data={"chat_id": CHAT_ID, "text": msg},
+            timeout=5
+        )
+    except:
+        pass
+
+
+def log(msg):
+    print(msg, flush=True)  # 🔥 importante para Railway
+    enviar_telegram(msg)
 
 
 # =========================
@@ -23,20 +51,22 @@ def conectar():
 
             if iq.check_connect():
                 iq.change_balance(CUENTA)
-
-                # 🔥 evita bug digital
-                try:
-                    iq.get_all_open_time()
-                except:
-                    pass
-
-                print("✅ BOT CONECTADO")
+                log("✅ BOT CONECTADO")
                 return iq
-
         except Exception as e:
-            print("Error conexión:", e)
+            log(f"❌ Error conexión: {e}")
 
         time.sleep(5)
+
+
+def asegurar_conexion(iq):
+    try:
+        if not iq.check_connect():
+            log("🔄 Reconectando...")
+            return conectar()
+        return iq
+    except:
+        return conectar()
 
 
 # =========================
@@ -45,21 +75,19 @@ def conectar():
 def activo_abierto(iq, par):
     try:
         data = iq.get_all_open_time()
-        return data.get("binary", {}).get(par, {}).get("open", True)
+        return data["binary"].get(par, {}).get("open", False)
     except:
-        return True
+        return False
 
 
 # =========================
-# TIMING INTELIGENTE
+# TIMING REAL (ENTRADA LIMPIA)
 # =========================
-def esperar_momento():
-    # 🔥 entra en mejor zona sin congelar
-    for _ in range(50):
-        segundos = int(time.time() % 60)
-        if segundos >= 57:
-            return
-        time.sleep(0.02)
+def esperar_cierre():
+    while True:
+        if int(time.time() % 60) >= 59:
+            break
+        time.sleep(0.01)
 
 
 # =========================
@@ -68,72 +96,61 @@ def esperar_momento():
 def obtener_velas(iq, par, timeframe):
     try:
         velas = iq.get_candles(par, timeframe, 50, time.time())
-        return velas if velas else None
+
+        if not velas:
+            return None
+
+        return velas
     except:
         return None
 
 
 # =========================
-# EJECUCIÓN INTELIGENTE
-# =========================
-def ejecutar_orden(iq, par, direccion):
-
-    # 🔥 intento 1: normal
-    try:
-        status, order_id = iq.buy(MONTO, par, direccion, 1)
-        if status:
-            return True, order_id
-    except:
-        pass
-
-    # 🔥 intento 2: invertir timing
-    time.sleep(0.3)
-    try:
-        status, order_id = iq.buy(MONTO, par, direccion, 1)
-        if status:
-            return True, order_id
-    except:
-        pass
-
-    # 🔥 intento 3: último intento directo
-    try:
-        status, order_id = iq.buy(MONTO, par, direccion, 1)
-        if status:
-            return True, order_id
-    except:
-        pass
-
-    return False, None
-
-
-# =========================
-# OPERAR (CORREGIDO REAL)
+# OPERAR (SOLO BINARIA)
 # =========================
 def operar(iq, par, direccion):
     global ultima_entrada
 
-    if time.time() - ultima_entrada < 8:
+    if time.time() - ultima_entrada < 10:
         return
 
     if not activo_abierto(iq, par):
-        print(f"❌ {par} cerrado")
+        log(f"❌ {par} cerrado")
         return
 
-    print(f"⏳ Ejecutando {par}...")
+    log(f"⏳ Esperando cierre {par}...")
 
-    esperar_momento()
+    esperar_cierre()
 
-    ok, order_id = ejecutar_orden(iq, par, direccion)
+    # 🔥 evitar bug digital
+    for intento in range(3):
+        try:
+            status, order_id = iq.buy(MONTO, par, direccion, 1)
 
-    if ok:
-        print(f"🚀 {par} {direccion} | ID: {order_id}")
-        ultima_entrada = time.time()
-    else:
-        print("❌ Falló ejecución total")
+            if status:
+                log(f"""🚀 OPERACIÓN EJECUTADA
+
+Par: {par}
+Dirección: {direccion.upper()}
+Monto: {MONTO}
+ID: {order_id}
+""")
+                ultima_entrada = time.time()
+                return
+
+            else:
+                log("⚠️ Reintentando...")
+
+        except Exception as e:
+            log(f"⚠️ Error intento: {e}")
+
+        time.sleep(1)
+
+    log("❌ Falló ejecución total")
 
 
 # =========================
-# MAIN (ANTI-CRASH)
+# MAIN LOOP (ANTI STOP RAILWAY)
 # =========================
 def run():
     iq = conectar()
@@ -141,7 +158,7 @@ def run():
     PARES = [
         "EURUSD-OTC",
         "GBPUSD-OTC",
-        "USDJPY-OTC",
+        "USDZAR-OTC",
         "USDCHF-OTC",
         "EURJPY-OTC",
         "GBPJPY-OTC"
@@ -149,6 +166,8 @@ def run():
 
     while True:
         try:
+            iq = asegurar_conexion(iq)
+
             data = {}
 
             for par in PARES:
@@ -167,25 +186,20 @@ def run():
             if señal:
                 par, direccion, score = señal
 
-                print(f"""
-📊 SEÑAL DETECTADA
+                log(f"""📈 SEÑAL DETECTADA
+
 {par} {direccion}
 Score: {score}
 """)
 
                 operar(iq, par, direccion)
 
-            time.sleep(0.3)
+            time.sleep(0.5)
 
         except Exception as e:
-            print("Error general:", e)
+            log(f"❌ Error general: {e}")
             time.sleep(2)
 
 
 if __name__ == "__main__":
-    while True:
-        try:
-            run()
-        except Exception as e:
-            print("🔥 Reiniciando:", e)
-            time.sleep(3)
+    run()
