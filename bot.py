@@ -9,7 +9,7 @@ PASSWORD = os.getenv("IQ_PASSWORD")
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-MONTO = 560
+MONTO = 565
 CUENTA = "PRACTICE"
 
 ultima_entrada = 0
@@ -47,7 +47,6 @@ def conectar():
             if iq.check_connect():
                 iq.change_balance(CUENTA)
 
-                # 🔥 DESACTIVA DIGITAL (reduce errores)
                 try:
                     iq.api.digital_option = None
                 except:
@@ -65,21 +64,10 @@ def conectar():
 def asegurar_conexion(iq):
     try:
         if not iq.check_connect():
-            log("🔄 Reconectando...")
             return conectar()
         return iq
     except:
         return conectar()
-
-
-# =========================
-# VALIDAR ACTIVO
-# =========================
-def activo_abierto(iq, par):
-    try:
-        return iq.get_all_open_time()["binary"][par]["open"]
-    except:
-        return True
 
 
 # =========================
@@ -93,9 +81,9 @@ def esperar_cierre():
 # =========================
 # VELAS
 # =========================
-def obtener_velas(iq, par, timeframe):
+def obtener_velas(iq, par, tf):
     try:
-        return iq.get_candles(par, timeframe, 50, time.time())
+        return iq.get_candles(par, tf, 50, time.time())
     except:
         return None
 
@@ -106,19 +94,13 @@ def obtener_velas(iq, par, timeframe):
 def operar(iq, par, direccion):
     global ultima_entrada, ultimo_par
 
-    # 🔥 evitar spam de operaciones
     if time.time() - ultima_entrada < 30:
         return
 
-    # 🔥 evitar repetir mismo par seguido
     if par == ultimo_par:
         return
 
-    if not activo_abierto(iq, par):
-        log(f"❌ {par} cerrado")
-        return
-
-    log(f"⏳ Esperando cierre {par}...")
+    log(f"⏳ Esperando entrada {par}")
 
     esperar_cierre()
 
@@ -127,27 +109,20 @@ def operar(iq, par, direccion):
             status, order_id = iq.buy(MONTO, par, direccion, 1)
 
             if status:
-                log(f"""🚀 OPERACIÓN EJECUTADA
+                log(f"""🚀 OPERACIÓN
 
-Par: {par}
-Dirección: {direccion.upper()}
-Monto: {MONTO}
+{par} {direccion.upper()}
 ID: {order_id}
 """)
                 ultima_entrada = time.time()
                 ultimo_par = par
                 return
-            else:
-                log("⚠️ Reintentando...")
-
-        except Exception as e:
-            if "underlying" in str(e):
-                continue
-            log(f"Error: {e}")
+        except:
+            pass
 
         time.sleep(1)
 
-    log("❌ Falló ejecución total")
+    log("❌ No ejecutó")
 
 
 # =========================
@@ -178,21 +153,16 @@ def run():
                 if m1 and m5:
                     data[par] = {"m1": m1, "m5": m5}
 
-            if not data:
-                time.sleep(1)
-                continue
-
             señal = detectar_entrada_oculta(data)
 
             if señal:
                 par, direccion, score = señal
 
-                # 🔥 filtro mínimo
                 if score < 7:
                     continue
 
-                log(f"""📈 SEÑAL DETECTADA
-
+                log(f"""
+📈 MOMENTUM DETECTADO
 {par} {direccion}
 Score: {score}
 """)
@@ -202,9 +172,9 @@ Score: {score}
             time.sleep(0.5)
 
         except Exception as e:
-            log(f"❌ Error general: {e}")
+            log(f"Error: {e}")
             time.sleep(2)
 
 
 if __name__ == "__main__":
-    run()
+    run() 
