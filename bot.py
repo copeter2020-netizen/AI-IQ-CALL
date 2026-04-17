@@ -18,39 +18,60 @@ PASSWORD = os.getenv("IQ_PASSWORD")
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-MONTO = 50
-TIEMPO = 1
-PAR = "EURUSD-OTC"
+MONTO = 500
+CUENTA = "PRACTICE"
 
-bot_activo = False
 ultima_entrada = 0
+bot_activo = False
 update_id = None
+
+par_seleccionado = None
 
 
 # =========================
 # TELEGRAM
 # =========================
 def enviar_telegram(msg):
+    def enviar():
+        try:
+            requests.post(
+                f"https://api.telegram.org/bot{TOKEN}/sendMessage",
+                data={"chat_id": CHAT_ID, "text": msg},
+                timeout=5
+            )
+        except:
+            pass
+
+    threading.Thread(target=enviar, daemon=True).start()
+
+
+def enviar_panel():
+    keyboard = {
+        "keyboard": [
+            ["💱 EURUSD", "💱 GBPUSD"],
+            ["💱 EURJPY", "💱 USDCHF"],
+            ["💱 GBPJPY", "💱 USDZAR"],
+            ["▶️ Activar", "⛔ Detener"]
+        ],
+        "resize_keyboard": True
+    }
+
     try:
         requests.post(
             f"https://api.telegram.org/bot{TOKEN}/sendMessage",
-            data={"chat_id": CHAT_ID, "text": msg},
+            json={
+                "chat_id": CHAT_ID,
+                "text": "📊 PANEL DE CONTROL",
+                "reply_markup": keyboard
+            },
             timeout=5
         )
     except:
         pass
 
 
-def log(msg):
-    print(msg)
-    enviar_telegram(msg)
-
-
-# =========================
-# BOTONES / CONTROL
-# =========================
 def verificar_comandos():
-    global bot_activo, update_id, PAR, MONTO, TIEMPO
+    global bot_activo, update_id, par_seleccionado
 
     try:
         url = f"https://api.telegram.org/bot{TOKEN}/getUpdates"
@@ -69,32 +90,44 @@ def verificar_comandos():
 
             msg = update["message"].get("text", "")
 
-            # CONTROL BOT
-            if msg == "▶️ START":
+            if msg == "/start":
+                enviar_panel()
+
+            elif "EURUSD" in msg:
+                par_seleccionado = "EURUSD-OTC"
+                enviar_telegram("Par seleccionado EURUSD")
+
+            elif "GBPUSD" in msg:
+                par_seleccionado = "GBPUSD-OTC"
+                enviar_telegram("Par seleccionado GBPUSD")
+
+            elif "EURJPY" in msg:
+                par_seleccionado = "EURJPY-OTC"
+
+            elif "USDCHF" in msg:
+                par_seleccionado = "USDCHF-OTC"
+
+            elif "GBPJPY" in msg:
+                par_seleccionado = "GBPJPY-OTC"
+
+            elif "USDZAR" in msg:
+                par_seleccionado = "USDZAR-OTC"
+
+            elif msg == "▶️ Activar":
                 bot_activo = True
-                log("🟢 BOT ACTIVADO")
+                enviar_telegram("🟢 BOT ACTIVADO")
 
-            elif msg == "⏹ STOP":
+            elif msg == "⛔ Detener":
                 bot_activo = False
-                log("🔴 BOT DETENIDO")
-
-            # PARES
-            elif msg in ["EURUSD", "GBPUSD", "EURJPY", "USDCHF", "GBPJPY", "USDZAR"]:
-                PAR = msg + "-OTC"
-                log(f"📊 Par seleccionado: {PAR}")
-
-            # TIEMPO
-            elif msg in ["1M", "2M", "3M", "4M", "5M"]:
-                TIEMPO = int(msg.replace("M", ""))
-                log(f"⏱ Tiempo: {TIEMPO}M")
-
-            # MONTO MANUAL
-            elif msg.isdigit():
-                MONTO = int(msg)
-                log(f"💰 Monto actualizado: {MONTO}")
+                enviar_telegram("🔴 BOT DETENIDO")
 
     except:
         pass
+
+
+def log(msg):
+    print(msg)
+    enviar_telegram(msg)
 
 
 # =========================
@@ -107,14 +140,12 @@ def conectar():
             iq.connect()
 
             if iq.check_connect():
-                iq.change_balance("PRACTICE")
-                iq.get_all_ACTIVES_OPCODE()
-
+                iq.change_balance(CUENTA)
                 log("✅ BOT CONECTADO")
                 return iq
 
-        except Exception as e:
-            print(f"Error conexión: {e}")
+        except:
+            pass
 
         time.sleep(5)
 
@@ -129,22 +160,17 @@ def asegurar_conexion(iq):
 
 
 # =========================
-# VELAS
+# DATOS
 # =========================
 def obtener_velas(iq, par):
     try:
         velas = iq.get_candles(par, 60, 30, time.time())
-
-        if not velas:
-            return None
-
         return [{
             "open": v["open"],
             "close": v["close"],
             "max": v["max"],
             "min": v["min"]
         } for v in velas]
-
     except:
         return None
 
@@ -155,27 +181,22 @@ def obtener_velas(iq, par):
 def operar(iq, par, direccion):
     global ultima_entrada
 
-    if time.time() - ultima_entrada < 10:
-        return False
+    if time.time() - ultima_entrada < 20:
+        return
 
     try:
-        status, order_id = iq.buy(MONTO, par, direccion, TIEMPO)
+        status, order_id = iq.buy(MONTO, par, direccion, 1)
 
         if status:
             log(f"""🚀 OPERACIÓN
 
-📊 {par}
-📈 {direccion.upper()}
-⏱ {TIEMPO}M
-💰 {MONTO}
+{par} {direccion.upper()}
 ID: {order_id}
 """)
             ultima_entrada = time.time()
-        else:
-            print("❌ No ejecutó")
 
-    except Exception as e:
-        print(f"Error operación: {e}")
+    except:
+        pass
 
 
 # =========================
@@ -189,30 +210,30 @@ def run():
         try:
             verificar_comandos()
 
-            if not bot_activo:
+            if not bot_activo or not par_seleccionado:
                 time.sleep(1)
                 continue
 
             iq = asegurar_conexion(iq)
 
-            velas = obtener_velas(iq, PAR)
+            velas = obtener_velas(iq, par_seleccionado)
 
             if not velas:
                 continue
 
-            señal = detectar_entrada_oculta({PAR: velas})
+            señal = detectar_entrada_oculta({par_seleccionado: velas})
 
             if señal:
-                _, direccion, score = señal
+                par, direccion, score = señal
 
-                log(f"""🎯 SEÑAL
+                log(f"""📈 SEÑAL
 
-{PAR}
-{direccion}
+Par: {par}
+Dirección: {direccion.upper()}
 Score: {score}
 """)
 
-                operar(iq, PAR, direccion)
+                operar(iq, par, direccion)
 
             time.sleep(0.5)
 
