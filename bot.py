@@ -4,27 +4,23 @@ import requests
 from iqoptionapi.stable_api import IQ_Option
 from estrategia import detectar_entrada_oculta
 
-# =========================
-# VARIABLES
-# =========================
 EMAIL = os.getenv("IQ_EMAIL")
 PASSWORD = os.getenv("IQ_PASSWORD")
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-MONTO = 1700
+MONTO = 560
 CUENTA = "PRACTICE"
 
 ultima_entrada = 0
 
 
 # =========================
-# TELEGRAM (LOG EN RAILWAY)
+# TELEGRAM + LOG
 # =========================
 def enviar_telegram(msg):
     if not TOKEN or not CHAT_ID:
         return
-
     try:
         requests.post(
             f"https://api.telegram.org/bot{TOKEN}/sendMessage",
@@ -36,7 +32,7 @@ def enviar_telegram(msg):
 
 
 def log(msg):
-    print(msg, flush=True)  # 🔥 importante para Railway
+    print(msg, flush=True)
     enviar_telegram(msg)
 
 
@@ -51,8 +47,16 @@ def conectar():
 
             if iq.check_connect():
                 iq.change_balance(CUENTA)
+
+                # 🔥 DESACTIVA DIGITAL (CLAVE)
+                try:
+                    iq.api.digital_option = None
+                except:
+                    pass
+
                 log("✅ BOT CONECTADO")
                 return iq
+
         except Exception as e:
             log(f"❌ Error conexión: {e}")
 
@@ -75,13 +79,13 @@ def asegurar_conexion(iq):
 def activo_abierto(iq, par):
     try:
         data = iq.get_all_open_time()
-        return data["binary"].get(par, {}).get("open", False)
+        return data["binary"].get(par, {}).get("open", True)
     except:
-        return False
+        return True
 
 
 # =========================
-# TIMING REAL (ENTRADA LIMPIA)
+# TIMING PRECISO
 # =========================
 def esperar_cierre():
     while True:
@@ -95,18 +99,13 @@ def esperar_cierre():
 # =========================
 def obtener_velas(iq, par, timeframe):
     try:
-        velas = iq.get_candles(par, timeframe, 50, time.time())
-
-        if not velas:
-            return None
-
-        return velas
+        return iq.get_candles(par, timeframe, 50, time.time())
     except:
         return None
 
 
 # =========================
-# OPERAR (SOLO BINARIA)
+# OPERAR (ULTRA ESTABLE)
 # =========================
 def operar(iq, par, direccion):
     global ultima_entrada
@@ -122,8 +121,8 @@ def operar(iq, par, direccion):
 
     esperar_cierre()
 
-    # 🔥 evitar bug digital
-    for intento in range(3):
+    # 🔥 ejecutar varias veces hasta que entre
+    for intento in range(5):
         try:
             status, order_id = iq.buy(MONTO, par, direccion, 1)
 
@@ -139,9 +138,13 @@ ID: {order_id}
                 return
 
             else:
-                log("⚠️ Reintentando...")
+                log(f"⚠️ Reintentando ({intento+1}/5)...")
 
         except Exception as e:
+            # 🔥 IGNORA ERROR UNDERLYING
+            if "underlying" in str(e):
+                continue
+
             log(f"⚠️ Error intento: {e}")
 
         time.sleep(1)
@@ -150,7 +153,7 @@ ID: {order_id}
 
 
 # =========================
-# MAIN LOOP (ANTI STOP RAILWAY)
+# MAIN
 # =========================
 def run():
     iq = conectar()
