@@ -9,17 +9,18 @@ PASSWORD = os.getenv("IQ_PASSWORD")
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-MONTO = 565
+MONTO = 567
 CUENTA = "PRACTICE"
 
 ultima_entrada = 0
-ultimo_par = None
 
 
 # =========================
-# TELEGRAM
+# TELEGRAM + LOG
 # =========================
 def enviar_telegram(msg):
+    if not TOKEN or not CHAT_ID:
+        return
     try:
         requests.post(
             f"https://api.telegram.org/bot{TOKEN}/sendMessage",
@@ -47,6 +48,7 @@ def conectar():
             if iq.check_connect():
                 iq.change_balance(CUENTA)
 
+                # 🔥 DESACTIVA DIGITAL (CLAVE)
                 try:
                     iq.api.digital_option = None
                 except:
@@ -56,7 +58,7 @@ def conectar():
                 return iq
 
         except Exception as e:
-            log(f"Error conexión: {e}")
+            log(f"❌ Error conexión: {e}")
 
         time.sleep(5)
 
@@ -64,6 +66,7 @@ def conectar():
 def asegurar_conexion(iq):
     try:
         if not iq.check_connect():
+            log("🔄 Reconectando...")
             return conectar()
         return iq
     except:
@@ -71,58 +74,82 @@ def asegurar_conexion(iq):
 
 
 # =========================
-# TIMING
+# VALIDAR ACTIVO
+# =========================
+def activo_abierto(iq, par):
+    try:
+        data = iq.get_all_open_time()
+        return data["binary"].get(par, {}).get("open", True)
+    except:
+        return True
+
+
+# =========================
+# TIMING PRECISO
 # =========================
 def esperar_cierre():
-    while int(time.time() % 60) < 59:
+    while True:
+        if int(time.time() % 60) >= 59:
+            break
         time.sleep(0.01)
 
 
 # =========================
 # VELAS
 # =========================
-def obtener_velas(iq, par, tf):
+def obtener_velas(iq, par, timeframe):
     try:
-        return iq.get_candles(par, tf, 50, time.time())
+        return iq.get_candles(par, timeframe, 50, time.time())
     except:
         return None
 
 
 # =========================
-# OPERAR
+# OPERAR (ULTRA ESTABLE)
 # =========================
 def operar(iq, par, direccion):
-    global ultima_entrada, ultimo_par
+    global ultima_entrada
 
-    if time.time() - ultima_entrada < 30:
+    if time.time() - ultima_entrada < 10:
         return
 
-    if par == ultimo_par:
+    if not activo_abierto(iq, par):
+        log(f"❌ {par} cerrado")
         return
 
-    log(f"⏳ Esperando entrada {par}")
+    log(f"⏳ Esperando cierre {par}...")
 
     esperar_cierre()
 
-    for i in range(3):
+    # 🔥 ejecutar varias veces hasta que entre
+    for intento in range(5):
         try:
             status, order_id = iq.buy(MONTO, par, direccion, 1)
 
             if status:
-                log(f"""🚀 OPERACIÓN
+                log(f"""🚀 OPERACIÓN EJECUTADA
 
-{par} {direccion.upper()}
+Par: {par}
+Dirección: {direccion.upper()}
+Monto: {MONTO}
 ID: {order_id}
 """)
                 ultima_entrada = time.time()
-                ultimo_par = par
                 return
-        except:
-            pass
+
+            else:
+                log(f"⚠️ Reintentando ({intento+1}/5)...")
+
+        except Exception as e:
+            # 🔥 IGNORA ERROR UNDERLYING
+            if "underlying" in str(e):
+                continue
+
+            log(f"⚠️ Error intento: {e}")
 
         time.sleep(1)
 
-    log("❌ No ejecutó")
+    log("❌ Falló ejecución total")
 
 
 # =========================
@@ -153,16 +180,17 @@ def run():
                 if m1 and m5:
                     data[par] = {"m1": m1, "m5": m5}
 
+            if not data:
+                time.sleep(1)
+                continue
+
             señal = detectar_entrada_oculta(data)
 
             if señal:
                 par, direccion, score = señal
 
-                if score < 7:
-                    continue
+                log(f"""📈 SEÑAL DETECTADA
 
-                log(f"""
-📈 MOMENTUM DETECTADO
 {par} {direccion}
 Score: {score}
 """)
@@ -172,9 +200,9 @@ Score: {score}
             time.sleep(0.5)
 
         except Exception as e:
-            log(f"Error: {e}")
+            log(f"❌ Error general: {e}")
             time.sleep(2)
 
 
 if __name__ == "__main__":
-    run() 
+    run()
