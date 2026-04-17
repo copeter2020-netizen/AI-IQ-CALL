@@ -9,7 +9,7 @@ PASSWORD = os.getenv("IQ_PASSWORD")
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-MONTO = 565
+MONTO = 2000
 CUENTA = "PRACTICE"
 
 ultima_entrada = 0
@@ -46,7 +46,6 @@ def conectar():
             if iq.check_connect():
                 iq.change_balance(CUENTA)
 
-                # 🔥 evita errores digital
                 try:
                     iq.api.digital_option = None
                 except:
@@ -71,7 +70,7 @@ def asegurar_conexion(iq):
 
 
 # =========================
-# VELAS M1
+# VELAS
 # =========================
 def obtener_velas(iq):
     try:
@@ -81,20 +80,61 @@ def obtener_velas(iq):
 
 
 # =========================
-# OPERAR (INMEDIATO)
+# PRECIO ACTUAL
 # =========================
-def operar(iq, direccion):
+def obtener_precio(iq):
+    try:
+        return iq.get_candles("EURUSD-OTC", 1, 1, time.time())[0]["close"]
+    except:
+        return None
+
+
+# =========================
+# ESPERAR RETROCESO
+# =========================
+def esperar_retroceso(iq, direccion, apertura):
+    inicio = time.time()
+
+    while time.time() - inicio < 20:  # máximo 20s esperando
+        precio = obtener_precio(iq)
+
+        if not precio:
+            continue
+
+        # 🔥 lógica clave
+        if direccion == "call" and precio < apertura:
+            return True
+
+        if direccion == "put" and precio > apertura:
+            return True
+
+        time.sleep(0.2)
+
+    return False
+
+
+# =========================
+# OPERAR
+# =========================
+def operar(iq, direccion, apertura):
     global ultima_entrada
 
-    # 🔥 evitar sobreoperar
     if time.time() - ultima_entrada < 30:
+        return
+
+    log("⏳ Esperando retroceso a la apertura...")
+
+    retroceso = esperar_retroceso(iq, direccion, apertura)
+
+    if not retroceso:
+        log("❌ No hubo retroceso válido")
         return
 
     try:
         status, order_id = iq.buy(MONTO, "EURUSD-OTC", direccion, 1)
 
         if status:
-            log(f"""🚀 OPERACIÓN INMEDIATA
+            log(f"""🚀 OPERACIÓN (RETROCESO)
 
 EURUSD-OTC {direccion.upper()}
 ID: {order_id}
@@ -123,28 +163,31 @@ def run():
                 time.sleep(0.5)
                 continue
 
-            data = {
-                "EURUSD-OTC": [{
-                    "open": v["open"],
-                    "close": v["close"],
-                    "max": v["max"],
-                    "min": v["min"]
-                } for v in velas]
-            }
+            velas_parseadas = [{
+                "open": v["open"],
+                "close": v["close"],
+                "max": v["max"],
+                "min": v["min"]
+            } for v in velas]
+
+            data = {"EURUSD-OTC": velas_parseadas}
 
             señal = detectar_entrada_oculta(data)
 
             if señal:
                 par, direccion, score = señal
 
+                vela_actual = velas_parseadas[-1]
+                apertura = vela_actual["open"]
+
                 log(f"""
-📈 ENTRADA DETECTADA (TIEMPO REAL)
+📈 SEÑAL CON RETROCESO
 
 EURUSD-OTC {direccion}
+Esperando entrada bajo apertura
 """)
 
-                # 🔥 EJECUTA INMEDIATO
-                operar(iq, direccion)
+                operar(iq, direccion, apertura)
 
             time.sleep(0.2)
 
