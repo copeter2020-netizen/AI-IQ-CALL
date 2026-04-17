@@ -2,7 +2,6 @@ import time
 import os
 import requests
 from iqoptionapi.stable_api import IQ_Option
-
 from estrategia import detectar_entrada_oculta
 
 EMAIL = os.getenv("IQ_EMAIL")
@@ -10,27 +9,28 @@ PASSWORD = os.getenv("IQ_PASSWORD")
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-MONTO = 2000
+MONTO = 1000
+CUENTA = "PRACTICE"
 
 ultima_entrada = 0
 
 
 # =========================
-# TELEGRAM (SIN ERRORES)
+# TELEGRAM
 # =========================
 def enviar_telegram(msg):
     try:
         requests.post(
             f"https://api.telegram.org/bot{TOKEN}/sendMessage",
             data={"chat_id": CHAT_ID, "text": msg},
-            timeout=10
+            timeout=5
         )
     except:
-        pass  # 🔥 elimina spam error
+        pass
 
 
 def log(msg):
-    print(msg)
+    print(msg, flush=True)
     enviar_telegram(msg)
 
 
@@ -44,74 +44,81 @@ def conectar():
             iq.connect()
 
             if iq.check_connect():
-                iq.change_balance("PRACTICE")
+                iq.change_balance(CUENTA)
 
-                print("✅ BOT CONECTADO")
+                try:
+                    iq.api.digital_option = None
+                except:
+                    pass
+
+                log("✅ BOT CONECTADO")
                 return iq
 
         except Exception as e:
-            print("Error conexión:", e)
+            log(f"Error conexión: {e}")
 
         time.sleep(5)
+
+
+def asegurar_conexion(iq):
+    try:
+        if not iq.check_connect():
+            return conectar()
+        return iq
+    except:
+        return conectar()
 
 
 # =========================
 # VELAS
 # =========================
-def obtener_velas(iq, par):
+def obtener_velas(iq):
     try:
-        velas = iq.get_candles(par, 60, 30, time.time())
-
-        if not velas:
-            return None
-
-        return [{
-            "open": v["open"],
-            "close": v["close"],
-            "max": v["max"],
-            "min": v["min"]
-        } for v in velas]
-
+        return iq.get_candles("EURUSD-OTC", 60, 30, time.time())
     except:
         return None
 
 
 # =========================
-# OPERAR (INMEDIATO)
+# TIEMPO
 # =========================
-def operar(iq, par, direccion):
+def esperar_cierre():
+    while int(time.time() % 60) != 59:
+        time.sleep(0.1)
+
+
+def esperar_inicio_vela():
+    while int(time.time() % 60) > 1:
+        time.sleep(0.05)
+
+
+# =========================
+# OPERAR
+# =========================
+def operar(iq, direccion):
     global ultima_entrada
 
-    if time.time() - ultima_entrada < 20:
+    if time.time() - ultima_entrada < 60:
         return
 
-    try:
-        status, _ = iq.buy_digital_spot(par, MONTO, direccion, 1)
+    for _ in range(3):
+        try:
+            status, order_id = iq.buy(MONTO, "EURUSD-OTC", direccion, 1)
 
-        if status:
-            log(f"""
-🚀 OPERACIÓN EJECUTADA
-{par} {direccion.upper()}
+            if status:
+                log(f"""🚀 OPERACIÓN EJECUTADA
+
+EURUSD-OTC {direccion.upper()}
+ID: {order_id}
 """)
-            ultima_entrada = time.time()
-        else:
-            print("❌ No ejecutó")
+                ultima_entrada = time.time()
+                return
+        except:
+            pass
 
-    except Exception as e:
-        print("Error operación:", e)
+        time.sleep(1)
 
-
-# =========================
-# PARES OTC REALES (SIN ERROR)
-# =========================
-PARES = [
-    "EURUSD-OTC",
-    "GBPUSD-OTC",
-    "USDCHF-OTC",
-    "EURJPY-OTC",
-    "GBPJPY-OTC",
-    "EURGBP-OTC"
-]
+    log("❌ Falló ejecución")
 
 
 # =========================
@@ -122,34 +129,54 @@ def run():
 
     while True:
         try:
-            data = {}
+            iq = asegurar_conexion(iq)
 
-            for par in PARES:
-                velas = obtener_velas(iq, par)
-                if velas:
-                    data[par] = velas
+            # 🔥 1. ESPERAR CIERRE (VELA SEÑAL)
+            esperar_cierre()
 
-            if not data:
-                time.sleep(1)
+            velas = obtener_velas(iq)
+
+            if not velas:
                 continue
+
+            velas_parseadas = [{
+                "open": v["open"],
+                "close": v["close"],
+                "max": v["max"],
+                "min": v["min"]
+            } for v in velas]
+
+            data = {"EURUSD-OTC": velas_parseadas}
 
             señal = detectar_entrada_oculta(data)
 
-            if señal:
-                par, direccion, score = señal
+            if not señal:
+                continue
 
-                log(f"""
-🎯 SEÑAL DETECTADA
-{par} {direccion}
-Score: {score}
+            par, direccion, score = señal
+
+            log(f"""
+📊 SEÑAL DETECTADA
+
+EURUSD-OTC {direccion}
+Esperando confirmación...
 """)
 
-                operar(iq, par, direccion)
+            # 🔥 2. ESPERAR 1 VELA COMPLETA (confirmación)
+            esperar_cierre()
 
-            time.sleep(0.5)
+            log("⏳ Vela de confirmación completada")
+
+            # 🔥 3. ESPERAR INICIO DE LA SIGUIENTE (vela de entrada)
+            esperar_inicio_vela()
+
+            log("🎯 Ejecutando entrada en nueva vela")
+
+            # 🔥 4. ENTRAR
+            operar(iq, direccion)
 
         except Exception as e:
-            print("Error general:", e)
+            log(f"Error: {e}")
             time.sleep(2)
 
 
