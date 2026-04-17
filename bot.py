@@ -1,13 +1,12 @@
 import time
 import os
-import requests
 from iqoptionapi.stable_api import IQ_Option
 from estrategia import detectar_entrada_oculta
 
 EMAIL = os.getenv("IQ_EMAIL")
 PASSWORD = os.getenv("IQ_PASSWORD")
 
-MONTO = 600
+MONTO = 508
 CUENTA = "PRACTICE"
 
 ultima_entrada = 0
@@ -24,10 +23,19 @@ def conectar():
 
             if iq.check_connect():
                 iq.change_balance(CUENTA)
+
+                # 🔥 evita bug digital
+                try:
+                    iq.get_all_open_time()
+                except:
+                    pass
+
                 print("✅ BOT CONECTADO")
                 return iq
-        except:
-            pass
+
+        except Exception as e:
+            print("Error conexión:", e)
+
         time.sleep(5)
 
 
@@ -36,19 +44,20 @@ def conectar():
 # =========================
 def activo_abierto(iq, par):
     try:
-        return iq.get_all_open_time()["binary"][par]["open"]
+        data = iq.get_all_open_time()
+        return data.get("binary", {}).get(par, {}).get("open", True)
     except:
-        return True  # evitar falso cerrado OTC
+        return True  # evitar falsos errores
 
 
 # =========================
-# ESPERAR MEJOR MOMENTO (🔥 NUEVO)
+# TIMING (sin bloquear)
 # =========================
 def sincronizar_entrada():
-    while True:
-        segundos = int(time.time() % 60)
-        if segundos >= 58:  # entrada casi en nueva vela
-            break
+    start = time.time()
+    while time.time() - start < 2:  # 🔥 evita congelar bot
+        if int(time.time() % 60) >= 58:
+            return
         time.sleep(0.01)
 
 
@@ -57,13 +66,14 @@ def sincronizar_entrada():
 # =========================
 def obtener_velas(iq, par, timeframe):
     try:
-        return iq.get_candles(par, timeframe, 50, time.time())
+        velas = iq.get_candles(par, timeframe, 50, time.time())
+        return velas if velas else None
     except:
         return None
 
 
 # =========================
-# OPERAR (MEJORADO)
+# OPERAR (CORREGIDO)
 # =========================
 def operar(iq, par, direccion):
     global ultima_entrada
@@ -75,10 +85,10 @@ def operar(iq, par, direccion):
         print(f"❌ {par} cerrado")
         return
 
-    print(f"⏳ Esperando timing {par}...")
-    sincronizar_entrada()  # 🔥 mejora de precisión
+    print(f"⏳ Ejecutando {par}...")
 
-    # 🔥 reintentos reales
+    sincronizar_entrada()
+
     for intento in range(3):
         try:
             status, order_id = iq.buy(MONTO, par, direccion, 1)
@@ -88,18 +98,18 @@ def operar(iq, par, direccion):
                 ultima_entrada = time.time()
                 return
             else:
-                print("⚠️ Reintentando ejecución...")
+                print("⚠️ Reintentando...")
 
         except Exception as e:
-            print("Error:", e)
+            print("Error operación:", e)
 
         time.sleep(0.5)
 
-    print("❌ Falló la ejecución total")
+    print("❌ Falló ejecución total")
 
 
 # =========================
-# MAIN
+# MAIN (ANTI-CRASH)
 # =========================
 def run():
     iq = conectar()
@@ -118,7 +128,6 @@ def run():
             data = {}
 
             for par in PARES:
-
                 m1 = obtener_velas(iq, par, 60)
                 m5 = obtener_velas(iq, par, 300)
 
@@ -150,4 +159,9 @@ Score: {score}
 
 
 if __name__ == "__main__":
-    run()
+    while True:  # 🔥 evita que Railway mate el bot
+        try:
+            run()
+        except Exception as e:
+            print("🔥 Reiniciando bot:", e)
+            time.sleep(3)
