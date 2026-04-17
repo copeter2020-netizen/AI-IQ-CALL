@@ -1,96 +1,247 @@
-def detectar_entrada_oculta(data):
-    mejor = None
-    mejor_score = 0
+# =========================
+# UTILIDADES
+# =========================
+def es_alcista(v):
+    return v["close"] > v["open"]
 
-    for par, velas in data.items():
+def es_bajista(v):
+    return v["close"] < v["open"]
 
-        if len(velas) < 20:
-            continue
+def cuerpo(v):
+    return abs(v["close"] - v["open"])
 
-        closes = [v["close"] for v in velas]
-        highs = [v["max"] for v in velas]
-        lows = [v["min"] for v in velas]
+def mecha_superior(v):
+    return v["max"] - max(v["open"], v["close"])
 
-        # =========================
-        # TENDENCIA (estructura)
-        # =========================
-        tendencia_alcista = closes[-1] > closes[-5] > closes[-10]
-        tendencia_bajista = closes[-1] < closes[-5] < closes[-10]
+def mecha_inferior(v):
+    return min(v["open"], v["close"]) - v["min"]
 
-        if not tendencia_alcista and not tendencia_bajista:
-            continue
 
-        # =========================
-        # IMPULSO
-        # =========================
-        cuerpo = abs(closes[-1] - velas[-1]["open"])
-        rango = highs[-1] - lows[-1]
+# =========================
+# RSI
+# =========================
+def calcular_rsi(velas, periodo=14):
+    cierres = [v["close"] for v in velas]
 
-        if rango == 0:
-            continue
+    ganancias, perdidas = [], []
 
-        fuerza = cuerpo / rango
-
-        if fuerza < 0.6:
-            continue
-
-        # =========================
-        # RETROCESO POR ESTRUCTURA
-        # =========================
-        retroceso = abs(closes[-2] - closes[-3]) < abs(closes[-4] - closes[-5])
-
-        if not retroceso:
-            continue
-
-        # =========================
-        # SOPORTE / RESISTENCIA SIMPLE
-        # =========================
-        zona_alta = max(highs[-10:])
-        zona_baja = min(lows[-10:])
-
-        cerca_resistencia = closes[-1] >= zona_alta * 0.998
-        cerca_soporte = closes[-1] <= zona_baja * 1.002
-
-        # =========================
-        # DIRECCIÓN FINAL
-        # =========================
-        direccion = None
-        score = 0
-
-        if tendencia_alcista and not cerca_resistencia:
-            direccion = "call"
-            score += 5
-
-        elif tendencia_bajista and not cerca_soporte:
-            direccion = "put"
-            score += 5
-
+    for i in range(1, len(cierres)):
+        cambio = cierres[i] - cierres[i - 1]
+        if cambio > 0:
+            ganancias.append(cambio)
+            perdidas.append(0)
         else:
+            ganancias.append(0)
+            perdidas.append(abs(cambio))
+
+    if len(ganancias) < periodo:
+        return 50
+
+    avg_gain = sum(ganancias[-periodo:]) / periodo
+    avg_loss = sum(perdidas[-periodo:]) / periodo
+
+    if avg_loss == 0:
+        return 100
+
+    rs = avg_gain / avg_loss
+    return 100 - (100 / (1 + rs))
+
+
+# =========================
+# BOLLINGER
+# =========================
+def calcular_bollinger(velas, periodo=20):
+    cierres = [v["close"] for v in velas[-periodo:]]
+
+    if len(cierres) < periodo:
+        return None, None, None
+
+    media = sum(cierres) / periodo
+    varianza = sum((c - media) ** 2 for c in cierres) / periodo
+    desviacion = varianza ** 0.5
+
+    upper = media + (2 * desviacion)
+    lower = media - (2 * desviacion)
+
+    return upper, media, lower
+
+
+# =========================
+# TENDENCIA
+# =========================
+def detectar_tendencia(velas):
+    highs = [v["max"] for v in velas[-10:]]
+    lows = [v["min"] for v in velas[-10:]]
+
+    if highs[-1] > highs[-2] and lows[-1] > lows[-2]:
+        return "alcista"
+
+    if highs[-1] < highs[-2] and lows[-1] < lows[-2]:
+        return "bajista"
+
+    return None
+
+
+# =========================
+# SOPORTE / RESISTENCIA
+# =========================
+def detectar_zona(velas):
+    zona_alta = max(v["max"] for v in velas[-15:])
+    zona_baja = min(v["min"] for v in velas[-15:])
+    return zona_alta, zona_baja
+
+
+# =========================
+# ESTRATEGIA 1: ENTRADA OCULTA
+# =========================
+def entrada_oculta(velas, tendencia):
+    v1, v2 = velas[-3], velas[-2]
+    score = 0
+
+    if tendencia == "alcista":
+        if es_bajista(v1) and es_alcista(v2):
+            score += 5
+            return ("call", score)
+
+    if tendencia == "bajista":
+        if es_alcista(v1) and es_bajista(v2):
+            score += 5
+            return ("put", score)
+
+    return None
+
+
+# =========================
+# ESTRATEGIA 2: RECHAZO EN ZONA
+# =========================
+def rechazo_zona(velas, tendencia):
+    ultima = velas[-2]
+    zona_alta, zona_baja = detectar_zona(velas)
+    score = 0
+
+    if tendencia == "alcista":
+        if ultima["min"] <= zona_baja:
+            if mecha_inferior(ultima) > cuerpo(ultima) * 1.5:
+                if es_alcista(ultima):
+                    score += 7
+                    return ("call", score)
+
+    if tendencia == "bajista":
+        if ultima["max"] >= zona_alta:
+            if mecha_superior(ultima) > cuerpo(ultima) * 1.5:
+                if es_bajista(ultima):
+                    score += 7
+                    return ("put", score)
+
+    return None
+
+
+# =========================
+# ESTRATEGIA 3: RUPTURA
+# =========================
+def ruptura_continuidad(velas, tendencia):
+    v1, v2 = velas[-3], velas[-2]
+    score = 0
+
+    if tendencia == "alcista":
+        if v2["close"] > v1["max"] and es_alcista(v2):
+            score += 6
+            return ("call", score)
+
+    if tendencia == "bajista":
+        if v2["close"] < v1["min"] and es_bajista(v2):
+            score += 6
+            return ("put", score)
+
+    return None
+
+
+# =========================
+# ESTRATEGIA 4: MULTI-TEMPORAL
+# =========================
+def confirmacion_multitemporal(velas_m1, velas_m5, tendencia):
+
+    rsi_m1 = calcular_rsi(velas_m1)
+    rsi_m5 = calcular_rsi(velas_m5)
+
+    upper, media, lower = calcular_bollinger(velas_m1)
+
+    if upper is None:
+        return None
+
+    ultima = velas_m1[-2]
+    score = 0
+
+    if tendencia == "alcista":
+        if rsi_m1 > 50 and rsi_m5 > 50:
+            score += 3
+
+            if ultima["close"] <= media or ultima["min"] <= lower:
+                score += 4
+
+            if es_alcista(ultima):
+                score += 3
+
+            if score >= 7:
+                return ("call", score)
+
+    if tendencia == "bajista":
+        if rsi_m1 < 50 and rsi_m5 < 50:
+            score += 3
+
+            if ultima["close"] >= media or ultima["max"] >= upper:
+                score += 4
+
+            if es_bajista(ultima):
+                score += 3
+
+            if score >= 7:
+                return ("put", score)
+
+    return None
+
+
+# =========================
+# FUNCIÓN PRINCIPAL
+# =========================
+def detectar_entrada_oculta(data):
+
+    for par in data:
+
+        velas_m1 = data[par]["m1"]
+        velas_m5 = data[par]["m5"]
+
+        if len(velas_m1) < 20 or len(velas_m5) < 20:
             continue
 
-        # =========================
-        # FILTRO DE AGOTAMIENTO
-        # =========================
-        if fuerza > 0.9:
+        tendencia = detectar_tendencia(velas_m1)
+
+        if not tendencia:
             continue
 
-        score += fuerza * 10
+        señales = []
 
-        # =========================
-        # REPETICIÓN DE PATRÓN
-        # =========================
-        repeticiones = 0
-        for i in range(-10, -2):
-            if abs(closes[i] - closes[i-1]) > abs(closes[i-2] - closes[i-3]):
-                repeticiones += 1
+        e1 = entrada_oculta(velas_m1, tendencia)
+        if e1:
+            señales.append(e1)
 
-        if repeticiones < 3:
-            continue
+        e2 = rechazo_zona(velas_m1, tendencia)
+        if e2:
+            señales.append(e2)
 
-        score += repeticiones
+        e3 = ruptura_continuidad(velas_m1, tendencia)
+        if e3:
+            señales.append(e3)
 
-        if score > mejor_score:
-            mejor_score = score
-            mejor = (par, direccion, round(score, 2))
+        e4 = confirmacion_multitemporal(velas_m1, velas_m5, tendencia)
+        if e4:
+            señales.append(e4)
 
-    return mejor
+        if señales:
+            mejor = max(señales, key=lambda x: x[1])
+            direccion, score = mejor
+
+            if score >= 6:
+                return par, direccion, score
+
+    return None
