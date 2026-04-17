@@ -2,6 +2,7 @@ import time
 import os
 import requests
 import sys
+import threading
 from iqoptionapi.stable_api import IQ_Option
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -18,21 +19,13 @@ TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 MONTO = 50
-CUENTA = "PRACTICE"
+TIEMPO = 1
+PAR = "EURUSD-OTC"
 
+bot_activo = False
 ultima_entrada = 0
 update_id = None
 
-# =========================
-# CONFIG PANEL
-# =========================
-config = {
-    "tipo": "digital",
-    "par": "EURUSD-OTC",
-    "exp": 1,
-    "monto": 50,
-    "activo": True
-}
 
 # =========================
 # TELEGRAM
@@ -54,134 +47,51 @@ def log(msg):
 
 
 # =========================
-# PANEL BOTONES
+# BOTONES / CONTROL
 # =========================
-def enviar_menu():
-    keyboard = {
-        "inline_keyboard": [
-            [{"text": "📊 Tipo", "callback_data": "tipo"}],
-            [{"text": "💱 Par", "callback_data": "par"}],
-            [{"text": "⏱ Expiración", "callback_data": "exp"}],
-            [{"text": "💰 Monto", "callback_data": "monto"}],
-            [{"text": "🟢 Activar / 🔴 Detener", "callback_data": "control"}],
-        ]
-    }
-
-    requests.post(
-        f"https://api.telegram.org/bot{TOKEN}/sendMessage",
-        json={"chat_id": CHAT_ID, "text": "🎛 PANEL", "reply_markup": keyboard}
-    )
-
-
-def menu_tipo():
-    keyboard = {
-        "inline_keyboard": [
-            [{"text": "DIGITAL", "callback_data": "tipo_digital"}],
-            [{"text": "BINARIO", "callback_data": "tipo_binario"}],
-        ]
-    }
-
-    requests.post(
-        f"https://api.telegram.org/bot{TOKEN}/sendMessage",
-        json={"chat_id": CHAT_ID, "text": "Tipo:", "reply_markup": keyboard}
-    )
-
-
-def menu_pares():
-    keyboard = {
-        "inline_keyboard": [
-            [{"text": "EURUSD", "callback_data": "par_EURUSD-OTC"}],
-            [{"text": "GBPUSD", "callback_data": "par_GBPUSD-OTC"}],
-            [{"text": "EURJPY", "callback_data": "par_EURJPY-OTC"}],
-            [{"text": "USDCHF", "callback_data": "par_USDCHF-OTC"}],
-            [{"text": "GBPJPY", "callback_data": "par_GBPJPY-OTC"}],
-            [{"text": "USDZAR", "callback_data": "par_USDZAR-OTC"}],
-        ]
-    }
-
-    requests.post(
-        f"https://api.telegram.org/bot{TOKEN}/sendMessage",
-        json={"chat_id": CHAT_ID, "text": "Par:", "reply_markup": keyboard}
-    )
-
-
-def menu_exp():
-    keyboard = {
-        "inline_keyboard": [
-            [{"text": "1M", "callback_data": "exp_1"}],
-            [{"text": "2M", "callback_data": "exp_2"}],
-            [{"text": "3M", "callback_data": "exp_3"}],
-            [{"text": "4M", "callback_data": "exp_4"}],
-            [{"text": "5M", "callback_data": "exp_5"}],
-        ]
-    }
-
-    requests.post(
-        f"https://api.telegram.org/bot{TOKEN}/sendMessage",
-        json={"chat_id": CHAT_ID, "text": "Exp:", "reply_markup": keyboard}
-    )
-
-
-def menu_monto():
-    keyboard = {
-        "inline_keyboard": [
-            [{"text": "$10", "callback_data": "monto_10"}],
-            [{"text": "$50", "callback_data": "monto_50"}],
-            [{"text": "$100", "callback_data": "monto_100"}],
-        ]
-    }
-
-    requests.post(
-        f"https://api.telegram.org/bot{TOKEN}/sendMessage",
-        json={"chat_id": CHAT_ID, "text": "Monto:", "reply_markup": keyboard}
-    )
-
-
-def verificar_botones():
-    global update_id
+def verificar_comandos():
+    global bot_activo, update_id, PAR, MONTO, TIEMPO
 
     try:
-        res = requests.get(
-            f"https://api.telegram.org/bot{TOKEN}/getUpdates",
-            params={"offset": update_id},
-            timeout=3
-        ).json()
+        url = f"https://api.telegram.org/bot{TOKEN}/getUpdates"
+        params = {"timeout": 1, "offset": update_id}
 
-        for u in res.get("result", []):
-            update_id = u["update_id"] + 1
+        res = requests.get(url, params=params, timeout=3).json()
 
-            if "callback_query" not in u:
+        if "result" not in res:
+            return
+
+        for update in res["result"]:
+            update_id = update["update_id"] + 1
+
+            if "message" not in update:
                 continue
 
-            data = u["callback_query"]["data"]
+            msg = update["message"].get("text", "")
 
-            if data == "tipo":
-                menu_tipo()
+            # CONTROL BOT
+            if msg == "▶️ START":
+                bot_activo = True
+                log("🟢 BOT ACTIVADO")
 
-            elif data == "par":
-                menu_pares()
+            elif msg == "⏹ STOP":
+                bot_activo = False
+                log("🔴 BOT DETENIDO")
 
-            elif data == "exp":
-                menu_exp()
+            # PARES
+            elif msg in ["EURUSD", "GBPUSD", "EURJPY", "USDCHF", "GBPJPY", "USDZAR"]:
+                PAR = msg + "-OTC"
+                log(f"📊 Par seleccionado: {PAR}")
 
-            elif data == "monto":
-                menu_monto()
+            # TIEMPO
+            elif msg in ["1M", "2M", "3M", "4M", "5M"]:
+                TIEMPO = int(msg.replace("M", ""))
+                log(f"⏱ Tiempo: {TIEMPO}M")
 
-            elif data == "control":
-                config["activo"] = not config["activo"]
-                log(f"BOT {'ACTIVO' if config['activo'] else 'DETENIDO'}")
-
-            elif "tipo_" in data:
-                config["tipo"] = data.split("_")[1]
-
-            elif "par_" in data:
-                config["par"] = data.split("_")[1]
-
-            elif "exp_" in data:
-                config["exp"] = int(data.split("_")[1])
-
-            elif "monto_" in data:
-                config["monto"] = int(data.split("_")[1])
+            # MONTO MANUAL
+            elif msg.isdigit():
+                MONTO = int(msg)
+                log(f"💰 Monto actualizado: {MONTO}")
 
     except:
         pass
@@ -197,12 +107,25 @@ def conectar():
             iq.connect()
 
             if iq.check_connect():
-                iq.change_balance(CUENTA)
-                log("✅ CONECTADO")
+                iq.change_balance("PRACTICE")
+                iq.get_all_ACTIVES_OPCODE()
+
+                log("✅ BOT CONECTADO")
                 return iq
-        except:
-            pass
+
+        except Exception as e:
+            print(f"Error conexión: {e}")
+
         time.sleep(5)
+
+
+def asegurar_conexion(iq):
+    try:
+        if not iq.check_connect():
+            return conectar()
+        return iq
+    except:
+        return conectar()
 
 
 # =========================
@@ -211,7 +134,17 @@ def conectar():
 def obtener_velas(iq, par):
     try:
         velas = iq.get_candles(par, 60, 30, time.time())
-        return velas
+
+        if not velas:
+            return None
+
+        return [{
+            "open": v["open"],
+            "close": v["close"],
+            "max": v["max"],
+            "min": v["min"]
+        } for v in velas]
+
     except:
         return None
 
@@ -219,59 +152,73 @@ def obtener_velas(iq, par):
 # =========================
 # OPERAR
 # =========================
-def operar(iq, direccion):
+def operar(iq, par, direccion):
     global ultima_entrada
 
-    if time.time() - ultima_entrada < 20:
-        return
+    if time.time() - ultima_entrada < 10:
+        return False
 
     try:
-        iq.subscribe_strike_list(config["par"], config["exp"])
-        time.sleep(1)
-
-        status, _ = iq.buy_digital_spot(
-            config["par"],
-            config["monto"],
-            direccion,
-            config["exp"]
-        )
-
-        iq.unsubscribe_strike_list(config["par"], config["exp"])
+        status, order_id = iq.buy(MONTO, par, direccion, TIEMPO)
 
         if status:
-            log(f"🚀 {config['par']} {direccion.upper()}")
+            log(f"""🚀 OPERACIÓN
+
+📊 {par}
+📈 {direccion.upper()}
+⏱ {TIEMPO}M
+💰 {MONTO}
+ID: {order_id}
+""")
+            ultima_entrada = time.time()
+        else:
+            print("❌ No ejecutó")
 
     except Exception as e:
-        log(f"Error: {e}")
+        print(f"Error operación: {e}")
 
 
 # =========================
 # MAIN
 # =========================
 def run():
+
     iq = conectar()
-    enviar_menu()
 
     while True:
-        verificar_botones()
+        try:
+            verificar_comandos()
 
-        if not config["activo"]:
-            time.sleep(1)
-            continue
+            if not bot_activo:
+                time.sleep(1)
+                continue
 
-        data = {}
+            iq = asegurar_conexion(iq)
 
-        velas = obtener_velas(iq, config["par"])
-        if velas:
-            data[config["par"]] = velas
+            velas = obtener_velas(iq, PAR)
 
-        señal = detectar_entrada_oculta(data)
+            if not velas:
+                continue
 
-        if señal:
-            _, direccion, _ = señal
-            operar(iq, direccion)
+            señal = detectar_entrada_oculta({PAR: velas})
 
-        time.sleep(0.5)
+            if señal:
+                _, direccion, score = señal
+
+                log(f"""🎯 SEÑAL
+
+{PAR}
+{direccion}
+Score: {score}
+""")
+
+                operar(iq, PAR, direccion)
+
+            time.sleep(0.5)
+
+        except Exception as e:
+            print(f"Error: {e}")
+            time.sleep(2)
 
 
 if __name__ == "__main__":
