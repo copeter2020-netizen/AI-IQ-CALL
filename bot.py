@@ -9,18 +9,17 @@ PASSWORD = os.getenv("IQ_PASSWORD")
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-MONTO = 567
+MONTO = 560
 CUENTA = "PRACTICE"
 
 ultima_entrada = 0
+ultimo_par = None
 
 
 # =========================
-# TELEGRAM + LOG
+# TELEGRAM
 # =========================
 def enviar_telegram(msg):
-    if not TOKEN or not CHAT_ID:
-        return
     try:
         requests.post(
             f"https://api.telegram.org/bot{TOKEN}/sendMessage",
@@ -48,7 +47,7 @@ def conectar():
             if iq.check_connect():
                 iq.change_balance(CUENTA)
 
-                # 🔥 DESACTIVA DIGITAL (CLAVE)
+                # 🔥 DESACTIVA DIGITAL (reduce errores)
                 try:
                     iq.api.digital_option = None
                 except:
@@ -58,7 +57,7 @@ def conectar():
                 return iq
 
         except Exception as e:
-            log(f"❌ Error conexión: {e}")
+            log(f"Error conexión: {e}")
 
         time.sleep(5)
 
@@ -78,19 +77,16 @@ def asegurar_conexion(iq):
 # =========================
 def activo_abierto(iq, par):
     try:
-        data = iq.get_all_open_time()
-        return data["binary"].get(par, {}).get("open", True)
+        return iq.get_all_open_time()["binary"][par]["open"]
     except:
         return True
 
 
 # =========================
-# TIMING PRECISO
+# TIMING
 # =========================
 def esperar_cierre():
-    while True:
-        if int(time.time() % 60) >= 59:
-            break
+    while int(time.time() % 60) < 59:
         time.sleep(0.01)
 
 
@@ -105,12 +101,17 @@ def obtener_velas(iq, par, timeframe):
 
 
 # =========================
-# OPERAR (ULTRA ESTABLE)
+# OPERAR
 # =========================
 def operar(iq, par, direccion):
-    global ultima_entrada
+    global ultima_entrada, ultimo_par
 
-    if time.time() - ultima_entrada < 10:
+    # 🔥 evitar spam de operaciones
+    if time.time() - ultima_entrada < 30:
+        return
+
+    # 🔥 evitar repetir mismo par seguido
+    if par == ultimo_par:
         return
 
     if not activo_abierto(iq, par):
@@ -121,8 +122,7 @@ def operar(iq, par, direccion):
 
     esperar_cierre()
 
-    # 🔥 ejecutar varias veces hasta que entre
-    for intento in range(5):
+    for i in range(3):
         try:
             status, order_id = iq.buy(MONTO, par, direccion, 1)
 
@@ -135,17 +135,15 @@ Monto: {MONTO}
 ID: {order_id}
 """)
                 ultima_entrada = time.time()
+                ultimo_par = par
                 return
-
             else:
-                log(f"⚠️ Reintentando ({intento+1}/5)...")
+                log("⚠️ Reintentando...")
 
         except Exception as e:
-            # 🔥 IGNORA ERROR UNDERLYING
             if "underlying" in str(e):
                 continue
-
-            log(f"⚠️ Error intento: {e}")
+            log(f"Error: {e}")
 
         time.sleep(1)
 
@@ -188,6 +186,10 @@ def run():
 
             if señal:
                 par, direccion, score = señal
+
+                # 🔥 filtro mínimo
+                if score < 7:
+                    continue
 
                 log(f"""📈 SEÑAL DETECTADA
 
