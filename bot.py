@@ -1,13 +1,12 @@
 import time
 import os
-import requests
 from iqoptionapi.stable_api import IQ_Option
 from estrategia import detectar_entrada_oculta
 
 EMAIL = os.getenv("IQ_EMAIL")
 PASSWORD = os.getenv("IQ_PASSWORD")
 
-MONTO = 508
+MONTO = 540
 CUENTA = "PRACTICE"
 
 ultima_entrada = 0
@@ -15,22 +14,27 @@ ultima_entrada = 0
 
 def conectar():
     while True:
-        try:
-            iq = IQ_Option(EMAIL, PASSWORD)
-            iq.connect()
+        iq = IQ_Option(EMAIL, PASSWORD)
+        iq.connect()
 
-            if iq.check_connect():
-                iq.change_balance(CUENTA)
-                print("✅ BOT CONECTADO")
-                return iq
-        except:
-            pass
+        if iq.check_connect():
+            iq.change_balance(CUENTA)
+            print("✅ BOT CONECTADO")
+            return iq
+
         time.sleep(5)
 
 
-def obtener_velas(iq, par, timeframe):
+def activo_abierto(iq, par):
     try:
-        return iq.get_candles(par, timeframe, 50, time.time())
+        return iq.get_all_open_time()["digital"][par]["open"]
+    except:
+        return False
+
+
+def obtener_velas(iq, par, tf):
+    try:
+        return iq.get_candles(par, tf, 50, time.time())
     except:
         return None
 
@@ -38,20 +42,33 @@ def obtener_velas(iq, par, timeframe):
 def operar(iq, par, direccion):
     global ultima_entrada
 
-    if time.time() - ultima_entrada < 10:
+    if time.time() - ultima_entrada < 5:
         return
 
-    try:
-        status, _ = iq.buy(MONTO, par, direccion, 1)
+    if not activo_abierto(iq, par):
+        print(f"❌ {par} cerrado")
+        return
 
-        if status:
-            print(f"🚀 {par} {direccion}")
-            ultima_entrada = time.time()
-        else:
-            print("❌ No ejecutó")
+    for intento in range(3):  # 🔥 reintentos reales
+        try:
+            iq.subscribe_strike_list(par, 1)
+            time.sleep(0.3)
 
-    except Exception as e:
-        print("Error:", e)
+            status, order_id = iq.buy_digital_spot(par, MONTO, direccion, 1)
+
+            iq.unsubscribe_strike_list(par, 1)
+
+            if status:
+                print(f"🚀 {par} {direccion} ID:{order_id}")
+                ultima_entrada = time.time()
+                return
+            else:
+                print("⚠️ Reintentando...")
+
+        except Exception as e:
+            print("Error:", e)
+
+    print("❌ Falló totalmente la ejecución")
 
 
 def run():
@@ -71,7 +88,6 @@ def run():
             data = {}
 
             for par in PARES:
-
                 m1 = obtener_velas(iq, par, 60)
                 m5 = obtener_velas(iq, par, 300)
 
@@ -83,11 +99,7 @@ def run():
             if señal:
                 par, direccion, score = señal
 
-                print(f"""
-📊 SEÑAL
-{par} {direccion}
-Score: {score}
-""")
+                print(f"\n📈 SEÑAL\n{par} {direccion}\nScore: {score}")
 
                 operar(iq, par, direccion)
 
