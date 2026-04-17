@@ -9,7 +9,7 @@ PASSWORD = os.getenv("IQ_PASSWORD")
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-MONTO = 2000
+MONTO = 3333
 CUENTA = "PRACTICE"
 
 ultima_entrada = 0
@@ -70,7 +70,7 @@ def asegurar_conexion(iq):
 
 
 # =========================
-# VELAS
+# DATOS
 # =========================
 def obtener_velas(iq):
     try:
@@ -79,9 +79,6 @@ def obtener_velas(iq):
         return None
 
 
-# =========================
-# PRECIO ACTUAL
-# =========================
 def obtener_precio(iq):
     try:
         return iq.get_candles("EURUSD-OTC", 1, 1, time.time())[0]["close"]
@@ -90,77 +87,108 @@ def obtener_precio(iq):
 
 
 # =========================
-# ESPERAR RETROCESO
+# TIEMPO
 # =========================
-def esperar_retroceso(iq, direccion, apertura):
+def esperar_cierre():
+    while int(time.time() % 60) != 59:
+        time.sleep(0.1)
+
+
+def esperar_nueva_vela():
+    while int(time.time() % 60) > 1:
+        time.sleep(0.05)
+
+
+# =========================
+# ENTRADA SNIPER
+# =========================
+def entrada_sniper(iq, direccion, apertura):
+    log("🎯 Buscando entrada sniper...")
+
+    tocado = False
+    rechazo = False
+
     inicio = time.time()
 
-    while time.time() - inicio < 20:  # máximo 20s esperando
+    while True:
+        segundos = int(time.time() % 60)
+
+        # 🔥 SOLO PRIMEROS 30 SEGUNDOS
+        if segundos > 30:
+            log("❌ No hubo entrada sniper")
+            return False
+
         precio = obtener_precio(iq)
 
         if not precio:
             continue
 
-        # 🔥 lógica clave
-        if direccion == "call" and precio < apertura:
-            return True
+        # =========================
+        # FASE 1: TOQUE
+        # =========================
+        if not tocado:
+            if direccion == "call" and precio < apertura:
+                tocado = True
 
-        if direccion == "put" and precio > apertura:
-            return True
+            if direccion == "put" and precio > apertura:
+                tocado = True
 
-        time.sleep(0.2)
+        # =========================
+        # FASE 2: RECHAZO
+        # =========================
+        if tocado and not rechazo:
+            if direccion == "call" and precio > apertura:
+                rechazo = True
 
-    return False
+            if direccion == "put" and precio < apertura:
+                rechazo = True
 
+        # =========================
+        # FASE 3: CONFIRMACIÓN
+        # =========================
+        if tocado and rechazo:
+            log("🚀 Entrada sniper confirmada")
 
-# =========================
-# OPERAR
-# =========================
-def operar(iq, direccion, apertura):
-    global ultima_entrada
+            for _ in range(3):
+                try:
+                    status, order_id = iq.buy(MONTO, "EURUSD-OTC", direccion, 1)
 
-    if time.time() - ultima_entrada < 30:
-        return
-
-    log("⏳ Esperando retroceso a la apertura...")
-
-    retroceso = esperar_retroceso(iq, direccion, apertura)
-
-    if not retroceso:
-        log("❌ No hubo retroceso válido")
-        return
-
-    try:
-        status, order_id = iq.buy(MONTO, "EURUSD-OTC", direccion, 1)
-
-        if status:
-            log(f"""🚀 OPERACIÓN (RETROCESO)
+                    if status:
+                        log(f"""🔥 OPERACIÓN SNIPER
 
 EURUSD-OTC {direccion.upper()}
 ID: {order_id}
 """)
-            ultima_entrada = time.time()
-        else:
-            log("❌ No ejecutó")
+                        return True
+                except:
+                    pass
 
-    except Exception as e:
-        log(f"Error operación: {e}")
+                time.sleep(1)
+
+            log("❌ Falló ejecución")
+            return False
+
+        time.sleep(0.1)
 
 
 # =========================
 # MAIN
 # =========================
 def run():
+    global ultima_entrada
+
     iq = conectar()
 
     while True:
         try:
             iq = asegurar_conexion(iq)
 
+            # 🔥 ESPERAR CIERRE
+            esperar_cierre()
+
             velas = obtener_velas(iq)
 
             if not velas:
-                time.sleep(0.5)
                 continue
 
             velas_parseadas = [{
@@ -174,22 +202,30 @@ def run():
 
             señal = detectar_entrada_oculta(data)
 
-            if señal:
-                par, direccion, score = señal
+            if not señal:
+                continue
 
-                vela_actual = velas_parseadas[-1]
-                apertura = vela_actual["open"]
+            par, direccion, score = señal
 
-                log(f"""
-📈 SEÑAL CON RETROCESO
+            log(f"""
+📊 SEÑAL SNIPER
 
 EURUSD-OTC {direccion}
-Esperando entrada bajo apertura
 """)
 
-                operar(iq, direccion, apertura)
+            # 🔥 NUEVA VELA
+            esperar_nueva_vela()
 
-            time.sleep(0.2)
+            nueva_vela = obtener_velas(iq)
+
+            if not nueva_vela:
+                continue
+
+            apertura = nueva_vela[-1]["open"]
+
+            # 🔥 ENTRADA AVANZADA
+            if entrada_sniper(iq, direccion, apertura):
+                ultima_entrada = time.time()
 
         except Exception as e:
             log(f"Error: {e}")
