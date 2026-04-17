@@ -47,18 +47,19 @@ def activo_abierto(iq, par):
         data = iq.get_all_open_time()
         return data.get("binary", {}).get(par, {}).get("open", True)
     except:
-        return True  # evitar falsos errores
+        return True
 
 
 # =========================
-# TIMING (sin bloquear)
+# TIMING INTELIGENTE
 # =========================
-def sincronizar_entrada():
-    start = time.time()
-    while time.time() - start < 2:  # 🔥 evita congelar bot
-        if int(time.time() % 60) >= 58:
+def esperar_momento():
+    # 🔥 entra en mejor zona sin congelar
+    for _ in range(50):
+        segundos = int(time.time() % 60)
+        if segundos >= 57:
             return
-        time.sleep(0.01)
+        time.sleep(0.02)
 
 
 # =========================
@@ -73,12 +74,45 @@ def obtener_velas(iq, par, timeframe):
 
 
 # =========================
-# OPERAR (CORREGIDO)
+# EJECUCIÓN INTELIGENTE
+# =========================
+def ejecutar_orden(iq, par, direccion):
+
+    # 🔥 intento 1: normal
+    try:
+        status, order_id = iq.buy(MONTO, par, direccion, 1)
+        if status:
+            return True, order_id
+    except:
+        pass
+
+    # 🔥 intento 2: invertir timing
+    time.sleep(0.3)
+    try:
+        status, order_id = iq.buy(MONTO, par, direccion, 1)
+        if status:
+            return True, order_id
+    except:
+        pass
+
+    # 🔥 intento 3: último intento directo
+    try:
+        status, order_id = iq.buy(MONTO, par, direccion, 1)
+        if status:
+            return True, order_id
+    except:
+        pass
+
+    return False, None
+
+
+# =========================
+# OPERAR (CORREGIDO REAL)
 # =========================
 def operar(iq, par, direccion):
     global ultima_entrada
 
-    if time.time() - ultima_entrada < 10:
+    if time.time() - ultima_entrada < 8:
         return
 
     if not activo_abierto(iq, par):
@@ -87,25 +121,15 @@ def operar(iq, par, direccion):
 
     print(f"⏳ Ejecutando {par}...")
 
-    sincronizar_entrada()
+    esperar_momento()
 
-    for intento in range(3):
-        try:
-            status, order_id = iq.buy(MONTO, par, direccion, 1)
+    ok, order_id = ejecutar_orden(iq, par, direccion)
 
-            if status:
-                print(f"🚀 {par} {direccion} | ID: {order_id}")
-                ultima_entrada = time.time()
-                return
-            else:
-                print("⚠️ Reintentando...")
-
-        except Exception as e:
-            print("Error operación:", e)
-
-        time.sleep(0.5)
-
-    print("❌ Falló ejecución total")
+    if ok:
+        print(f"🚀 {par} {direccion} | ID: {order_id}")
+        ultima_entrada = time.time()
+    else:
+        print("❌ Falló ejecución total")
 
 
 # =========================
@@ -159,9 +183,9 @@ Score: {score}
 
 
 if __name__ == "__main__":
-    while True:  # 🔥 evita que Railway mate el bot
+    while True:
         try:
             run()
         except Exception as e:
-            print("🔥 Reiniciando bot:", e)
+            print("🔥 Reiniciando:", e)
             time.sleep(3)
