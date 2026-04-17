@@ -35,7 +35,7 @@ def calcular_rsi(velas, periodo=14):
             perdidas.append(abs(cambio))
 
     if len(ganancias) < periodo:
-        return 30
+        return 35
 
     avg_gain = sum(ganancias[-periodo:]) / periodo
     avg_loss = sum(perdidas[-periodo:]) / periodo
@@ -173,7 +173,7 @@ def confirmacion_multitemporal(velas_m1, velas_m5, tendencia):
     score = 0
 
     if tendencia == "alcista":
-        if rsi_m1 > 50 and rsi_m5 > 50:
+        if rsi_m1 > 35 and rsi_m5 > 35:
             score += 4
 
             if ultima["close"] <= media or ultima["min"] <= lower:
@@ -186,7 +186,7 @@ def confirmacion_multitemporal(velas_m1, velas_m5, tendencia):
                 return ("call", score)
 
     if tendencia == "bajista":
-        if rsi_m1 < 30 and rsi_m5 < 50:
+        if rsi_m1 < 35 and rsi_m5 < 35:
             score += 4
 
             if ultima["close"] >= media or ultima["max"] >= upper:
