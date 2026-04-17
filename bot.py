@@ -9,11 +9,10 @@ PASSWORD = os.getenv("IQ_PASSWORD")
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-MONTO = 560
+MONTO = 500
 CUENTA = "PRACTICE"
 
 ultima_entrada = 0
-ultimo_par = None
 
 
 # =========================
@@ -47,7 +46,6 @@ def conectar():
             if iq.check_connect():
                 iq.change_balance(CUENTA)
 
-                # 🔥 DESACTIVA DIGITAL (reduce errores)
                 try:
                     iq.api.digital_option = None
                 except:
@@ -65,21 +63,10 @@ def conectar():
 def asegurar_conexion(iq):
     try:
         if not iq.check_connect():
-            log("🔄 Reconectando...")
             return conectar()
         return iq
     except:
         return conectar()
-
-
-# =========================
-# VALIDAR ACTIVO
-# =========================
-def activo_abierto(iq, par):
-    try:
-        return iq.get_all_open_time()["binary"][par]["open"]
-    except:
-        return True
 
 
 # =========================
@@ -91,11 +78,11 @@ def esperar_cierre():
 
 
 # =========================
-# VELAS
+# VELAS M1
 # =========================
-def obtener_velas(iq, par, timeframe):
+def obtener_velas(iq):
     try:
-        return iq.get_candles(par, timeframe, 50, time.time())
+        return iq.get_candles("EURUSD-OTC", 60, 30, time.time())
     except:
         return None
 
@@ -103,51 +90,34 @@ def obtener_velas(iq, par, timeframe):
 # =========================
 # OPERAR
 # =========================
-def operar(iq, par, direccion):
-    global ultima_entrada, ultimo_par
+def operar(iq, direccion):
+    global ultima_entrada
 
-    # 🔥 evitar spam de operaciones
     if time.time() - ultima_entrada < 30:
         return
 
-    # 🔥 evitar repetir mismo par seguido
-    if par == ultimo_par:
-        return
-
-    if not activo_abierto(iq, par):
-        log(f"❌ {par} cerrado")
-        return
-
-    log(f"⏳ Esperando cierre {par}...")
+    log("⏳ Esperando cierre M1...")
 
     esperar_cierre()
 
     for i in range(3):
         try:
-            status, order_id = iq.buy(MONTO, par, direccion, 1)
+            status, order_id = iq.buy(MONTO, "EURUSD-OTC", direccion, 1)
 
             if status:
-                log(f"""🚀 OPERACIÓN EJECUTADA
+                log(f"""🚀 OPERACIÓN
 
-Par: {par}
-Dirección: {direccion.upper()}
-Monto: {MONTO}
+EURUSD-OTC {direccion.upper()}
 ID: {order_id}
 """)
                 ultima_entrada = time.time()
-                ultimo_par = par
                 return
-            else:
-                log("⚠️ Reintentando...")
-
-        except Exception as e:
-            if "underlying" in str(e):
-                continue
-            log(f"Error: {e}")
+        except:
+            pass
 
         time.sleep(1)
 
-    log("❌ Falló ejecución total")
+    log("❌ No ejecutó")
 
 
 # =========================
@@ -156,53 +126,41 @@ ID: {order_id}
 def run():
     iq = conectar()
 
-    PARES = [
-        "EURUSD-OTC",
-        "GBPUSD-OTC",
-        "USDZAR-OTC",
-        "USDCHF-OTC",
-        "EURJPY-OTC",
-        "GBPJPY-OTC"
-    ]
-
     while True:
         try:
             iq = asegurar_conexion(iq)
 
-            data = {}
+            velas = obtener_velas(iq)
 
-            for par in PARES:
-                m1 = obtener_velas(iq, par, 60)
-                m5 = obtener_velas(iq, par, 300)
-
-                if m1 and m5:
-                    data[par] = {"m1": m1, "m5": m5}
-
-            if not data:
+            if not velas:
                 time.sleep(1)
                 continue
+
+            data = {
+                "EURUSD-OTC": [{
+                    "open": v["open"],
+                    "close": v["close"],
+                    "max": v["max"],
+                    "min": v["min"]
+                } for v in velas]
+            }
 
             señal = detectar_entrada_oculta(data)
 
             if señal:
                 par, direccion, score = señal
 
-                # 🔥 filtro mínimo
-                if score < 7:
-                    continue
-
-                log(f"""📈 SEÑAL DETECTADA
-
-{par} {direccion}
-Score: {score}
+                log(f"""
+📈 MOMENTUM PURO
+EURUSD-OTC {direccion}
 """)
 
-                operar(iq, par, direccion)
+                operar(iq, direccion)
 
-            time.sleep(0.5)
+            time.sleep(0.3)
 
         except Exception as e:
-            log(f"❌ Error general: {e}")
+            log(f"Error: {e}")
             time.sleep(2)
 
 
