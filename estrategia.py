@@ -1,83 +1,80 @@
 def detectar_entrada_oculta(data):
-
-    mejor = None
-    mejor_score = 0
-
     for par, velas in data.items():
 
-        if len(velas) < 5:
+        if len(velas) < 20:
             continue
 
-        # =========================
-        # VELAS
-        # =========================
-        v_impulso = velas[-4]   # vela donde nace la señal
-        v_confirm = velas[-3]   # vela de confirmación
+        closes = [v["close"] for v in velas]
+        opens = [v["open"] for v in velas]
+        highs = [v["max"] for v in velas]
+        lows = [v["min"] for v in velas]
 
         # =========================
-        # FUNCIONES
+        # 🔥 TENDENCIA PREVIA
         # =========================
-        def cuerpo(v):
-            return abs(v["close"] - v["open"])
-
-        def alcista(v):
-            return v["close"] > v["open"]
-
-        def bajista(v):
-            return v["close"] < v["open"]
-
-        def mecha_sup(v):
-            return v["max"] - max(v["open"], v["close"])
-
-        def mecha_inf(v):
-            return min(v["open"], v["close"]) - v["min"]
-
-        def limpia(v):
-            return (
-                cuerpo(v) > 0.00015 and
-                mecha_sup(v) < cuerpo(v) * 0.8 and
-                mecha_inf(v) < cuerpo(v) * 0.8
-            )
+        tendencia_bajista = closes[-10] > closes[-5] > closes[-1]
+        tendencia_alcista = closes[-10] < closes[-5] < closes[-1]
 
         # =========================
-        # IMPULSO
+        # 🔥 IMPULSO ACTUAL
         # =========================
-        impulso_call = alcista(v_impulso) and cuerpo(v_impulso) > 0.0002
-        impulso_put = bajista(v_impulso) and cuerpo(v_impulso) > 0.0002
+        ultima = velas[-1]
+        anterior = velas[-2]
+        anterior2 = velas[-3]
+
+        cuerpo1 = abs(ultima["close"] - ultima["open"])
+        cuerpo2 = abs(anterior["close"] - anterior["open"])
+        cuerpo3 = abs(anterior2["close"] - anterior2["open"])
 
         # =========================
-        # CONFIRMACIÓN
+        # 🔥 FILTROS
         # =========================
-        confirm_call = (
-            alcista(v_confirm) and
-            v_confirm["close"] > v_impulso["close"] and
-            limpia(v_confirm)
+        # sin pullback (velas limpias)
+        sin_pullback = (
+            lows[-1] >= lows[-2] and
+            lows[-2] >= lows[-3]
         )
 
-        confirm_put = (
-            bajista(v_confirm) and
-            v_confirm["close"] < v_impulso["close"] and
-            limpia(v_confirm)
+        sin_pullback_venta = (
+            highs[-1] <= highs[-2] and
+            highs[-2] <= highs[-3]
         )
 
+        # sin agotamiento (cuerpos consistentes)
+        sin_agotamiento = cuerpo1 >= cuerpo2 * 0.7
+
+        # ruptura (máximo o mínimo anterior)
+        ruptura_alcista = ultima["close"] > highs[-5]
+        ruptura_bajista = ultima["close"] < lows[-5]
+
         # =========================
-        # SCORE
+        # 📈 COMPRA (ruptura de bajista)
         # =========================
-        score = 0
+        if tendencia_bajista:
 
-        if impulso_call and confirm_call:
-            score = 10
-            direccion = "call"
+            if (
+                ruptura_alcista and
+                sin_pullback and
+                sin_agotamiento and
+                ultima["close"] > ultima["open"] and
+                anterior["close"] > anterior["open"]
+            ):
+                score = 10
+                return par, "call", score
 
-        elif impulso_put and confirm_put:
-            score = 10
-            direccion = "put"
+        # =========================
+        # 📉 VENTA (ruptura de alcista)
+        # =========================
+        if tendencia_alcista:
 
-        else:
-            continue
+            if (
+                ruptura_bajista and
+                sin_pullback_venta and
+                sin_agotamiento and
+                ultima["close"] < ultima["open"] and
+                anterior["close"] < anterior["open"]
+            ):
+                score = 10
+                return par, "put", score
 
-        if score > mejor_score:
-            mejor_score = score
-            mejor = (par, direccion, score)
-
-    return mejor
+    return None
