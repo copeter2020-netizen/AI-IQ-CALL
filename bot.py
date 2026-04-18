@@ -9,7 +9,7 @@ PASSWORD = os.getenv("IQ_PASSWORD")
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-MONTO = 1000
+MONTO = 1200
 CUENTA = "PRACTICE"
 
 ultima_entrada = 0
@@ -131,7 +131,7 @@ def run():
         try:
             iq = asegurar_conexion(iq)
 
-            # 🔥 1. ESPERAR CIERRE (VELA SEÑAL)
+            # 1. Esperar cierre (vela señal)
             esperar_cierre()
 
             velas = obtener_velas(iq)
@@ -162,18 +162,21 @@ EURUSD-OTC {direccion}
 Esperando confirmación...
 """)
 
-            # 🔥 2. ESPERAR 1 VELA COMPLETA (confirmación)
+            # 2. Esperar vela de confirmación
             esperar_cierre()
 
             log("⏳ Vela de confirmación completada")
 
-            # 🔥 3. ESPERAR INICIO DE LA SIGUIENTE (vela de entrada)
+            # 3. Esperar inicio nueva vela
             esperar_inicio_vela()
 
-            log("🎯 Ejecutando entrada en nueva vela")
+            # 🔥 4. INVERTIR DIRECCIÓN
+            direccion_invertida = "put" if direccion == "call" else "call"
 
-            # 🔥 4. ENTRAR
-            operar(iq, direccion)
+            log(f"🎯 Ejecutando entrada INVERTIDA: {direccion_invertida.upper()}")
+
+            # 5. Ejecutar operación
+            operar(iq, direccion_invertida)
 
         except Exception as e:
             log(f"Error: {e}")
