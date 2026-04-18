@@ -1,127 +1,83 @@
-# =========================
-# UTILIDADES
-# =========================
-def cuerpo(v):
-    return abs(v["close"] - v["open"])
-
-
-def mecha_superior(v):
-    return v["max"] - max(v["open"], v["close"])
-
-
-def mecha_inferior(v):
-    return min(v["open"], v["close"]) - v["min"]
-
-
-def es_alcista(v):
-    return v["close"] > v["open"]
-
-
-def es_bajista(v):
-    return v["close"] < v["open"]
-
-
-# =========================
-# DETECTAR TENDENCIA FUERTE
-# =========================
-def tendencia_fuerte(velas):
-    ultimas = velas[-5:]
-
-    alcistas = sum(1 for v in ultimas if es_alcista(v))
-    bajistas = sum(1 for v in ultimas if es_bajista(v))
-
-    if alcistas >= 4:
-        return "call"
-
-    if bajistas >= 4:
-        return "put"
-
-    return None
-
-
-# =========================
-# CONTINUIDAD REAL
-# =========================
-def continuidad(velas, direccion):
-    ultimas = velas[-3:]
-
-    if direccion == "call":
-        return all(es_alcista(v) for v in ultimas)
-
-    if direccion == "put":
-        return all(es_bajista(v) for v in ultimas)
-
-    return False
-
-
-# =========================
-# BLOQUEOS (NO OPERAR)
-# =========================
-def es_indecision(v):
-    return cuerpo(v) < (v["max"] - v["min"]) * 0.3
-
-
-def es_agotamiento(v):
-    return mecha_superior(v) > cuerpo(v) * 2 or mecha_inferior(v) > cuerpo(v) * 2
-
-
-def zona_resistencia_soporte(velas):
-    highs = [v["max"] for v in velas[-10:]]
-    lows = [v["min"] for v in velas[-10:]]
-
-    ultimo = velas[-1]
-
-    if abs(ultimo["close"] - max(highs)) < 0.0002:
-        return True
-
-    if abs(ultimo["close"] - min(lows)) < 0.0002:
-        return True
-
-    return False
-
-
-def zona_institucional(velas):
-    rango = max(v["max"] for v in velas[-8:]) - min(v["min"] for v in velas[-8:])
-    return rango < 0.0004  # mercado comprimido
-
-
-# =========================
-# FUNCIÓN PRINCIPAL
-# =========================
 def detectar_entrada_oculta(data):
 
-    if "EURUSD-OTC" not in data:
-        return None
+    mejor = None
+    mejor_score = 0
 
-    velas = data["EURUSD-OTC"]
+    for par, velas in data.items():
 
-    if not velas or len(velas) < 10:
-        return None
+        if len(velas) < 5:
+            continue
 
-    direccion = tendencia_fuerte(velas)
+        # =========================
+        # VELAS
+        # =========================
+        v_impulso = velas[-4]   # vela donde nace la señal
+        v_confirm = velas[-3]   # vela de confirmación
 
-    if not direccion:
-        return None
+        # =========================
+        # FUNCIONES
+        # =========================
+        def cuerpo(v):
+            return abs(v["close"] - v["open"])
 
-    if not continuidad(velas, direccion):
-        return None
+        def alcista(v):
+            return v["close"] > v["open"]
 
-    ultima = velas[-1]
+        def bajista(v):
+            return v["close"] < v["open"]
 
-    # 🔥 BLOQUEOS
-    if es_indecision(ultima):
-        return None
+        def mecha_sup(v):
+            return v["max"] - max(v["open"], v["close"])
 
-    if es_agotamiento(ultima):
-        return None
+        def mecha_inf(v):
+            return min(v["open"], v["close"]) - v["min"]
 
-    if zona_resistencia_soporte(velas):
-        return None
+        def limpia(v):
+            return (
+                cuerpo(v) > 0.00015 and
+                mecha_sup(v) < cuerpo(v) * 0.8 and
+                mecha_inf(v) < cuerpo(v) * 0.8
+            )
 
-    if zona_institucional(velas):
-        return None
+        # =========================
+        # IMPULSO
+        # =========================
+        impulso_call = alcista(v_impulso) and cuerpo(v_impulso) > 0.0002
+        impulso_put = bajista(v_impulso) and cuerpo(v_impulso) > 0.0002
 
-    # 🔥 SCORE SIMPLE
-    score = 10
+        # =========================
+        # CONFIRMACIÓN
+        # =========================
+        confirm_call = (
+            alcista(v_confirm) and
+            v_confirm["close"] > v_impulso["close"] and
+            limpia(v_confirm)
+        )
 
-    return ("EURUSD-OTC", direccion, score)
+        confirm_put = (
+            bajista(v_confirm) and
+            v_confirm["close"] < v_impulso["close"] and
+            limpia(v_confirm)
+        )
+
+        # =========================
+        # SCORE
+        # =========================
+        score = 0
+
+        if impulso_call and confirm_call:
+            score = 10
+            direccion = "call"
+
+        elif impulso_put and confirm_put:
+            score = 10
+            direccion = "put"
+
+        else:
+            continue
+
+        if score > mejor_score:
+            mejor_score = score
+            mejor = (par, direccion, score)
+
+    return mejor
