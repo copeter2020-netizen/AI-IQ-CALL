@@ -9,7 +9,7 @@ PASSWORD = os.getenv("IQ_PASSWORD")
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-MONTO = 175
+MONTO = 150
 CUENTA = "PRACTICE"
 
 ultima_entrada = 0
@@ -22,7 +22,10 @@ def enviar_telegram(msg):
     try:
         requests.post(
             f"https://api.telegram.org/bot{TOKEN}/sendMessage",
-            data={"chat_id": CHAT_ID, "text": msg},
+            data={
+                "chat_id": CHAT_ID,
+                "text": msg
+            },
             timeout=5
         )
     except:
@@ -46,6 +49,7 @@ def conectar():
             if iq.check_connect():
                 iq.change_balance(CUENTA)
 
+                # 🔥 evita error 'underlying'
                 try:
                     iq.api.digital_option = None
                 except:
@@ -74,7 +78,7 @@ def asegurar_conexion(iq):
 PARES = [
     "EURUSD-OTC",
     "GBPUSD-OTC",
-    "USDJPY-OTC",
+    "USDZAR-OTC",
     "USDCHF-OTC",
     "EURJPY-OTC",
     "GBPJPY-OTC",
@@ -124,7 +128,7 @@ def operar(iq, par, direccion):
 
     for _ in range(3):
         try:
-            status, order_id = iq.buy(MONTO, par, direccion, 1)
+            status, order_id = iq.buy(MONTO, par, direccion, 2)
 
             if status:
                 log(f"""🚀 OPERACIÓN EJECUTADA
@@ -137,6 +141,7 @@ def operar(iq, par, direccion):
 
                 ultima_entrada = time.time()
 
+                # 🔥 ESPERAR RESULTADO
                 resultado = None
 
                 while resultado is None:
@@ -147,10 +152,13 @@ def operar(iq, par, direccion):
 
                     time.sleep(1)
 
+                # 🔥 RESULTADO FINAL
                 if resultado > 0:
                     log(f"✅ RESULTADO: WIN (+{resultado})")
+
                 elif resultado < 0:
                     log(f"❌ RESULTADO: LOSS ({resultado})")
+
                 else:
                     log("⚪ RESULTADO: EMPATE")
 
@@ -174,6 +182,7 @@ def run():
         try:
             iq = asegurar_conexion(iq)
 
+            # 🔥 detectar señal al cierre
             esperar_cierre_vela()
 
             data = {}
@@ -192,20 +201,22 @@ def run():
 
             enviar_telegram(f"""📢 SEÑAL DETECTADA
 
-📊 {par}
-📈 {direccion.upper()}
+📊 Par: {par}
+📈 Dirección: {direccion.upper()}
 ⭐ Score: {score}
 
 ⏳ Esperando confirmación...
 """)
 
+            # 🔥 esperar confirmación (1 vela)
             esperar_cierre_vela()
 
-            enviar_telegram("🕯 Vela confirmada")
+            enviar_telegram("🕯 Vela de confirmación completada")
 
+            # 🔥 entrar en nueva vela
             esperar_inicio_vela()
 
-            enviar_telegram("🎯 ENTRANDO...")
+            enviar_telegram("🎯 ENTRANDO AL MERCADO...")
 
             operar(iq, par, direccion)
 
