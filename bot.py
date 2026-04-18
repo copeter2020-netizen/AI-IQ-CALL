@@ -9,7 +9,7 @@ PASSWORD = os.getenv("IQ_PASSWORD")
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-MONTO = 1
+MONTO = 560
 CUENTA = "PRACTICE"
 
 ultima_entrada = 0
@@ -53,9 +53,8 @@ def conectar():
 
                 log("✅ BOT CONECTADO")
                 return iq
-
-        except Exception as e:
-            log(f"Error conexión: {e}")
+        except:
+            pass
 
         time.sleep(5)
 
@@ -70,11 +69,32 @@ def asegurar_conexion(iq):
 
 
 # =========================
+# PARES
+# =========================
+PARES = [
+    "EURUSD-OTC",
+    "GBPUSD-OTC",
+    "USDZAR-OTC",
+    "USDCHF-OTC",
+    "EURJPY-OTC",
+    "GBPJPY-OTC"
+]
+
+
+# =========================
 # VELAS
 # =========================
-def obtener_velas(iq):
+def obtener_velas(iq, par):
     try:
-        return iq.get_candles("EURUSD-OTC", 60, 30, time.time())
+        velas = iq.get_candles(par, 60, 30, time.time())
+
+        return [{
+            "open": v["open"],
+            "close": v["close"],
+            "max": v["max"],
+            "min": v["min"]
+        } for v in velas]
+
     except:
         return None
 
@@ -82,20 +102,20 @@ def obtener_velas(iq):
 # =========================
 # TIEMPO
 # =========================
-def esperar_cierre():
+def esperar_cierre_vela():
     while int(time.time() % 60) != 59:
-        time.sleep(0.1)
-
-
-def esperar_inicio_siguiente_vela():
-    while int(time.time() % 60) != 0:
         time.sleep(0.05)
+
+
+def esperar_inicio_vela():
+    while int(time.time() % 60) != 0:
+        time.sleep(0.001)
 
 
 # =========================
 # OPERAR
 # =========================
-def operar(iq, direccion):
+def operar(iq, par, direccion):
     global ultima_entrada
 
     if time.time() - ultima_entrada < 60:
@@ -103,12 +123,12 @@ def operar(iq, direccion):
 
     for _ in range(3):
         try:
-            status, order_id = iq.buy(MONTO, "EURUSD-OTC", direccion, 1)
+            status, order_id = iq.buy(MONTO, par, direccion, 1)
 
             if status:
                 log(f"""🚀 OPERACIÓN EJECUTADA
 
-EURUSD-OTC {direccion.upper()}
+{par} {direccion.upper()}
 ID: {order_id}
 """)
                 ultima_entrada = time.time()
@@ -131,22 +151,15 @@ def run():
         try:
             iq = asegurar_conexion(iq)
 
-            # 🔥 1. detectar señal
-            esperar_cierre()
+            # 🔥 detectar señal al cierre
+            esperar_cierre_vela()
 
-            velas = obtener_velas(iq)
+            data = {}
 
-            if not velas:
-                continue
-
-            velas_parseadas = [{
-                "open": v["open"],
-                "close": v["close"],
-                "max": v["max"],
-                "min": v["min"]
-            } for v in velas]
-
-            data = {"EURUSD-OTC": velas_parseadas}
+            for par in PARES:
+                velas = obtener_velas(iq, par)
+                if velas:
+                    data[par] = velas
 
             señal = detectar_entrada_oculta(data)
 
@@ -158,31 +171,23 @@ def run():
             log(f"""
 📊 SEÑAL DETECTADA
 
-EURUSD-OTC {direccion}
-Esperando 3 velas...
+{par} {direccion}
+Score: {score}
+
+⏳ Esperando vela de confirmación...
 """)
 
-            # 🔥 vela 1
-            esperar_cierre()
-            log("🕯 Vela 1 completada")
+            # 🔥 esperar confirmación (1 vela)
+            esperar_cierre_vela()
 
-            # 🔥 vela 2
-            esperar_cierre()
-            log("🕯 Vela 2 completada")
+            log("🕯 Vela de confirmación completada")
 
-            # 🔥 vela 3
-            esperar_cierre()
-            log("🕯 Vela 3 completada")
+            # 🔥 entrar en siguiente vela
+            log("🎯 Ejecutando en nueva vela")
 
-            # 🔥 entrada en vela 4
-            log("🎯 Ejecutando entrada en 4ta vela")
+            esperar_inicio_vela()
 
-            esperar_inicio_siguiente_vela()
-
-            # 🔥 SIN INVERSIÓN (DIRECTO)
-            log(f"📌 Dirección: {direccion.upper()}")
-
-            operar(iq, direccion)
+            operar(iq, par, direccion)
 
         except Exception as e:
             log(f"Error: {e}")
