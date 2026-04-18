@@ -128,7 +128,7 @@ def operar(iq, par, direccion):
 
     for _ in range(3):
         try:
-            status, order_id = iq.buy(MONTO, par, direccion, 2)
+            status, order_id = iq.buy(MONTO, par, direccion, 3)
 
             if status:
                 log(f"""🚀 OPERACIÓN EJECUTADA
