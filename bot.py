@@ -9,7 +9,7 @@ PASSWORD = os.getenv("IQ_PASSWORD")
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-MONTO = 1200
+MONTO = 1
 CUENTA = "PRACTICE"
 
 ultima_entrada = 0
@@ -87,8 +87,8 @@ def esperar_cierre():
         time.sleep(0.1)
 
 
-def esperar_inicio_vela():
-    while int(time.time() % 60) > 1:
+def esperar_inicio_siguiente_vela():
+    while int(time.time() % 60) != 0:
         time.sleep(0.05)
 
 
@@ -131,7 +131,7 @@ def run():
         try:
             iq = asegurar_conexion(iq)
 
-            # 1. Esperar cierre (vela señal)
+            # 🔥 1. detectar señal
             esperar_cierre()
 
             velas = obtener_velas(iq)
@@ -159,24 +159,30 @@ def run():
 📊 SEÑAL DETECTADA
 
 EURUSD-OTC {direccion}
-Esperando confirmación...
+Esperando 3 velas...
 """)
 
-            # 2. Esperar vela de confirmación
+            # 🔥 vela 1
             esperar_cierre()
+            log("🕯 Vela 1 completada")
 
-            log("⏳ Vela de confirmación completada")
+            # 🔥 vela 2
+            esperar_cierre()
+            log("🕯 Vela 2 completada")
 
-            # 3. Esperar inicio nueva vela
-            esperar_inicio_vela()
+            # 🔥 vela 3
+            esperar_cierre()
+            log("🕯 Vela 3 completada")
 
-            # 🔥 4. INVERTIR DIRECCIÓN
-            direccion_invertida = "put" if direccion == "call" else "call"
+            # 🔥 entrada en vela 4
+            log("🎯 Ejecutando entrada en 4ta vela")
 
-            log(f"🎯 Ejecutando entrada INVERTIDA: {direccion_invertida.upper()}")
+            esperar_inicio_siguiente_vela()
 
-            # 5. Ejecutar operación
-            operar(iq, direccion_invertida)
+            # 🔥 SIN INVERSIÓN (DIRECTO)
+            log(f"📌 Dirección: {direccion.upper()}")
+
+            operar(iq, direccion)
 
         except Exception as e:
             log(f"Error: {e}")
