@@ -22,7 +22,10 @@ def enviar_telegram(msg):
     try:
         requests.post(
             f"https://api.telegram.org/bot{TOKEN}/sendMessage",
-            data={"chat_id": CHAT_ID, "text": msg},
+            data={
+                "chat_id": CHAT_ID,
+                "text": msg
+            },
             timeout=5
         )
     except:
@@ -46,6 +49,7 @@ def conectar():
             if iq.check_connect():
                 iq.change_balance(CUENTA)
 
+                # 🔥 evita error 'underlying'
                 try:
                     iq.api.digital_option = None
                 except:
@@ -77,7 +81,8 @@ PARES = [
     "USDZAR-OTC",
     "USDCHF-OTC",
     "EURJPY-OTC",
-    "GBPJPY-OTC"
+    "GBPJPY-OTC",
+    "USDZAR-OTC"
 ]
 
 
@@ -113,7 +118,7 @@ def esperar_inicio_vela():
 
 
 # =========================
-# OPERAR
+# OPERAR + RESULTADO
 # =========================
 def operar(iq, par, direccion):
     global ultima_entrada
@@ -128,13 +133,39 @@ def operar(iq, par, direccion):
             if status:
                 log(f"""🚀 OPERACIÓN EJECUTADA
 
-{par} {direccion.upper()}
-ID: {order_id}
+📊 {par}
+📈 {direccion.upper()}
+💰 {MONTO}
+🆔 {order_id}
 """)
+
                 ultima_entrada = time.time()
+
+                # 🔥 ESPERAR RESULTADO
+                resultado = None
+
+                while resultado is None:
+                    try:
+                        resultado = iq.check_win_v4(order_id)
+                    except:
+                        pass
+
+                    time.sleep(1)
+
+                # 🔥 RESULTADO FINAL
+                if resultado > 0:
+                    log(f"✅ RESULTADO: WIN (+{resultado})")
+
+                elif resultado < 0:
+                    log(f"❌ RESULTADO: LOSS ({resultado})")
+
+                else:
+                    log("⚪ RESULTADO: EMPATE")
+
                 return
-        except:
-            pass
+
+        except Exception as e:
+            log(f"Error ejecución: {e}")
 
         time.sleep(1)
 
@@ -168,29 +199,29 @@ def run():
 
             par, direccion, score = señal
 
-            log(f"""
-📊 SEÑAL DETECTADA
+            enviar_telegram(f"""📢 SEÑAL DETECTADA
 
-{par} {direccion}
-Score: {score}
+📊 Par: {par}
+📈 Dirección: {direccion.upper()}
+⭐ Score: {score}
 
-⏳ Esperando vela de confirmación...
+⏳ Esperando confirmación...
 """)
 
             # 🔥 esperar confirmación (1 vela)
             esperar_cierre_vela()
 
-            log("🕯 Vela de confirmación completada")
+            enviar_telegram("🕯 Vela de confirmación completada")
 
-            # 🔥 entrar en siguiente vela
-            log("🎯 Ejecutando en nueva vela")
-
+            # 🔥 entrar en nueva vela
             esperar_inicio_vela()
+
+            enviar_telegram("🎯 ENTRANDO AL MERCADO...")
 
             operar(iq, par, direccion)
 
         except Exception as e:
-            log(f"Error: {e}")
+            log(f"Error general: {e}")
             time.sleep(2)
 
 
