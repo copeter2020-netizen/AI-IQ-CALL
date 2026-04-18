@@ -9,7 +9,7 @@ PASSWORD = os.getenv("IQ_PASSWORD")
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-MONTO = 560
+MONTO = 56
 CUENTA = "PRACTICE"
 
 ultima_entrada = 0
@@ -128,7 +128,7 @@ def operar(iq, par, direccion):
 
     for _ in range(3):
         try:
-            status, order_id = iq.buy(MONTO, par, direccion, 1)
+            status, order_id = iq.buy(MONTO, par, direccion, 2)
 
             if status:
                 log(f"""🚀 OPERACIÓN EJECUTADA
