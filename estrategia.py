@@ -11,46 +11,41 @@ def calculate_indicators(df):
 
     return df
 
-# 🔥 tendencia más flexible pero consistente
-def trend_down(df):
-    return df['close'].iloc[-1] < df['ema_100'].iloc[-1]
 
-def trend_up(df):
-    return df['close'].iloc[-1] > df['ema_100'].iloc[-1]
-
-# 🔥 vela fuerte mejorada
-def strong_candle(c):
-    body = abs(c['close'] - c['open'])
-    total = c['high'] - c['low']
-    return body > (total * 0.4)
-
-# 🔥 volatilidad mínima
-def valid_volatility(df):
-    return (df['high'].iloc[-1] - df['low'].iloc[-1]) > 0
-
-# 🔥 señales más detectables
 def check_buy_signal(df):
-    if len(df) < 20:
+    if len(df) < 10:
         return False
 
-    c = df.iloc[-1]
+    # 🔥 usar velas completamente cerradas
+    prev = df.iloc[-6]
+    c3 = df.iloc[-5]
+    c4 = df.iloc[-4]
+    c5 = df.iloc[-3]
 
     return (
-        trend_down(df) and
-        valid_volatility(df) and
-        c['close'] <= c['lower_band'] and
-        strong_candle(c)
+        c3['close'] < c3['ema_100'] and
+        c3['close'] <= c3['lower_band'] and
+        c3['close'] < c3['open'] and
+        (c3['upper_band'] > c3['ema_100'] and prev['upper_band'] <= prev['ema_100']) and
+        c4['close'] > c4['open'] and
+        c5['close'] > c5['open']
     )
 
+
 def check_sell_signal(df):
-    if len(df) < 20:
+    if len(df) < 10:
         return False
 
-    c = df.iloc[-1]
+    prev = df.iloc[-6]
+    c3 = df.iloc[-5]
+    c4 = df.iloc[-4]
+    c5 = df.iloc[-3]
 
     return (
-        trend_up(df) and
-        valid_volatility(df) and
-        c['close'] >= c['upper_band'] and
-        strong_candle(c)
+        c3['close'] > c3['ema_100'] and
+        c3['close'] >= c3['upper_band'] and
+        c3['close'] > c3['open'] and
+        (c3['lower_band'] < c3['ema_100'] and prev['lower_band'] >= prev['ema_100']) and
+        c4['close'] < c4['open'] and
+        c5['close'] < c5['open']
     )
