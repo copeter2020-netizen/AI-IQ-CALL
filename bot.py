@@ -6,6 +6,8 @@ from iqoptionapi.stable_api import IQ_Option
 
 from estrategia import calculate_indicators, check_buy_signal, check_sell_signal
 
+# ================= VARIABLES =================
+
 EMAIL = os.getenv("IQ_EMAIL")
 PASSWORD = os.getenv("IQ_PASSWORD")
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
@@ -15,14 +17,20 @@ PAIRS = ["EURUSD-OTC", "GBPUSD-OTC"]
 
 TIMEFRAME = 60
 EXPIRATION = 2
-AMOUNT = 10000
+AMOUNT = 1000
+
+# ================= CONEXIÓN =================
 
 iq = IQ_Option(EMAIL, PASSWORD)
 iq.connect()
 iq.change_balance("PRACTICE")
 
-# 🔥 memoria para no repetir trades
+# ================= ESTADO =================
+
 last_signal_time = {}
+last_heartbeat = time.time()
+
+# ================= TELEGRAM =================
 
 def send_telegram(msg):
     try:
@@ -33,6 +41,21 @@ def send_telegram(msg):
         )
     except:
         pass
+
+# ================= RECONEXIÓN =================
+
+def reconnect():
+    global iq
+    try:
+        if not iq.check_connect():
+            print("Reconectando...")
+            iq.connect()
+            iq.change_balance("PRACTICE")
+            send_telegram("🔄 Reconectado")
+    except:
+        print("Error reconexión")
+
+# ================= DATOS =================
 
 def get_candles(pair):
     try:
@@ -45,64 +68,94 @@ def get_candles(pair):
         df.rename(columns={"max": "high", "min": "low"}, inplace=True)
         return df
 
-    except:
+    except Exception as e:
+        print("Error obteniendo velas:", e)
         return None
+
+# ================= TRADING =================
 
 def trade(direction, pair):
     try:
         status, _ = iq.buy(AMOUNT, pair, direction, EXPIRATION)
 
         if status:
-            send_telegram(f"✅ {pair} {direction.upper()} ejecutada")
+            msg = f"✅ {pair} {direction.upper()} ejecutada"
+            print(msg)
+            send_telegram(msg)
         else:
-            send_telegram(f"❌ {pair} error ejecución")
-
-    except:
-        send_telegram(f"⚠️ {pair} fallo trade")
-
-send_telegram("🤖 BOT ACTIVO")
-
-while True:
-    try:
-        # 🔥 esperar cierre real de vela (más seguro que %60)
-        time.sleep(2)
-
-        for pair in PAIRS:
-            df = get_candles(pair)
-
-            if df is None:
-                continue
-
-            # 🔥 eliminar vela en formación
-            df = df.iloc[:-1]
-
-            df = calculate_indicators(df)
-
-            # 🔥 revisar últimas 3 velas cerradas
-            for i in range(1, 4):
-                sub_df = df.iloc[:-(i-1)] if i > 1 else df
-
-                candle_time = sub_df.index[-1]
-
-                # evitar repetir señal
-                if pair in last_signal_time and last_signal_time[pair] == candle_time:
-                    continue
-
-                if check_buy_signal(sub_df):
-                    trade("call", pair)
-                    last_signal_time[pair] = candle_time
-                    print(f"{pair} BUY detectado en vela {-i}")
-                    break
-
-                elif check_sell_signal(sub_df):
-                    trade("put", pair)
-                    last_signal_time[pair] = candle_time
-                    print(f"{pair} SELL detectado en vela {-i}")
-                    break
-
-        time.sleep(1)
+            msg = f"❌ {pair} error ejecución"
+            print(msg)
+            send_telegram(msg)
 
     except Exception as e:
-        print("ERROR:", e)
-        send_telegram("⚠️ Error recuperado")
-        time.sleep(3)
+        print("Error trade:", e)
+        send_telegram(f"⚠️ {pair} fallo trade")
+
+# ================= LOOP PRINCIPAL =================
+
+def run_bot():
+    global last_signal_time, last_heartbeat
+
+    while True:
+        try:
+            reconnect()
+
+            time.sleep(2)
+
+            for pair in PAIRS:
+                df = get_candles(pair)
+
+                if df is None:
+                    continue
+
+                # eliminar vela en formación
+                df = df.iloc[:-1]
+
+                df = calculate_indicators(df)
+
+                # revisar últimas 3 velas
+                for i in range(1, 4):
+                    sub_df = df.iloc[:-(i-1)] if i > 1 else df
+
+                    candle_time = sub_df.index[-1]
+
+                    # evitar repetir señal
+                    if pair in last_signal_time and last_signal_time[pair] == candle_time:
+                        continue
+
+                    if check_buy_signal(sub_df):
+                        print(f"{pair} → BUY detectado en vela {-i}")
+                        trade("call", pair)
+                        last_signal_time[pair] = candle_time
+                        break
+
+                    elif check_sell_signal(sub_df):
+                        print(f"{pair} → SELL detectado en vela {-i}")
+                        trade("put", pair)
+                        last_signal_time[pair] = candle_time
+                        break
+
+                print(f"{pair} → analizado")
+
+            # 🔥 heartbeat para Railway
+            if time.time() - last_heartbeat > 30:
+                print("🤖 Bot activo...")
+                last_heartbeat = time.time()
+
+        except Exception as e:
+            print("ERROR INTERNO:", e)
+            send_telegram("⚠️ Error recuperado")
+            time.sleep(5)
+
+# ================= ARRANQUE =================
+
+if __name__ == "__main__":
+    send_telegram("🤖 BOT INICIADO")
+
+    while True:
+        try:
+            run_bot()
+        except Exception as e:
+            print("REINICIANDO BOT:", e)
+            send_telegram("♻️ Reiniciando bot")
+            time.sleep(5)
