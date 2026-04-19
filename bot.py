@@ -10,13 +10,15 @@ PASSWORD = os.getenv("IQ_PASSWORD")
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-PAIR = "EURUSD-OTC"
+PAIRS = ["GBPUSD-OTC", "EURGBP-OTC", "GBPJPY-OTC", "USDZAR-OTC", "EURJPY-OTC"]
+
 TIMEFRAME = 60
 EXPIRATION = 2
-AMOUNT = 10
+AMOUNT = 156
 
 bot_running = True
 last_update_id = None
+last_candle_time = 0
 
 # ================= TELEGRAM =================
 
@@ -73,7 +75,7 @@ def ensure_connection():
         time.sleep(5)
 
 ensure_connection()
-send_telegram("🤖 Bot online y analizando")
+send_telegram("🤖 Bot multi-par activo")
 
 # ================= INDICADORES =================
 
@@ -129,9 +131,9 @@ def check_sell_signal(df):
 
 # ================= DATOS =================
 
-def get_candles():
+def get_candles(pair):
     try:
-        candles = iq.get_candles(PAIR, TIMEFRAME, 100, time.time())
+        candles = iq.get_candles(pair, TIMEFRAME, 100, time.time())
 
         if not candles or len(candles) < 20:
             return None
@@ -145,19 +147,19 @@ def get_candles():
 
 # ================= TRADING =================
 
-def execute_trade(direction):
+def execute_trade(direction, pair):
     try:
-        status, _ = iq.buy(AMOUNT, PAIR, direction, EXPIRATION)
+        status, _ = iq.buy(AMOUNT, pair, direction, EXPIRATION)
 
         if status:
-            send_telegram(f"📊 {direction.upper()} ejecutada")
+            send_telegram(f"📊 {pair} | {direction.upper()} ejecutada")
         else:
-            send_telegram("❌ Error al ejecutar trade")
+            send_telegram(f"❌ {pair} | Error al ejecutar")
 
     except:
-        send_telegram("❌ Fallo en ejecución")
+        send_telegram(f"❌ {pair} | Fallo en ejecución")
 
-# ================= LOOP PRINCIPAL =================
+# ================= LOOP =================
 
 while True:
     try:
@@ -170,26 +172,36 @@ while True:
             time.sleep(1)
             continue
 
-        df = get_candles()
+        current_time = int(time.time())
 
-        if df is None:
-            time.sleep(2)
+        # 🔥 Solo ejecuta cuando cierra vela (cada minuto)
+        if current_time % 60 != 0:
+            time.sleep(0.5)
             continue
 
-        df = calculate_indicators(df)
-
-        if check_buy_signal(df):
-            execute_trade("call")
-            time.sleep(120)
+        # Evita repetir análisis en la misma vela
+        if current_time == last_candle_time:
+            time.sleep(1)
             continue
 
-        if check_sell_signal(df):
-            execute_trade("put")
-            time.sleep(120)
-            continue
+        last_candle_time = current_time
 
-        # 🔥 Esto asegura que SIEMPRE esté analizando
-        print("Analizando mercado...")
+        print("🔎 Nueva vela cerrada, analizando pares...")
+
+        for pair in PAIRS:
+            df = get_candles(pair)
+
+            if df is None:
+                continue
+
+            df = calculate_indicators(df)
+
+            if check_buy_signal(df):
+                execute_trade("call", pair)
+
+            elif check_sell_signal(df):
+                execute_trade("put", pair)
+
         time.sleep(1)
 
     except Exception as e:
