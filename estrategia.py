@@ -1,5 +1,7 @@
 import pandas as pd
 
+# ================= INDICADORES =================
+
 def calculate_indicators(df):
     df['ema_100'] = df['close'].ewm(span=100).mean()
 
@@ -11,40 +13,76 @@ def calculate_indicators(df):
 
     return df
 
+# ================= FILTROS =================
 
-def check_buy_signal(df):
-    if len(df) < 6:
-        return False
-
-    prev = df.iloc[-5]
-    c3 = df.iloc[-4]
-    c4 = df.iloc[-3]
-    c5 = df.iloc[-2]
-
+def trend_down(df):
     return (
-        c3['close'] < c3['ema_100'] and
-        c3['close'] <= c3['lower_band'] and
-        c3['close'] < c3['open'] and
-        (c3['upper_band'] > c3['ema_100'] and prev['upper_band'] <= prev['ema_100']) and
-        c4['close'] > c4['open'] and
-        c5['close'] > c5['open']
+        df['close'].iloc[-2] < df['ema_100'].iloc[-2] and
+        df['close'].iloc[-3] < df['ema_100'].iloc[-3] and
+        df['close'].iloc[-4] < df['ema_100'].iloc[-4]
     )
 
+def trend_up(df):
+    return (
+        df['close'].iloc[-2] > df['ema_100'].iloc[-2] and
+        df['close'].iloc[-3] > df['ema_100'].iloc[-3] and
+        df['close'].iloc[-4] > df['ema_100'].iloc[-4]
+    )
 
-def check_sell_signal(df):
-    if len(df) < 6:
+def strong_bullish(candle):
+    body = abs(candle['close'] - candle['open'])
+    wick = candle['high'] - candle['low']
+    return body > (wick * 0.5)
+
+def strong_bearish(candle):
+    body = abs(candle['close'] - candle['open'])
+    wick = candle['high'] - candle['low']
+    return body > (wick * 0.5)
+
+def valid_volatility(df):
+    last_range = df['high'].iloc[-2] - df['low'].iloc[-2]
+    avg_range = (df['high'] - df['low']).rolling(10).mean().iloc[-2]
+
+    return last_range > avg_range * 0.7
+
+def recent_cross_up(df):
+    return (
+        df['lower_band'].iloc[-4] < df['ema_100'].iloc[-4] or
+        df['lower_band'].iloc[-3] < df['ema_100'].iloc[-3]
+    )
+
+def recent_cross_down(df):
+    return (
+        df['upper_band'].iloc[-4] > df['ema_100'].iloc[-4] or
+        df['upper_band'].iloc[-3] > df['ema_100'].iloc[-3]
+    )
+
+# ================= SEÑALES =================
+
+def check_buy_signal(df):
+    if len(df) < 20:
         return False
 
-    prev = df.iloc[-5]
-    c3 = df.iloc[-4]
-    c4 = df.iloc[-3]
-    c5 = df.iloc[-2]
+    c2 = df.iloc[-2]
 
     return (
-        c3['close'] > c3['ema_100'] and
-        c3['close'] >= c3['upper_band'] and
-        c3['close'] > c3['open'] and
-        (c3['lower_band'] < c3['ema_100'] and prev['lower_band'] >= prev['ema_100']) and
-        c4['close'] < c4['open'] and
-        c5['close'] < c5['open']
+        trend_down(df) and
+        valid_volatility(df) and
+        c2['close'] <= c2['lower_band'] and
+        strong_bullish(c2) and
+        recent_cross_up(df)
+    )
+
+def check_sell_signal(df):
+    if len(df) < 20:
+        return False
+
+    c2 = df.iloc[-2]
+
+    return (
+        trend_up(df) and
+        valid_volatility(df) and
+        c2['close'] >= c2['upper_band'] and
+        strong_bearish(c2) and
+        recent_cross_down(df)
     )
