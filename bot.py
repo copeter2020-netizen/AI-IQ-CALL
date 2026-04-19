@@ -3,6 +3,7 @@ import os
 import requests
 import pandas as pd
 from iqoptionapi.stable_api import IQ_Option
+from strategy import calculate_indicators, check_buy_signal, check_sell_signal
 
 # VARIABLES
 EMAIL = os.getenv("IQ_EMAIL")
@@ -14,120 +15,53 @@ PAIRS = ["GBPUSD-OTC", "EURGBP-OTC", "GBPJPY-OTC", "USDZAR-OTC", "EURJPY-OTC"]
 
 TIMEFRAME = 60
 EXPIRATION = 2
-AMOUNT = 156
+AMOUNT = 3333
 
-bot_running = True
-last_update_id = None
+iq = IQ_Option(EMAIL, PASSWORD)
+iq.connect()
+iq.change_balance("PRACTICE")
+
 last_candle_time = 0
+last_update_id = None
+bot_running = True
 
 # ================= TELEGRAM =================
 
-def send_telegram(message):
+def send_telegram(msg):
     try:
-        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-        requests.post(url, data={"chat_id": CHAT_ID, "text": message}, timeout=5)
+        requests.post(
+            f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
+            data={"chat_id": CHAT_ID, "text": msg},
+            timeout=5
+        )
     except:
         pass
 
 
-def check_telegram_commands():
+def check_telegram():
     global bot_running, last_update_id
+
     try:
         url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/getUpdates"
-        params = {"timeout": 5, "offset": last_update_id}
-        response = requests.get(url, params=params, timeout=5).json()
+        params = {"offset": last_update_id, "timeout": 5}
+        res = requests.get(url, params=params, timeout=5).json()
 
-        if "result" in response:
-            for update in response["result"]:
-                last_update_id = update["update_id"] + 1
+        if "result" in res:
+            for upd in res["result"]:
+                last_update_id = upd["update_id"] + 1
 
-                if "message" in update:
-                    text = update["message"].get("text", "")
+                if "message" in upd:
+                    txt = upd["message"].get("text", "")
 
-                    if text == "/stop":
+                    if txt == "/stop":
                         bot_running = False
-                        send_telegram("🛑 Bot en pausa")
+                        send_telegram("🛑 Bot detenido")
 
-                    elif text == "/start":
+                    elif txt == "/start":
                         bot_running = True
-                        send_telegram("✅ Bot activo")
-
+                        send_telegram("✅ Bot activado")
     except:
         pass
-
-# ================= IQ OPTION =================
-
-iq = IQ_Option(EMAIL, PASSWORD)
-
-def ensure_connection():
-    while True:
-        try:
-            if not iq.check_connect():
-                iq.connect()
-
-            if iq.check_connect():
-                iq.change_balance("PRACTICE")
-                return True
-        except:
-            pass
-
-        send_telegram("🔄 Reconectando a IQ Option...")
-        time.sleep(5)
-
-ensure_connection()
-send_telegram("🤖 Bot multi-par activo")
-
-# ================= INDICADORES =================
-
-def calculate_indicators(df):
-    df['ema_100'] = df['close'].ewm(span=100).mean()
-
-    df['ma'] = df['close'].rolling(window=14).mean()
-    df['std'] = df['close'].rolling(window=14).std()
-
-    df['upper_band'] = df['ma'] + (df['std'] * 2)
-    df['lower_band'] = df['ma'] - (df['std'] * 2)
-
-    return df
-
-# ================= SEÑALES =================
-
-def check_buy_signal(df):
-    if len(df) < 6:
-        return False
-
-    c3 = df.iloc[-4]
-    c4 = df.iloc[-3]
-    c5 = df.iloc[-2]
-    c6 = df.iloc[-1]
-
-    return (
-        c3['close'] < c3['ema_100'] and
-        c3['close'] <= c3['lower_band'] * 1.01 and
-        c3['close'] < c3['open'] and
-        (c4['upper_band'] > c4['ema_100'] and c3['upper_band'] <= c3['ema_100']) and
-        c5['close'] > c5['open'] and
-        c6['close'] > c6['open']
-    )
-
-
-def check_sell_signal(df):
-    if len(df) < 6:
-        return False
-
-    c3 = df.iloc[-4]
-    c4 = df.iloc[-3]
-    c5 = df.iloc[-2]
-    c6 = df.iloc[-1]
-
-    return (
-        c3['close'] > c3['ema_100'] and
-        c3['close'] >= c3['upper_band'] * 0.99 and
-        c3['close'] > c3['open'] and
-        (c4['lower_band'] < c4['ema_100'] and c3['lower_band'] >= c3['ema_100']) and
-        c5['close'] < c5['open'] and
-        c6['close'] < c6['open']
-    )
 
 # ================= DATOS =================
 
@@ -152,41 +86,36 @@ def execute_trade(direction, pair):
         status, _ = iq.buy(AMOUNT, pair, direction, EXPIRATION)
 
         if status:
-            send_telegram(f"📊 {pair} | {direction.upper()} ejecutada")
+            send_telegram(f"📊 {pair} {direction.upper()} ejecutada")
         else:
-            send_telegram(f"❌ {pair} | Error al ejecutar")
-
+            send_telegram(f"❌ {pair} error ejecución")
     except:
-        send_telegram(f"❌ {pair} | Fallo en ejecución")
+        send_telegram(f"❌ {pair} fallo trade")
+
+# ================= INICIO =================
+
+send_telegram("🤖 Bot activo")
 
 # ================= LOOP =================
 
 while True:
     try:
-        check_telegram_commands()
-
-        if not iq.check_connect():
-            ensure_connection()
+        check_telegram()
 
         if not bot_running:
             time.sleep(1)
             continue
 
-        current_time = int(time.time())
+        now = int(time.time())
 
-        # 🔥 Solo ejecuta cuando cierra vela (cada minuto)
-        if current_time % 60 != 0:
+        # 🔥 SOLO cuando cierra vela
+        if now % 60 != 0 or now == last_candle_time:
             time.sleep(0.5)
             continue
 
-        # Evita repetir análisis en la misma vela
-        if current_time == last_candle_time:
-            time.sleep(1)
-            continue
+        last_candle_time = now
 
-        last_candle_time = current_time
-
-        print("🔎 Nueva vela cerrada, analizando pares...")
+        print("Nueva vela cerrada -> analizando...")
 
         for pair in PAIRS:
             df = get_candles(pair)
@@ -206,5 +135,5 @@ while True:
 
     except Exception as e:
         print("ERROR:", e)
-        send_telegram("⚠️ Error recuperado, bot sigue activo")
+        send_telegram("⚠️ Error recuperado")
         time.sleep(3)
