@@ -6,8 +6,6 @@ from iqoptionapi.stable_api import IQ_Option
 
 from estrategia import calculate_indicators, check_buy_signal, check_sell_signal
 
-# ================= VARIABLES =================
-
 EMAIL = os.getenv("IQ_EMAIL")
 PASSWORD = os.getenv("IQ_PASSWORD")
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
@@ -23,9 +21,8 @@ iq = IQ_Option(EMAIL, PASSWORD)
 iq.connect()
 iq.change_balance("PRACTICE")
 
-last_candle_time = 0
-
-# ================= TELEGRAM =================
+# 🔥 memoria para no repetir trades
+last_signal_time = {}
 
 def send_telegram(msg):
     try:
@@ -37,13 +34,11 @@ def send_telegram(msg):
     except:
         pass
 
-# ================= DATOS =================
-
 def get_candles(pair):
     try:
         candles = iq.get_candles(pair, TIMEFRAME, 100, time.time())
 
-        if not candles or len(candles) < 20:
+        if not candles or len(candles) < 30:
             return None
 
         df = pd.DataFrame(candles)
@@ -52,8 +47,6 @@ def get_candles(pair):
 
     except:
         return None
-
-# ================= TRADING =================
 
 def trade(direction, pair):
     try:
@@ -67,23 +60,12 @@ def trade(direction, pair):
     except:
         send_telegram(f"⚠️ {pair} fallo trade")
 
-# ================= INICIO =================
-
 send_telegram("🤖 BOT ACTIVO")
-
-# ================= LOOP =================
 
 while True:
     try:
-        now = int(time.time())
-
-        if now % 60 != 0 or now == last_candle_time:
-            time.sleep(0.5)
-            continue
-
-        last_candle_time = now
-
-        print("Analizando nueva vela...")
+        # 🔥 esperar cierre real de vela (más seguro que %60)
+        time.sleep(2)
 
         for pair in PAIRS:
             df = get_candles(pair)
@@ -91,13 +73,32 @@ while True:
             if df is None:
                 continue
 
+            # 🔥 eliminar vela en formación
+            df = df.iloc[:-1]
+
             df = calculate_indicators(df)
 
-            if check_buy_signal(df):
-                trade("call", pair)
+            # 🔥 revisar últimas 3 velas cerradas
+            for i in range(1, 4):
+                sub_df = df.iloc[:-(i-1)] if i > 1 else df
 
-            elif check_sell_signal(df):
-                trade("put", pair)
+                candle_time = sub_df.index[-1]
+
+                # evitar repetir señal
+                if pair in last_signal_time and last_signal_time[pair] == candle_time:
+                    continue
+
+                if check_buy_signal(sub_df):
+                    trade("call", pair)
+                    last_signal_time[pair] = candle_time
+                    print(f"{pair} BUY detectado en vela {-i}")
+                    break
+
+                elif check_sell_signal(sub_df):
+                    trade("put", pair)
+                    last_signal_time[pair] = candle_time
+                    print(f"{pair} SELL detectado en vela {-i}")
+                    break
 
         time.sleep(1)
 
