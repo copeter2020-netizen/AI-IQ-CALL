@@ -19,16 +19,11 @@ TIMEFRAME = 60
 EXPIRATION = 2
 AMOUNT = 1000
 
-# ================= CONEXIÓN =================
-
 iq = IQ_Option(EMAIL, PASSWORD)
 iq.connect()
 iq.change_balance("PRACTICE")
 
-# ================= ESTADO =================
-
-last_signal_time = {}
-last_heartbeat = time.time()
+last_candle_time = None
 
 # ================= TELEGRAM =================
 
@@ -45,15 +40,12 @@ def send_telegram(msg):
 # ================= RECONEXIÓN =================
 
 def reconnect():
-    global iq
     try:
         if not iq.check_connect():
-            print("Reconectando...")
             iq.connect()
             iq.change_balance("PRACTICE")
-            send_telegram("🔄 Reconectado")
     except:
-        print("Error reconexión")
+        pass
 
 # ================= DATOS =================
 
@@ -68,8 +60,7 @@ def get_candles(pair):
         df.rename(columns={"max": "high", "min": "low"}, inplace=True)
         return df
 
-    except Exception as e:
-        print("Error obteniendo velas:", e)
+    except:
         return None
 
 # ================= TRADING =================
@@ -82,80 +73,49 @@ def trade(direction, pair):
             msg = f"✅ {pair} {direction.upper()} ejecutada"
             print(msg)
             send_telegram(msg)
-        else:
-            msg = f"❌ {pair} error ejecución"
-            print(msg)
-            send_telegram(msg)
+    except:
+        pass
 
-    except Exception as e:
-        print("Error trade:", e)
-        send_telegram(f"⚠️ {pair} fallo trade")
+# ================= LOOP =================
 
-# ================= LOOP PRINCIPAL =================
+send_telegram("🤖 BOT ACTIVO")
 
-def run_bot():
-    global last_signal_time, last_heartbeat
+while True:
+    try:
+        reconnect()
 
-    while True:
-        try:
-            reconnect()
+        # obtener tiempo del servidor
+        server_time = iq.get_server_timestamp()
 
-            time.sleep(2)
+        # detectar cierre de vela
+        current_candle = server_time // 60
 
-            for pair in PAIRS:
-                df = get_candles(pair)
+        if current_candle == last_candle_time:
+            time.sleep(1)
+            continue
 
-                if df is None:
-                    continue
+        # nueva vela cerrada
+        last_candle_time = current_candle
 
-                # eliminar vela en formación
-                df = df.iloc[:-1]
+        for pair in PAIRS:
+            df = get_candles(pair)
 
-                df = calculate_indicators(df)
+            if df is None:
+                continue
 
-                # revisar últimas 3 velas
-                for i in range(1, 4):
-                    sub_df = df.iloc[:-(i-1)] if i > 1 else df
+            # 🔥 eliminar vela en formación
+            df = df.iloc[:-1]
 
-                    candle_time = sub_df.index[-1]
+            df = calculate_indicators(df)
 
-                    # evitar repetir señal
-                    if pair in last_signal_time and last_signal_time[pair] == candle_time:
-                        continue
+            # 🔥 analizar SOLO vela cerrada
+            if check_buy_signal(df):
+                trade("call", pair)
 
-                    if check_buy_signal(sub_df):
-                        print(f"{pair} → BUY detectado en vela {-i}")
-                        trade("call", pair)
-                        last_signal_time[pair] = candle_time
-                        break
+            elif check_sell_signal(df):
+                trade("put", pair)
 
-                    elif check_sell_signal(sub_df):
-                        print(f"{pair} → SELL detectado en vela {-i}")
-                        trade("put", pair)
-                        last_signal_time[pair] = candle_time
-                        break
+        time.sleep(1)
 
-                print(f"{pair} → analizado")
-
-            # 🔥 heartbeat para Railway
-            if time.time() - last_heartbeat > 30:
-                print("🤖 Bot activo...")
-                last_heartbeat = time.time()
-
-        except Exception as e:
-            print("ERROR INTERNO:", e)
-            send_telegram("⚠️ Error recuperado")
-            time.sleep(5)
-
-# ================= ARRANQUE =================
-
-if __name__ == "__main__":
-    send_telegram("🤖 BOT INICIADO")
-
-    while True:
-        try:
-            run_bot()
-        except Exception as e:
-            print("REINICIANDO BOT:", e)
-            send_telegram("♻️ Reiniciando bot")
-            time.sleep(5)
+    except Exception:
+        time.sleep(3)
