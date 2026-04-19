@@ -4,7 +4,7 @@ import requests
 import pandas as pd
 from iqoptionapi.stable_api import IQ_Option
 
-# VARIABLES DE ENTORNO
+# VARIABLES
 EMAIL = os.getenv("IQ_EMAIL")
 PASSWORD = os.getenv("IQ_PASSWORD")
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
@@ -13,7 +13,7 @@ CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 PAIR = "EURUSD-OTC"
 TIMEFRAME = 60
 EXPIRATION = 2
-AMOUNT = 10
+AMOUNT = 100
 
 bot_running = True
 
@@ -110,7 +110,7 @@ iq = IQ_Option(EMAIL, PASSWORD)
 iq.connect()
 iq.change_balance("PRACTICE")
 
-send_telegram("🤖 Bot iniciado correctamente")
+send_telegram("🤖 Bot iniciado")
 
 # ================= FUNCIONES =================
 
@@ -125,7 +125,7 @@ def execute_trade(direction):
     status, _ = iq.buy(AMOUNT, PAIR, direction, EXPIRATION)
 
     if status:
-        send_telegram(f"📊 Operación: {direction.upper()} | ${AMOUNT}")
+        send_telegram(f"📊 {direction.upper()} ejecutada | ${AMOUNT}")
     else:
         send_telegram("❌ Error al ejecutar operación")
 
