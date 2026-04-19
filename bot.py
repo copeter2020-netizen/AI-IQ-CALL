@@ -2,10 +2,18 @@ import time
 import os
 import requests
 import pandas as pd
-from iqoptionapi.stable_api import IQ_Option
-from strategy import calculate_indicators, check_buy_signal, check_sell_signal
+import sys
 
-# VARIABLES DE ENTORNO (Railway / GitHub)
+# 🔥 SOLUCIÓN IMPORT (clave del error)
+try:
+    from strategy import calculate_indicators, check_buy_signal, check_sell_signal
+except ModuleNotFoundError:
+    sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+    from strategy import calculate_indicators, check_buy_signal, check_sell_signal
+
+from iqoptionapi.stable_api import IQ_Option
+
+# VARIABLES DE ENTORNO
 EMAIL = os.getenv("IQ_EMAIL")
 PASSWORD = os.getenv("IQ_PASSWORD")
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
@@ -14,7 +22,7 @@ CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 PAIR = "EURUSD-OTC"
 TIMEFRAME = 60
 EXPIRATION = 2
-AMOUNT = 15
+AMOUNT = 10
 
 bot_running = True
 
@@ -67,7 +75,7 @@ def execute_trade(direction):
     status, _ = iq.buy(AMOUNT, PAIR, direction, EXPIRATION)
 
     if status:
-        send_telegram(f"📊 Operación ejecutada: {direction.upper()} | ${AMOUNT}")
+        send_telegram(f"📊 Operación: {direction.upper()} | ${AMOUNT}")
     else:
         send_telegram("❌ Error al ejecutar operación")
 
