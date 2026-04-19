@@ -13,6 +13,8 @@ MONTO = 150
 CUENTA = "PRACTICE"
 
 ultima_entrada = 0
+bot_activo = False
+last_update_id = None
 
 
 # =========================
@@ -28,6 +30,37 @@ def enviar_telegram(msg):
             },
             timeout=5
         )
+    except:
+        pass
+
+
+def leer_comandos():
+    global bot_activo, last_update_id
+
+    try:
+        url = f"https://api.telegram.org/bot{TOKEN}/getUpdates"
+        params = {"timeout": 1, "offset": last_update_id}
+        res = requests.get(url, params=params, timeout=5).json()
+
+        for update in res["result"]:
+            last_update_id = update["update_id"] + 1
+
+            if "message" in update:
+                chat_id = str(update["message"]["chat"]["id"])
+
+                if chat_id != CHAT_ID:
+                    continue
+
+                texto = update["message"].get("text", "").lower()
+
+                if texto == "/on":
+                    bot_activo = True
+                    enviar_telegram("🟢 BOT ACTIVADO")
+
+                elif texto == "/off":
+                    bot_activo = False
+                    enviar_telegram("🔴 BOT DESACTIVADO")
+
     except:
         pass
 
@@ -49,7 +82,6 @@ def conectar():
             if iq.check_connect():
                 iq.change_balance(CUENTA)
 
-                # 🔥 evita error 'underlying'
                 try:
                     iq.api.digital_option = None
                 except:
@@ -76,13 +108,7 @@ def asegurar_conexion(iq):
 # PARES
 # =========================
 PARES = [
-    "EURUSD-OTC",
-    "GBPUSD-OTC",
-    "USDZAR-OTC",
-    "USDCHF-OTC",
-    "EURJPY-OTC",
-    "GBPJPY-OTC",
-    "USDZAR-OTC"
+    "EURUSD-OTC"
 ]
 
 
@@ -109,16 +135,18 @@ def obtener_velas(iq, par):
 # =========================
 def esperar_cierre_vela():
     while int(time.time() % 60) != 59:
+        leer_comandos()
         time.sleep(0.05)
 
 
 def esperar_inicio_vela():
     while int(time.time() % 60) != 0:
+        leer_comandos()
         time.sleep(0.001)
 
 
 # =========================
-# OPERAR + RESULTADO
+# OPERAR
 # =========================
 def operar(iq, par, direccion):
     global ultima_entrada
@@ -141,7 +169,6 @@ def operar(iq, par, direccion):
 
                 ultima_entrada = time.time()
 
-                # 🔥 ESPERAR RESULTADO
                 resultado = None
 
                 while resultado is None:
@@ -149,16 +176,12 @@ def operar(iq, par, direccion):
                         resultado = iq.check_win_v4(order_id)
                     except:
                         pass
-
                     time.sleep(1)
 
-                # 🔥 RESULTADO FINAL
                 if resultado > 0:
                     log(f"✅ RESULTADO: WIN (+{resultado})")
-
                 elif resultado < 0:
                     log(f"❌ RESULTADO: LOSS ({resultado})")
-
                 else:
                     log("⚪ RESULTADO: EMPATE")
 
@@ -178,11 +201,18 @@ def operar(iq, par, direccion):
 def run():
     iq = conectar()
 
+    enviar_telegram("🤖 Bot iniciado\nUsa /on para activar")
+
     while True:
         try:
+            leer_comandos()
+
+            if not bot_activo:
+                time.sleep(1)
+                continue
+
             iq = asegurar_conexion(iq)
 
-            # 🔥 detectar señal al cierre
             esperar_cierre_vela()
 
             data = {}
@@ -208,15 +238,11 @@ def run():
 ⏳ Esperando confirmación...
 """)
 
-            # 🔥 esperar confirmación (1 vela)
             esperar_cierre_vela()
+            enviar_telegram("🕯 Confirmación lista")
 
-            enviar_telegram("🕯 Vela de confirmación completada")
-
-            # 🔥 entrar en nueva vela
             esperar_inicio_vela()
-
-            enviar_telegram("🎯 ENTRANDO AL MERCADO...")
+            enviar_telegram("🎯 ENTRANDO...")
 
             operar(iq, par, direccion)
 
