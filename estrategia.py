@@ -1,147 +1,80 @@
-# estrategia.py
+import pandas as pd
 
-def calcular_rsi(closes, periodo=14):
-    if len(closes) < periodo + 1:
-        return None
+def calculate_indicators(df):
+    # EMA 100
+    df['ema_100'] = df['close'].ewm(span=100).mean()
 
-    ganancias = []
-    perdidas = []
+    # Bollinger Bands (14, 2)
+    df['ma'] = df['close'].rolling(window=14).mean()
+    df['std'] = df['close'].rolling(window=14).std()
 
-    for i in range(-periodo, 0):
-        cambio = closes[i] - closes[i - 1]
-        if cambio > 0:
-            ganancias.append(cambio)
-            perdidas.append(0)
-        else:
-            ganancias.append(0)
-            perdidas.append(abs(cambio))
+    df['upper_band'] = df['ma'] + (df['std'] * 2)
+    df['lower_band'] = df['ma'] - (df['std'] * 2)
 
-    avg_ganancia = sum(ganancias) / periodo
-    avg_perdida = sum(perdidas) / periodo
-
-    if avg_perdida == 0:
-        return 100
-
-    rs = avg_ganancia / avg_perdida
-    return 100 - (100 / (1 + rs))
+    return df
 
 
-def detectar_entrada_oculta(data):
-    for par, velas in data.items():
+def check_buy_signal(df):
+    if len(df) < 6:
+        return False
 
-        if not velas or len(velas) < 20:
-            continue
+    c1 = df.iloc[-6]
+    c2 = df.iloc[-5]
+    c3 = df.iloc[-4]
+    c4 = df.iloc[-3]
+    c5 = df.iloc[-2]
+    c6 = df.iloc[-1]
 
-        try:
-            closes = [v["close"] for v in velas]
-            opens = [v["open"] for v in velas]
-            highs = [v["max"] for v in velas]
-            lows = [v["min"] for v in velas]
-        except:
-            continue
+    # Precio por debajo de EMA 100
+    cond_trend = c3['close'] < c3['ema_100']
 
-        # =========================
-        # 🔥 VELAS CERRADAS
-        # =========================
-        ultima = velas[-2]
-        anterior = velas[-3]
-        anterior2 = velas[-4]
+    # Precio cerca o tocando banda inferior
+    cond_band = c3['close'] <= c3['lower_band'] * 1.01
 
-        cuerpo1 = abs(ultima["close"] - ultima["open"])
-        cuerpo2 = abs(anterior["close"] - anterior["open"])
-        cuerpo3 = abs(anterior2["close"] - anterior2["open"])
+    # Vela roja
+    cond_red = c3['close'] < c3['open']
 
-        # =========================
-        # 🔥 TENDENCIA
-        # =========================
-        tendencia_bajista = closes[-11] > closes[-6] > closes[-2]
-        tendencia_alcista = closes[-11] < closes[-6] < closes[-2]
+    # Cruce banda superior sobre EMA 100
+    cross = (c4['upper_band'] > c4['ema_100']) and (c3['upper_band'] <= c3['ema_100'])
 
-        # =========================
-        # 🔥 FILTROS
-        # =========================
-        sin_pullback = lows[-2] >= lows[-3] >= lows[-4]
-        sin_pullback_venta = highs[-2] <= highs[-3] <= highs[-4]
+    # Dos velas verdes
+    green1 = c5['close'] > c5['open']
+    green2 = c6['close'] > c6['open']
 
-        sin_agotamiento = cuerpo1 >= (cuerpo2 * 0.7)
+    if cond_trend and cond_band and cond_red and cross and green1 and green2:
+        return True
 
-        ruptura_alcista = closes[-2] > highs[-6]
-        ruptura_bajista = closes[-2] < lows[-6]
+    return False
 
-        # =========================
-        # 📈 ESTRATEGIA 1 (CONTINUIDAD)
-        # =========================
-        if tendencia_bajista:
-            if (
-                ruptura_alcista and
-                sin_pullback and
-                sin_agotamiento and
-                ultima["close"] > ultima["open"] and
-                anterior["close"] > anterior["open"]
-            ):
-                return par, "call", 10
 
-        if tendencia_alcista:
-            if (
-                ruptura_bajista and
-                sin_pullback_venta and
-                sin_agotamiento and
-                ultima["close"] < ultima["open"] and
-                anterior["close"] < anterior["open"]
-            ):
-                return par, "put", 10
+def check_sell_signal(df):
+    if len(df) < 6:
+        return False
 
-        # =========================
-        # 📊 ESTRATEGIA 2 (RSI)
-        # =========================
-        rsi = calcular_rsi(closes)
+    c1 = df.iloc[-6]
+    c2 = df.iloc[-5]
+    c3 = df.iloc[-4]
+    c4 = df.iloc[-3]
+    c5 = df.iloc[-2]
+    c6 = df.iloc[-1]
 
-        if rsi is not None:
+    # Precio por encima de EMA 100
+    cond_trend = c3['close'] > c3['ema_100']
 
-            if rsi <= 30:
-                if ultima["close"] > ultima["open"] and anterior["close"] > anterior["open"]:
-                    return par, "call", 9
+    # Precio cerca o tocando banda superior
+    cond_band = c3['close'] >= c3['upper_band'] * 0.99
 
-            if rsi >= 70:
-                if ultima["close"] < ultima["open"] and anterior["close"] < anterior["open"]:
-                    return par, "put", 9
+    # Vela verde
+    cond_green = c3['close'] > c3['open']
 
-        # =========================
-        # ⚡ ESTRATEGIA 3 (MOMENTUM)
-        # =========================
-        if cuerpo1 > cuerpo2 > cuerpo3:
+    # Cruce banda inferior bajo EMA 100
+    cross = (c4['lower_band'] < c4['ema_100']) and (c3['lower_band'] >= c3['ema_100'])
 
-            if ultima["close"] > ultima["open"] and anterior["close"] > anterior["open"]:
-                return par, "call", 8
+    # Dos velas rojas
+    red1 = c5['close'] < c5['open']
+    red2 = c6['close'] < c6['open']
 
-            if ultima["close"] < ultima["open"] and anterior["close"] < anterior["open"]:
-                return par, "put", 8
+    if cond_trend and cond_band and cond_green and cross and red1 and red2:
+        return True
 
-        # =========================
-        # 🧠 ESTRATEGIA 4 (PRICE ACTION)
-        # =========================
-
-        # 🔹 Rechazo alcista (mecha inferior larga)
-        mecha_inferior = ultima["open"] - ultima["min"] if ultima["close"] >= ultima["open"] else ultima["close"] - ultima["min"]
-        cuerpo = abs(ultima["close"] - ultima["open"])
-
-        # 🔹 Rechazo bajista (mecha superior larga)
-        mecha_superior = ultima["max"] - ultima["close"] if ultima["close"] >= ultima["open"] else ultima["max"] - ultima["open"]
-
-        # 🟢 Compra por rechazo
-        if (
-            mecha_inferior > cuerpo * 1.5 and
-            ultima["close"] > ultima["open"] and
-            anterior["close"] > anterior["open"]
-        ):
-            return par, "call", 7
-
-        # 🔴 Venta por rechazo
-        if (
-            mecha_superior > cuerpo * 1.5 and
-            ultima["close"] < ultima["open"] and
-            anterior["close"] < anterior["open"]
-        ):
-            return par, "put", 7
-
-    return None
+    return False
