@@ -3,7 +3,6 @@ import os
 import requests
 import pandas as pd
 from iqoptionapi.stable_api import IQ_Option
-from strategy import calculate_indicators, check_buy_signal, check_sell_signal
 
 # VARIABLES
 EMAIL = os.getenv("IQ_EMAIL")
@@ -15,14 +14,13 @@ PAIRS = ["GBPUSD-OTC", "EURGBP-OTC", "GBPJPY-OTC", "USDZAR-OTC", "EURJPY-OTC"]
 
 TIMEFRAME = 60
 EXPIRATION = 2
-AMOUNT = 3333
+AMOUNT = 1000
 
 iq = IQ_Option(EMAIL, PASSWORD)
 iq.connect()
 iq.change_balance("PRACTICE")
 
 last_candle_time = 0
-last_update_id = None
 bot_running = True
 
 # ================= TELEGRAM =================
@@ -37,31 +35,57 @@ def send_telegram(msg):
     except:
         pass
 
+# ================= INDICADORES =================
 
-def check_telegram():
-    global bot_running, last_update_id
+def calculate_indicators(df):
+    df['ema_100'] = df['close'].ewm(span=100).mean()
 
-    try:
-        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/getUpdates"
-        params = {"offset": last_update_id, "timeout": 5}
-        res = requests.get(url, params=params, timeout=5).json()
+    ma = df['close'].rolling(14).mean()
+    std = df['close'].rolling(14).std()
 
-        if "result" in res:
-            for upd in res["result"]:
-                last_update_id = upd["update_id"] + 1
+    df['upper'] = ma + 2*std
+    df['lower'] = ma - 2*std
 
-                if "message" in upd:
-                    txt = upd["message"].get("text", "")
+    return df
 
-                    if txt == "/stop":
-                        bot_running = False
-                        send_telegram("🛑 Bot detenido")
+# ================= SEÑALES =================
 
-                    elif txt == "/start":
-                        bot_running = True
-                        send_telegram("✅ Bot activado")
-    except:
-        pass
+def check_buy(df):
+    if len(df) < 6:
+        return False
+
+    prev = df.iloc[-5]
+    c3 = df.iloc[-4]
+    c4 = df.iloc[-3]
+    c5 = df.iloc[-2]
+
+    return (
+        c3['close'] < c3['ema_100'] and
+        c3['close'] <= c3['lower'] and
+        c3['close'] < c3['open'] and
+        (c3['upper'] > c3['ema_100'] and prev['upper'] <= prev['ema_100']) and
+        c4['close'] > c4['open'] and
+        c5['close'] > c5['open']
+    )
+
+
+def check_sell(df):
+    if len(df) < 6:
+        return False
+
+    prev = df.iloc[-5]
+    c3 = df.iloc[-4]
+    c4 = df.iloc[-3]
+    c5 = df.iloc[-2]
+
+    return (
+        c3['close'] > c3['ema_100'] and
+        c3['close'] >= c3['upper'] and
+        c3['close'] > c3['open'] and
+        (c3['lower'] < c3['ema_100'] and prev['lower'] >= prev['ema_100']) and
+        c4['close'] < c4['open'] and
+        c5['close'] < c5['open']
+    )
 
 # ================= DATOS =================
 
@@ -81,41 +105,35 @@ def get_candles(pair):
 
 # ================= TRADING =================
 
-def execute_trade(direction, pair):
+def trade(direction, pair):
     try:
         status, _ = iq.buy(AMOUNT, pair, direction, EXPIRATION)
 
         if status:
-            send_telegram(f"📊 {pair} {direction.upper()} ejecutada")
+            send_telegram(f"{pair} {direction.upper()} ejecutada")
         else:
-            send_telegram(f"❌ {pair} error ejecución")
+            send_telegram(f"{pair} error ejecución")
+
     except:
-        send_telegram(f"❌ {pair} fallo trade")
+        send_telegram(f"{pair} fallo trade")
 
 # ================= INICIO =================
 
-send_telegram("🤖 Bot activo")
+send_telegram("🤖 BOT ACTIVO")
 
 # ================= LOOP =================
 
 while True:
     try:
-        check_telegram()
-
-        if not bot_running:
-            time.sleep(1)
-            continue
-
         now = int(time.time())
 
-        # 🔥 SOLO cuando cierra vela
         if now % 60 != 0 or now == last_candle_time:
             time.sleep(0.5)
             continue
 
         last_candle_time = now
 
-        print("Nueva vela cerrada -> analizando...")
+        print("Analizando nueva vela...")
 
         for pair in PAIRS:
             df = get_candles(pair)
@@ -125,11 +143,11 @@ while True:
 
             df = calculate_indicators(df)
 
-            if check_buy_signal(df):
-                execute_trade("call", pair)
+            if check_buy(df):
+                trade("call", pair)
 
-            elif check_sell_signal(df):
-                execute_trade("put", pair)
+            elif check_sell(df):
+                trade("put", pair)
 
         time.sleep(1)
 
