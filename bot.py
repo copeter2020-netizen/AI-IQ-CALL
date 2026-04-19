@@ -4,7 +4,6 @@ import requests
 import pandas as pd
 from iqoptionapi.stable_api import IQ_Option
 
-# 🔥 IMPORTAR ESTRATEGIA
 from estrategia import calculate_indicators, check_buy_signal, check_sell_signal
 
 # ================= VARIABLES =================
@@ -14,12 +13,11 @@ PASSWORD = os.getenv("IQ_PASSWORD")
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-# ✅ SOLO 2 PARES
 PAIRS = ["EURUSD-OTC", "GBPUSD-OTC"]
 
 TIMEFRAME = 60
 EXPIRATION = 2
-AMOUNT = 1500
+AMOUNT = 10000
 
 iq = IQ_Option(EMAIL, PASSWORD)
 iq.connect()
@@ -79,7 +77,6 @@ while True:
     try:
         now = int(time.time())
 
-        # esperar nueva vela
         if now % 60 != 0 or now == last_candle_time:
             time.sleep(0.5)
             continue
