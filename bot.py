@@ -10,26 +10,21 @@ from estrategia import calculate_indicators, check_buy_signal, check_sell_signal
 # ================= CONFIG =================
 
 TIMEFRAME = 60
-EXPIRATION = 2
-AMOUNT = 156
+EXPIRATION = 1
+AMOUNT = 1000
 
 EMAIL = os.getenv("IQ_EMAIL")
 PASSWORD = os.getenv("IQ_PASSWORD")
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-# 🔥 CONTROL GLOBAL
 last_candle_time = None
-last_trade_time = {}
-last_signal = {}
+last_trade_candle = {}
 
-COOLDOWN = 120  # 2 minutos
-
-# ================= PROTECCIÓN THREAD =================
+# ================= PROTECCIÓN =================
 
 def safe_thread_exception(args):
     if "underlying" in str(args.exc_value):
-        print("⚠️ Error digital bloqueado")
         return
     print("Thread error:", args)
 
@@ -39,7 +34,7 @@ threading.excepthook = safe_thread_exception
 
 iq = IQ_Option(EMAIL, PASSWORD)
 
-# 🔥 BLOQUEO TOTAL DIGITAL
+# evitar errores digitales
 try:
     iq.api.digital_option = None
     iq.get_digital_underlying_list_data = lambda: {"underlying": []}
@@ -48,10 +43,6 @@ except:
 
 iq.connect()
 iq.change_balance("PRACTICE")
-
-# bloquear digital
-iq.subscribe_strike_list = lambda *args, **kwargs: None
-iq.unsubscribe_strike_list = lambda *args, **kwargs: None
 
 VALID_ASSETS = set(iq.get_all_ACTIVES_OPCODE().keys())
 
@@ -96,65 +87,38 @@ def get_candles(pair):
         df = pd.DataFrame(candles)
         df.rename(columns={"max": "high", "min": "low"}, inplace=True)
         return df
-
     except:
         return None
 
 
-# ================= CONTROL DE SEÑAL =================
-
-def is_new_signal(pair, signal_type):
-    prev = last_signal.get(pair)
-
-    if prev == signal_type:
+# evitar múltiples entradas en la misma vela
+def can_trade(pair, candle_time):
+    if last_trade_candle.get(pair) == candle_time:
         return False
 
-    last_signal[pair] = signal_type
+    last_trade_candle[pair] = candle_time
     return True
 
 
-def reset_signal(pair):
-    last_signal[pair] = None
-
-
-# ================= TIMING PERFECTO =================
-
-def wait_next_candle():
+# esperar apertura exacta
+def wait_open():
     while True:
-        server_time = iq.get_server_timestamp()
-        if server_time % 60 == 0:
+        if iq.get_server_timestamp() % 60 == 0:
             return
         time.sleep(0.05)
 
 
-# ================= CONTROL DE TRADE =================
-
-def can_trade(pair):
-    now = time.time()
-    last = last_trade_time.get(pair, 0)
-    return (now - last) > COOLDOWN
-
-
 def trade(direction, pair):
     try:
-        if pair not in VALID_ASSETS:
-            return
-
-        if not can_trade(pair):
-            return
-
         status, _ = iq.buy(AMOUNT, pair, direction, EXPIRATION)
 
         if status:
-            last_trade_time[pair] = time.time()
-
-            msg = f"✅ {pair} {direction.upper()} M2"
+            msg = f"✅ {pair} {direction.upper()} M1"
             print(msg)
             send_telegram(msg)
 
     except Exception as e:
-        print(f"Error trade {pair}:", e)
-
+        print("Trade error:", e)
 
 # ================= INICIO =================
 
@@ -169,7 +133,7 @@ while True:
         server_time = iq.get_server_timestamp()
         current_candle = server_time // 60
 
-        # 🔥 SOLO AL CERRAR VELA
+        # detectar nueva vela cerrada
         if current_candle == last_candle_time:
             time.sleep(0.5)
             continue
@@ -192,21 +156,16 @@ while True:
             buy = check_buy_signal(df, pair)
             sell = check_sell_signal(df, pair)
 
-            # 🔥 SOLO SEÑALES NUEVAS
-            if buy and is_new_signal(pair, "buy"):
-                wait_next_candle()
+            if buy and can_trade(pair, current_candle):
+                wait_open()
                 trade("call", pair)
 
-            elif sell and is_new_signal(pair, "sell"):
-                wait_next_candle()
+            elif sell and can_trade(pair, current_candle):
+                wait_open()
                 trade("put", pair)
-
-            else:
-                # reset si no hay señal
-                reset_signal(pair)
 
         time.sleep(0.5)
 
     except Exception as e:
-        print("Error general:", e)
+        print("Error:", e)
         time.sleep(3)
