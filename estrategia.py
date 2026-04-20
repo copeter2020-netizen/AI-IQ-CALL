@@ -12,28 +12,44 @@ def calculate_indicators(df):
     return df
 
 
+# ================= BUY =================
+
 def check_buy_signal(df):
-    if len(df) < 10:
+    if len(df) < 20:
         return False
 
-    # 🔥 usar velas completamente cerradas
+    # 🔥 velas exactas (todas cerradas)
     prev = df.iloc[-6]
-    c3 = df.iloc[-5]
-    c4 = df.iloc[-4]
-    c5 = df.iloc[-3]
+    c3 = df.iloc[-5]  # impulso roja
+    c4 = df.iloc[-4]  # confirmación 1
+    c5 = df.iloc[-3]  # confirmación 2
 
-    return (
-        c3['close'] < c3['ema_100'] and
-        c3['close'] <= c3['lower_band'] and
-        c3['close'] < c3['open'] and
-        (c3['upper_band'] > c3['ema_100'] and prev['upper_band'] <= prev['ema_100']) and
+    # 🔥 CRUCE REAL
+    cross = (
+        prev['upper_band'] <= prev['ema_100'] and
+        c3['upper_band'] > c3['ema_100']
+    )
+
+    # 🔴 impulso correcto
+    impulse = (
+        c3['close'] < c3['open'] and  # roja
+        c3['close'] < c3['ema_100'] and  # debajo EMA
+        c3['close'] <= c3['lower_band'] * 1.01  # cerca banda inferior (tolerancia)
+    )
+
+    # 🟢 confirmaciones
+    confirmations = (
         c4['close'] > c4['open'] and
         c5['close'] > c5['open']
     )
 
+    return cross and impulse and confirmations
+
+
+# ================= SELL =================
 
 def check_sell_signal(df):
-    if len(df) < 10:
+    if len(df) < 20:
         return False
 
     prev = df.iloc[-6]
@@ -41,11 +57,23 @@ def check_sell_signal(df):
     c4 = df.iloc[-4]
     c5 = df.iloc[-3]
 
-    return (
-        c3['close'] > c3['ema_100'] and
-        c3['close'] >= c3['upper_band'] and
+    # 🔥 CRUCE REAL
+    cross = (
+        prev['lower_band'] >= prev['ema_100'] and
+        c3['lower_band'] < c3['ema_100']
+    )
+
+    # 🟢 impulso correcto
+    impulse = (
         c3['close'] > c3['open'] and
-        (c3['lower_band'] < c3['ema_100'] and prev['lower_band'] >= prev['ema_100']) and
+        c3['close'] > c3['ema_100'] and
+        c3['close'] >= c3['upper_band'] * 0.99
+    )
+
+    # 🔴 confirmaciones
+    confirmations = (
         c4['close'] < c4['open'] and
         c5['close'] < c5['open']
     )
+
+    return cross and impulse and confirmations
