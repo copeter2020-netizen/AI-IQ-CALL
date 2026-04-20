@@ -7,7 +7,7 @@ from iqoptionapi.stable_api import IQ_Option
 
 from estrategia import calculate_indicators, check_buy_signal, check_sell_signal
 
-# ================= THREAD PROTECTION =================
+# ================= PROTECCIÓN THREADS =================
 
 def safe_thread_exception(args):
     if "underlying" in str(args.exc_value):
@@ -32,6 +32,7 @@ AMOUNT = 10000
 
 iq = IQ_Option(EMAIL, PASSWORD)
 
+# 🔥 DESACTIVAR DIGITAL (ERROR underlying)
 try:
     iq.api.digital_option = None
 except:
@@ -40,6 +41,7 @@ except:
 iq.connect()
 iq.change_balance("PRACTICE")
 
+# bloquear funciones digitales
 iq.subscribe_strike_list = lambda *args, **kwargs: None
 iq.unsubscribe_strike_list = lambda *args, **kwargs: None
 
@@ -67,20 +69,23 @@ def reconnect():
     except:
         pass
 
-# ================= PARES ACTIVOS =================
+# ================= TODOS LOS PARES OTC =================
 
 def get_pairs():
     try:
         open_time = iq.get_all_open_time()
         pairs = []
 
-        for pair, data in open_time["binary"].items():
-            if isinstance(data, dict) and data.get("open", False):
+        for pair in open_time["binary"].keys():
+
+            # 🔥 SOLO OTC (IGNORA open)
+            if pair.endswith("-OTC"):
                 pairs.append(pair)
 
         return pairs
 
-    except:
+    except Exception as e:
+        print("Error obteniendo pares:", e)
         return []
 
 # ================= DATOS =================
@@ -89,7 +94,7 @@ def get_candles(pair):
     try:
         candles = iq.get_candles(pair, TIMEFRAME, 100, time.time())
 
-        if not candles or len(candles) < 30:
+        if not candles or len(candles) < 50:
             return None
 
         df = pd.DataFrame(candles)
@@ -99,7 +104,7 @@ def get_candles(pair):
     except:
         return None
 
-# ================= TRADE =================
+# ================= TRADING =================
 
 def trade(direction, pair):
     try:
@@ -120,6 +125,7 @@ while True:
     try:
         reconnect()
 
+        # sincronización con servidor
         server_time = iq.get_server_timestamp()
         current_candle = server_time // 60
 
@@ -137,12 +143,12 @@ while True:
             if df is None:
                 continue
 
-            # 🔥 CLAVE: trabajar SOLO con velas cerradas
+            # 🔥 SOLO velas cerradas
             df = df.iloc[:-1]
 
             df = calculate_indicators(df)
 
-            # 🔥 ÚNICA LÓGICA
+            # 🔥 SOLO TU ESTRATEGIA
             if check_buy_signal(df):
                 trade("call", pair)
 
@@ -152,5 +158,5 @@ while True:
         time.sleep(1)
 
     except Exception as e:
-        print("Error:", e)
+        print("Error general:", e)
         time.sleep(3)
