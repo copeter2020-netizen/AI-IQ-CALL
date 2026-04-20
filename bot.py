@@ -7,7 +7,7 @@ from iqoptionapi.stable_api import IQ_Option
 
 from estrategia import calculate_indicators, check_buy_signal, check_sell_signal
 
-# ================= PROTECCIÓN THREADS =================
+# ================= THREAD PROTECTION =================
 
 def safe_thread_exception(args):
     if "underlying" in str(args.exc_value):
@@ -26,15 +26,12 @@ CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 TIMEFRAME = 60
 EXPIRATION = 2
-AMOUNT = 1000
-
-EXCLUDED = ["USDJPY", "NZDUSD"]
+AMOUNT = 10000
 
 # ================= CONEXIÓN =================
 
 iq = IQ_Option(EMAIL, PASSWORD)
 
-# 🔥 BLOQUEO REAL DEL SISTEMA DIGITAL (ANTES DE CONNECT)
 try:
     iq.api.digital_option = None
 except:
@@ -43,7 +40,6 @@ except:
 iq.connect()
 iq.change_balance("PRACTICE")
 
-# 🔥 BLOQUEAR FUNCIONES DIGITALES
 iq.subscribe_strike_list = lambda *args, **kwargs: None
 iq.unsubscribe_strike_list = lambda *args, **kwargs: None
 
@@ -71,7 +67,7 @@ def reconnect():
     except:
         pass
 
-# ================= PARES SEGUROS =================
+# ================= PARES ACTIVOS =================
 
 def get_pairs():
     try:
@@ -79,15 +75,6 @@ def get_pairs():
         pairs = []
 
         for pair, data in open_time["binary"].items():
-
-            # solo OTC
-            if not pair.endswith("-OTC"):
-                continue
-
-            # excluir pares
-            if any(x in pair for x in EXCLUDED):
-                continue
-
             if isinstance(data, dict) and data.get("open", False):
                 pairs.append(pair)
 
@@ -112,14 +99,14 @@ def get_candles(pair):
     except:
         return None
 
-# ================= TRADING =================
+# ================= TRADE =================
 
 def trade(direction, pair):
     try:
         status, _ = iq.buy(AMOUNT, pair, direction, EXPIRATION)
 
         if status:
-            msg = f"✅ {pair} {direction.upper()} ejecutada"
+            msg = f"✅ {pair} {direction.upper()} M2"
             print(msg)
             send_telegram(msg)
     except:
@@ -133,7 +120,6 @@ while True:
     try:
         reconnect()
 
-        # sincronización con servidor
         server_time = iq.get_server_timestamp()
         current_candle = server_time // 60
 
@@ -143,19 +129,20 @@ while True:
 
         last_candle_time = current_candle
 
-        PAIRS = get_pairs()
+        pairs = get_pairs()
 
-        for pair in PAIRS:
+        for pair in pairs:
             df = get_candles(pair)
 
             if df is None:
                 continue
 
-            # eliminar vela en formación
+            # 🔥 CLAVE: trabajar SOLO con velas cerradas
             df = df.iloc[:-1]
 
             df = calculate_indicators(df)
 
+            # 🔥 ÚNICA LÓGICA
             if check_buy_signal(df):
                 trade("call", pair)
 
@@ -165,5 +152,5 @@ while True:
         time.sleep(1)
 
     except Exception as e:
-        print("Error general:", e)
+        print("Error:", e)
         time.sleep(3)
