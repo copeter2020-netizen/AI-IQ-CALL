@@ -21,10 +21,11 @@ CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 last_candle_time = None
 last_trade_candle = {}
 
-# ================= PROTECCIÓN =================
+# ================= PROTECCIÓN THREAD =================
 
 def safe_thread_exception(args):
     if "underlying" in str(args.exc_value):
+        print("⚠️ Error digital bloqueado")
         return
     print("Thread error:", args)
 
@@ -34,7 +35,7 @@ threading.excepthook = safe_thread_exception
 
 iq = IQ_Option(EMAIL, PASSWORD)
 
-# evitar errores digitales
+# 🔥 bloquear digital (evita error underlying)
 try:
     iq.api.digital_option = None
     iq.get_digital_underlying_list_data = lambda: {"underlying": []}
@@ -44,6 +45,7 @@ except:
 iq.connect()
 iq.change_balance("PRACTICE")
 
+# activos válidos
 VALID_ASSETS = set(iq.get_all_ACTIVES_OPCODE().keys())
 
 # ================= TELEGRAM =================
@@ -61,9 +63,12 @@ def send_telegram(msg):
 # ================= FUNCIONES =================
 
 def reconnect():
-    if not iq.check_connect():
-        iq.connect()
-        iq.change_balance("PRACTICE")
+    try:
+        if not iq.check_connect():
+            iq.connect()
+            iq.change_balance("PRACTICE")
+    except:
+        pass
 
 
 def get_pairs():
@@ -87,11 +92,12 @@ def get_candles(pair):
         df = pd.DataFrame(candles)
         df.rename(columns={"max": "high", "min": "low"}, inplace=True)
         return df
+
     except:
         return None
 
 
-# evitar múltiples entradas en la misma vela
+# 🔥 evitar múltiples entradas en misma vela
 def can_trade(pair, candle_time):
     if last_trade_candle.get(pair) == candle_time:
         return False
@@ -100,7 +106,7 @@ def can_trade(pair, candle_time):
     return True
 
 
-# esperar apertura exacta
+# 🔥 esperar apertura exacta de vela
 def wait_open():
     while True:
         if iq.get_server_timestamp() % 60 == 0:
@@ -110,15 +116,20 @@ def wait_open():
 
 def trade(direction, pair):
     try:
+        if pair not in VALID_ASSETS:
+            return
+
         status, _ = iq.buy(AMOUNT, pair, direction, EXPIRATION)
 
         if status:
             msg = f"✅ {pair} {direction.upper()} M1"
             print(msg)
             send_telegram(msg)
+        else:
+            print(f"❌ Fallo ejecución {pair}")
 
     except Exception as e:
-        print("Trade error:", e)
+        print(f"Error trade {pair}:", e)
 
 # ================= INICIO =================
 
@@ -133,7 +144,7 @@ while True:
         server_time = iq.get_server_timestamp()
         current_candle = server_time // 60
 
-        # detectar nueva vela cerrada
+        # 🔥 solo cuando cierra vela
         if current_candle == last_candle_time:
             time.sleep(0.5)
             continue
@@ -148,11 +159,12 @@ while True:
             if df is None:
                 continue
 
-            # eliminar vela en formación
+            # 🔥 eliminar vela en formación
             df = df.iloc[:-1]
 
             df = calculate_indicators(df)
 
+            # 🔥 evaluar señal en vela recién cerrada
             buy = check_buy_signal(df, pair)
             sell = check_sell_signal(df, pair)
 
@@ -167,5 +179,5 @@ while True:
         time.sleep(0.5)
 
     except Exception as e:
-        print("Error:", e)
+        print("Error general:", e)
         time.sleep(3)
