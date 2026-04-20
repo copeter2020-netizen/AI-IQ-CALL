@@ -25,12 +25,13 @@ CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 TIMEFRAME = 60
 EXPIRATION = 2
-AMOUNT = 10000
+AMOUNT = 1000
 
 # ================= CONEXIÓN =================
 
 iq = IQ_Option(EMAIL, PASSWORD)
 
+# 🔥 Desactivar digital (evita error underlying)
 try:
     iq.api.digital_option = None
 except:
@@ -39,10 +40,11 @@ except:
 iq.connect()
 iq.change_balance("PRACTICE")
 
+# bloquear funciones digitales
 iq.subscribe_strike_list = lambda *args, **kwargs: None
 iq.unsubscribe_strike_list = lambda *args, **kwargs: None
 
-# 🔥 obtener activos válidos UNA SOLA VEZ
+# 🔥 activos válidos reales
 VALID_ASSETS = set(iq.get_all_ACTIVES_OPCODE().keys())
 
 last_candle_time = None
@@ -69,7 +71,7 @@ def reconnect():
     except:
         pass
 
-# ================= PARES OTC VALIDOS =================
+# ================= PARES OTC =================
 
 def get_pairs():
     try:
@@ -78,11 +80,9 @@ def get_pairs():
 
         for pair in open_time["binary"].keys():
 
-            # solo OTC
             if not pair.endswith("-OTC"):
                 continue
 
-            # 🔥 SOLO activos válidos reales
             if pair not in VALID_ASSETS:
                 continue
 
@@ -90,7 +90,8 @@ def get_pairs():
 
         return pairs
 
-    except:
+    except Exception as e:
+        print("Error obteniendo pares:", e)
         return []
 
 # ================= DATOS =================
@@ -113,7 +114,6 @@ def get_candles(pair):
 
 def trade(direction, pair):
     try:
-        # 🔥 doble validación antes de operar
         if pair not in VALID_ASSETS:
             return
 
@@ -124,17 +124,20 @@ def trade(direction, pair):
             print(msg)
             send_telegram(msg)
 
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"Error trade {pair}:", e)
 
-# ================= LOOP =================
+# ================= INICIO =================
 
 send_telegram("🤖 BOT ACTIVO")
+
+# ================= LOOP =================
 
 while True:
     try:
         reconnect()
 
+        # sincronización con servidor
         server_time = iq.get_server_timestamp()
         current_candle = server_time // 60
 
@@ -152,13 +155,16 @@ while True:
             if df is None:
                 continue
 
+            # 🔥 eliminar vela en formación
             df = df.iloc[:-1]
+
             df = calculate_indicators(df)
 
-            if check_buy_signal(df):
+            # 🔥 lógica EXACTA de tu estrategia
+            if check_buy_signal(df, pair):
                 trade("call", pair)
 
-            elif check_sell_signal(df):
+            elif check_sell_signal(df, pair):
                 trade("put", pair)
 
         time.sleep(1)
