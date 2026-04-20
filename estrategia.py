@@ -1,5 +1,7 @@
 import pandas as pd
 
+TOL = 0.0003  # tolerancia visual
+
 # ================= INDICADORES =================
 
 def calculate_indicators(df):
@@ -21,31 +23,31 @@ def check_buy_signal(df, pair=None):
     if len(df) < 20:
         return False
 
-    prev = df.iloc[-2]     # vela anterior
-    signal = df.iloc[-1]   # vela que acaba de cerrar
+    signal = df.iloc[-1]
 
-    # 1. cruce banda inferior sobre EMA 100
+    # 🔥 CRUCE VISUAL (con tolerancia + mecha)
     cross = (
-        prev['lower_band'] < prev['ema_100'] and
-        signal['lower_band'] > signal['ema_100']
+        signal['lower_band'] > signal['ema_100'] or
+        abs(signal['lower_band'] - signal['ema_100']) < TOL or
+        signal['low'] < signal['ema_100']
     )
 
-    # 2. vela roja
-    red_candle = signal['close'] < signal['open']
+    # vela roja
+    red = signal['close'] < signal['open']
 
-    # 3. cruce de la media hacia arriba
-    mid_cross = (
-        signal['open'] < signal['mid_band'] and
-        signal['close'] > signal['mid_band']
+    # 🔥 ruptura visual de media (cuerpo o mecha)
+    mid_break = (
+        signal['close'] > signal['mid_band'] or
+        signal['high'] > signal['mid_band']
     )
 
     if pair:
         print(f"\n📊 {pair} BUY")
         print("CRUCE:", cross)
-        print("VELA ROJA:", red_candle)
-        print("CRUCE MEDIA:", mid_cross)
+        print("ROJA:", red)
+        print("MEDIA:", mid_break)
 
-    return cross and red_candle and mid_cross
+    return cross and red and mid_break
 
 
 # ================= SELL =================
@@ -54,28 +56,28 @@ def check_sell_signal(df, pair=None):
     if len(df) < 20:
         return False
 
-    prev = df.iloc[-2]
     signal = df.iloc[-1]
 
-    # 1. cruce banda superior bajo EMA 100
+    # 🔥 CRUCE VISUAL
     cross = (
-        prev['upper_band'] > prev['ema_100'] and
-        signal['upper_band'] < signal['ema_100']
+        signal['upper_band'] < signal['ema_100'] or
+        abs(signal['upper_band'] - signal['ema_100']) < TOL or
+        signal['high'] > signal['ema_100']
     )
 
-    # 2. vela verde
-    green_candle = signal['close'] > signal['open']
+    # vela verde
+    green = signal['close'] > signal['open']
 
-    # 3. cruce de la media hacia abajo
-    mid_cross = (
-        signal['open'] > signal['mid_band'] and
-        signal['close'] < signal['mid_band']
+    # 🔥 ruptura visual de media
+    mid_break = (
+        signal['close'] < signal['mid_band'] or
+        signal['low'] < signal['mid_band']
     )
 
     if pair:
         print(f"\n📊 {pair} SELL")
         print("CRUCE:", cross)
-        print("VELA VERDE:", green_candle)
-        print("CRUCE MEDIA:", mid_cross)
+        print("VERDE:", green)
+        print("MEDIA:", mid_break)
 
-    return cross and green_candle and mid_cross
+    return cross and green and mid_break
