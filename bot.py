@@ -13,11 +13,12 @@ PASSWORD = os.getenv("IQ_PASSWORD")
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-PAIRS = ["EURUSD-OTC", "GBPUSD-OTC"]
-
 TIMEFRAME = 60
 EXPIRATION = 2
-AMOUNT = 10000
+AMOUNT = 1000
+
+# ❌ PARES EXCLUIDOS
+EXCLUDED = ["USDJPY", "NZDUSD"]
 
 iq = IQ_Option(EMAIL, PASSWORD)
 iq.connect()
@@ -46,6 +47,33 @@ def reconnect():
             iq.change_balance("PRACTICE")
     except:
         pass
+
+# ================= OBTENER PARES =================
+
+def get_pairs():
+    try:
+        assets = iq.get_all_ACTIVES_OPCODE()
+        open_time = iq.get_all_open_time()
+
+        pairs = []
+
+        for pair in assets.keys():
+            # solo OTC
+            if "OTC" not in pair:
+                continue
+
+            # excluir pares
+            if any(x in pair for x in EXCLUDED):
+                continue
+
+            # verificar que esté abierto
+            if open_time["binary"][pair]["open"]:
+                pairs.append(pair)
+
+        return pairs
+
+    except:
+        return []
 
 # ================= DATOS =================
 
@@ -84,18 +112,17 @@ while True:
     try:
         reconnect()
 
-        # obtener tiempo del servidor
         server_time = iq.get_server_timestamp()
-
-        # detectar cierre de vela
         current_candle = server_time // 60
 
         if current_candle == last_candle_time:
             time.sleep(1)
             continue
 
-        # nueva vela cerrada
         last_candle_time = current_candle
+
+        # 🔥 obtener pares dinámicos
+        PAIRS = get_pairs()
 
         for pair in PAIRS:
             df = get_candles(pair)
@@ -103,12 +130,9 @@ while True:
             if df is None:
                 continue
 
-            # 🔥 eliminar vela en formación
             df = df.iloc[:-1]
-
             df = calculate_indicators(df)
 
-            # 🔥 analizar SOLO vela cerrada
             if check_buy_signal(df):
                 trade("call", pair)
 
