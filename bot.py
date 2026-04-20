@@ -7,31 +7,26 @@ from iqoptionapi.stable_api import IQ_Option
 
 from estrategia import calculate_indicators, check_buy_signal, check_sell_signal
 
-# ================= PROTECCIÓN THREADS =================
+# ================= CONFIG =================
 
-def safe_thread_exception(args):
-    if "underlying" in str(args.exc_value):
-        return
-    print("Thread error:", args)
-
-threading.excepthook = safe_thread_exception
-
-# ================= VARIABLES =================
+TIMEFRAME = 60
+EXPIRATION = 2
+AMOUNT = 100
 
 EMAIL = os.getenv("IQ_EMAIL")
 PASSWORD = os.getenv("IQ_PASSWORD")
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-TIMEFRAME = 60
-EXPIRATION = 2
-AMOUNT = 350
+# 🔥 CONTROL DE OPERACIONES
+last_candle_time = None
+last_trade_time = {}   # evita múltiples entradas por par
+COOLDOWN = 120         # segundos (2 minutos)
 
 # ================= CONEXIÓN =================
 
 iq = IQ_Option(EMAIL, PASSWORD)
 
-# evitar error digital
 try:
     iq.api.digital_option = None
 except:
@@ -40,14 +35,7 @@ except:
 iq.connect()
 iq.change_balance("PRACTICE")
 
-# bloquear digital
-iq.subscribe_strike_list = lambda *args, **kwargs: None
-iq.unsubscribe_strike_list = lambda *args, **kwargs: None
-
-# activos válidos
 VALID_ASSETS = set(iq.get_all_ACTIVES_OPCODE().keys())
-
-last_candle_time = None
 
 # ================= TELEGRAM =================
 
@@ -61,73 +49,63 @@ def send_telegram(msg):
     except:
         pass
 
-# ================= RECONEXIÓN =================
+# ================= FUNCIONES =================
 
 def reconnect():
-    try:
-        if not iq.check_connect():
-            iq.connect()
-            iq.change_balance("PRACTICE")
-    except:
-        pass
+    if not iq.check_connect():
+        iq.connect()
+        iq.change_balance("PRACTICE")
 
-# ================= PARES OTC =================
 
 def get_pairs():
     try:
         open_time = iq.get_all_open_time()
-        pairs = []
-
-        for pair in open_time["binary"].keys():
-
-            # solo OTC
-            if not pair.endswith("-OTC"):
-                continue
-
-            # evitar error consts
-            if pair not in VALID_ASSETS:
-                continue
-
-            pairs.append(pair)
-
-        return pairs
-
-    except Exception as e:
-        print("Error obteniendo pares:", e)
+        return [
+            p for p in open_time["binary"].keys()
+            if p.endswith("-OTC") and p in VALID_ASSETS
+        ]
+    except:
         return []
 
-# ================= DATOS =================
 
 def get_candles(pair):
     try:
         candles = iq.get_candles(pair, TIMEFRAME, 100, time.time())
-
         if not candles or len(candles) < 50:
             return None
 
         df = pd.DataFrame(candles)
         df.rename(columns={"max": "high", "min": "low"}, inplace=True)
         return df
-
     except:
         return None
 
-# ================= TRADING =================
+
+def can_trade(pair):
+    now = time.time()
+    last = last_trade_time.get(pair, 0)
+
+    # 🔥 evita múltiples entradas
+    return (now - last) > COOLDOWN
+
 
 def trade(direction, pair):
     try:
-        if pair not in VALID_ASSETS:
+        if not can_trade(pair):
             return
 
         status, _ = iq.buy(AMOUNT, pair, direction, EXPIRATION)
 
         if status:
+            last_trade_time[pair] = time.time()
+
             msg = f"✅ {pair} {direction.upper()} M2"
             print(msg)
             send_telegram(msg)
 
     except Exception as e:
-        print(f"Error trade {pair}:", e)
+        print("Trade error:", e)
+
 
 # ================= INICIO =================
 
@@ -139,15 +117,14 @@ while True:
     try:
         reconnect()
 
-        # sincronización con servidor
         server_time = iq.get_server_timestamp()
         current_candle = server_time // 60
 
+        # 🔥 SOLO CUANDO CIERRA UNA VELA
         if current_candle == last_candle_time:
             time.sleep(1)
             continue
 
-        # nueva vela cerrada
         last_candle_time = current_candle
 
         pairs = get_pairs()
@@ -158,20 +135,23 @@ while True:
             if df is None:
                 continue
 
-            # 🔥 eliminar vela en formación
+            # eliminar vela en formación
             df = df.iloc[:-1]
 
             df = calculate_indicators(df)
 
-            # 🔥 TU ESTRATEGIA EXACTA
-            if check_buy_signal(df, pair):
+            # 🔥 SOLO SEÑALES NUEVAS
+            buy = check_buy_signal(df, pair)
+            sell = check_sell_signal(df, pair)
+
+            if buy:
                 trade("call", pair)
 
-            elif check_sell_signal(df, pair):
+            elif sell:
                 trade("put", pair)
 
         time.sleep(1)
 
     except Exception as e:
-        print("Error general:", e)
+        print("Error:", e)
         time.sleep(3)
