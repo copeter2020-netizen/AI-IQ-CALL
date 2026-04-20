@@ -25,7 +25,7 @@ CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 TIMEFRAME = 60
 EXPIRATION = 2
-AMOUNT = 1000
+AMOUNT = 1
 
 # ================= CONEXIÓN =================
 
