@@ -2,9 +2,17 @@ import time
 import os
 import requests
 import pandas as pd
+import threading
 from iqoptionapi.stable_api import IQ_Option
 
 from estrategia import calculate_indicators, check_buy_signal, check_sell_signal
+
+# ================= PROTECCIÓN THREADS =================
+
+def safe_thread_exception(args):
+    print("Thread error capturado:", args)
+
+threading.excepthook = safe_thread_exception
 
 # ================= VARIABLES =================
 
@@ -17,7 +25,6 @@ TIMEFRAME = 60
 EXPIRATION = 2
 AMOUNT = 1000
 
-# ❌ PARES EXCLUIDOS
 EXCLUDED = ["USDJPY", "NZDUSD"]
 
 iq = IQ_Option(EMAIL, PASSWORD)
@@ -48,31 +55,28 @@ def reconnect():
     except:
         pass
 
-# ================= OBTENER PARES =================
+# ================= OBTENER PARES (SEGURO) =================
 
 def get_pairs():
     try:
-        assets = iq.get_all_ACTIVES_OPCODE()
         open_time = iq.get_all_open_time()
-
         pairs = []
 
-        for pair in assets.keys():
-            # solo OTC
+        for pair, data in open_time["binary"].items():
+
             if "OTC" not in pair:
                 continue
 
-            # excluir pares
             if any(x in pair for x in EXCLUDED):
                 continue
 
-            # verificar que esté abierto
-            if open_time["binary"][pair]["open"]:
+            if isinstance(data, dict) and data.get("open", False):
                 pairs.append(pair)
 
         return pairs
 
-    except:
+    except Exception as e:
+        print("Error obteniendo pares:", e)
         return []
 
 # ================= DATOS =================
@@ -121,7 +125,7 @@ while True:
 
         last_candle_time = current_candle
 
-        # 🔥 obtener pares dinámicos
+        # 🔥 obtener pares seguros
         PAIRS = get_pairs()
 
         for pair in PAIRS:
@@ -130,9 +134,12 @@ while True:
             if df is None:
                 continue
 
+            # eliminar vela en formación
             df = df.iloc[:-1]
+
             df = calculate_indicators(df)
 
+            # analizar SOLO vela cerrada
             if check_buy_signal(df):
                 trade("call", pair)
 
@@ -141,5 +148,6 @@ while True:
 
         time.sleep(1)
 
-    except Exception:
+    except Exception as e:
+        print("Error general:", e)
         time.sleep(3)
