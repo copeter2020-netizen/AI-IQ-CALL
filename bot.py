@@ -12,6 +12,11 @@ from estrategia import calculate_indicators, check_buy_signal, check_sell_signal
 def safe_thread_exception(args):
     print("Thread error capturado:", args)
 
+    # 🔥 reinicio automático si ocurre error 'underlying'
+    if "underlying" in str(args.exc_value):
+        print("Reiniciando bot por error crítico...")
+        os._exit(1)
+
 threading.excepthook = safe_thread_exception
 
 # ================= VARIABLES =================
@@ -27,9 +32,15 @@ AMOUNT = 1000
 
 EXCLUDED = ["USDJPY", "NZDUSD"]
 
+# ================= CONEXIÓN =================
+
 iq = IQ_Option(EMAIL, PASSWORD)
 iq.connect()
 iq.change_balance("PRACTICE")
+
+# 🔥 BLOQUEAR SISTEMA DIGITAL (SOLUCIÓN REAL)
+iq.subscribe_strike_list = lambda *args, **kwargs: None
+iq.unsubscribe_strike_list = lambda *args, **kwargs: None
 
 last_candle_time = None
 
@@ -55,7 +66,7 @@ def reconnect():
     except:
         pass
 
-# ================= OBTENER PARES (SEGURO) =================
+# ================= PARES SEGUROS =================
 
 def get_pairs():
     try:
@@ -64,12 +75,15 @@ def get_pairs():
 
         for pair, data in open_time["binary"].items():
 
-            if "OTC" not in pair:
+            # 🔥 SOLO OTC
+            if not pair.endswith("-OTC"):
                 continue
 
+            # excluir pares
             if any(x in pair for x in EXCLUDED):
                 continue
 
+            # verificar que esté abierto
             if isinstance(data, dict) and data.get("open", False):
                 pairs.append(pair)
 
@@ -116,6 +130,7 @@ while True:
     try:
         reconnect()
 
+        # 🔥 sincronización con servidor IQ
         server_time = iq.get_server_timestamp()
         current_candle = server_time // 60
 
@@ -123,9 +138,9 @@ while True:
             time.sleep(1)
             continue
 
+        # nueva vela cerrada
         last_candle_time = current_candle
 
-        # 🔥 obtener pares seguros
         PAIRS = get_pairs()
 
         for pair in PAIRS:
@@ -134,12 +149,12 @@ while True:
             if df is None:
                 continue
 
-            # eliminar vela en formación
+            # 🔥 eliminar vela en formación
             df = df.iloc[:-1]
 
             df = calculate_indicators(df)
 
-            # analizar SOLO vela cerrada
+            # 🔥 SOLO ENTRADAS REALES
             if check_buy_signal(df):
                 trade("call", pair)
 
