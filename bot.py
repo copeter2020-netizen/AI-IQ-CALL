@@ -25,13 +25,13 @@ CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 TIMEFRAME = 60
 EXPIRATION = 2
-AMOUNT = 200
+AMOUNT = 350
 
 # ================= CONEXIÓN =================
 
 iq = IQ_Option(EMAIL, PASSWORD)
 
-# 🔥 Desactivar digital (evita error underlying)
+# evitar error digital
 try:
     iq.api.digital_option = None
 except:
@@ -40,11 +40,11 @@ except:
 iq.connect()
 iq.change_balance("PRACTICE")
 
-# bloquear funciones digitales
+# bloquear digital
 iq.subscribe_strike_list = lambda *args, **kwargs: None
 iq.unsubscribe_strike_list = lambda *args, **kwargs: None
 
-# 🔥 activos válidos reales
+# activos válidos
 VALID_ASSETS = set(iq.get_all_ACTIVES_OPCODE().keys())
 
 last_candle_time = None
@@ -80,9 +80,11 @@ def get_pairs():
 
         for pair in open_time["binary"].keys():
 
+            # solo OTC
             if not pair.endswith("-OTC"):
                 continue
 
+            # evitar error consts
             if pair not in VALID_ASSETS:
                 continue
 
@@ -145,6 +147,7 @@ while True:
             time.sleep(1)
             continue
 
+        # nueva vela cerrada
         last_candle_time = current_candle
 
         pairs = get_pairs()
@@ -160,7 +163,7 @@ while True:
 
             df = calculate_indicators(df)
 
-            # 🔥 lógica EXACTA de tu estrategia
+            # 🔥 TU ESTRATEGIA EXACTA
             if check_buy_signal(df, pair):
                 trade("call", pair)
 
