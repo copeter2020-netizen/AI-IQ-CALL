@@ -18,26 +18,25 @@ def check_buy_signal(df):
     if len(df) < 20:
         return False
 
-    # 🔥 velas exactas (todas cerradas)
-    prev = df.iloc[-6]
-    c3 = df.iloc[-5]  # impulso roja
-    c4 = df.iloc[-4]  # confirmación 1
-    c5 = df.iloc[-3]  # confirmación 2
+    # 🔥 AJUSTE CLAVE DE INDEXACIÓN
+    prev = df.iloc[-5]
+    c3 = df.iloc[-4]  # impulso
+    c4 = df.iloc[-3]
+    c5 = df.iloc[-2]
 
-    # 🔥 CRUCE REAL
+    # 🔥 CRUCE MÁS REALISTA (con tolerancia)
     cross = (
-        prev['upper_band'] <= prev['ema_100'] and
-        c3['upper_band'] > c3['ema_100']
+        (c3['upper_band'] - c3['ema_100']) > -0.0001 and
+        (prev['upper_band'] - prev['ema_100']) <= 0
     )
 
-    # 🔴 impulso correcto
+    # 🔥 IMPULSO MÁS FLEXIBLE
     impulse = (
-        c3['close'] < c3['open'] and  # roja
-        c3['close'] < c3['ema_100'] and  # debajo EMA
-        c3['close'] <= c3['lower_band'] * 1.01  # cerca banda inferior (tolerancia)
+        c3['close'] < c3['open'] and
+        c3['close'] < c3['ema_100'] and
+        c3['close'] <= c3['lower_band'] * 1.02  # más tolerancia
     )
 
-    # 🟢 confirmaciones
     confirmations = (
         c4['close'] > c4['open'] and
         c5['close'] > c5['open']
@@ -52,25 +51,22 @@ def check_sell_signal(df):
     if len(df) < 20:
         return False
 
-    prev = df.iloc[-6]
-    c3 = df.iloc[-5]
-    c4 = df.iloc[-4]
-    c5 = df.iloc[-3]
+    prev = df.iloc[-5]
+    c3 = df.iloc[-4]
+    c4 = df.iloc[-3]
+    c5 = df.iloc[-2]
 
-    # 🔥 CRUCE REAL
     cross = (
-        prev['lower_band'] >= prev['ema_100'] and
-        c3['lower_band'] < c3['ema_100']
+        (c3['lower_band'] - c3['ema_100']) < 0.0001 and
+        (prev['lower_band'] - prev['ema_100']) >= 0
     )
 
-    # 🟢 impulso correcto
     impulse = (
         c3['close'] > c3['open'] and
         c3['close'] > c3['ema_100'] and
-        c3['close'] >= c3['upper_band'] * 0.99
+        c3['close'] >= c3['upper_band'] * 0.98
     )
 
-    # 🔴 confirmaciones
     confirmations = (
         c4['close'] < c4['open'] and
         c5['close'] < c5['open']
