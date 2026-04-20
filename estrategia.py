@@ -1,5 +1,11 @@
 import pandas as pd
 
+# ================= CONFIG =================
+
+# 🔥 tolerancia para detectar cruce (ajustada para OTC)
+TOLERANCE = 0.0005
+
+
 # ================= INDICADORES =================
 
 def calculate_indicators(df):
@@ -12,7 +18,7 @@ def calculate_indicators(df):
 
     df['upper_band'] = ma + 2 * std
     df['lower_band'] = ma - 2 * std
-    df['mid_band'] = ma  # línea central
+    df['mid_band'] = ma
 
     return df
 
@@ -23,22 +29,21 @@ def check_buy_signal(df, pair=None):
     if len(df) < 20:
         return False
 
-    # 🔥 vela anterior al cruce
     prev = df.iloc[-3]
-
-    # 🔥 vela donde ocurre la señal (ya cerrada)
     signal = df.iloc[-2]
 
-    # ================= CONDICIONES =================
-
-    # 1. cruce banda inferior sobre EMA 100
+    # 🔥 CRUCE FLEXIBLE (SOLUCIÓN REAL)
     cross = (
-        prev['lower_band'] <= prev['ema_100'] and
+        abs(prev['lower_band'] - prev['ema_100']) < TOLERANCE or
+        abs(signal['lower_band'] - signal['ema_100']) < TOLERANCE or
         signal['lower_band'] > signal['ema_100']
     )
 
-    # 2. ruptura de la media de bollinger
-    breakout = signal['close'] > signal['mid_band']
+    # 🔥 RUPTURA REAL (evita falsas entradas)
+    breakout = (
+        signal['close'] > signal['mid_band'] and
+        (signal['close'] - signal['mid_band']) > (TOLERANCE / 2)
+    )
 
     # ================= DEBUG =================
 
@@ -62,14 +67,20 @@ def check_sell_signal(df, pair=None):
     prev = df.iloc[-3]
     signal = df.iloc[-2]
 
-    # 1. cruce banda superior bajo EMA 100
+    # 🔥 CRUCE FLEXIBLE
     cross = (
-        prev['upper_band'] >= prev['ema_100'] and
+        abs(prev['upper_band'] - prev['ema_100']) < TOLERANCE or
+        abs(signal['upper_band'] - signal['ema_100']) < TOLERANCE or
         signal['upper_band'] < signal['ema_100']
     )
 
-    # 2. ruptura de la media hacia abajo
-    breakout = signal['close'] < signal['mid_band']
+    # 🔥 RUPTURA REAL
+    breakout = (
+        signal['close'] < signal['mid_band'] and
+        (signal['mid_band'] - signal['close']) > (TOLERANCE / 2)
+    )
+
+    # ================= DEBUG =================
 
     if pair:
         print(f"\n📊 {pair} SELL")
