@@ -1,9 +1,5 @@
 import pandas as pd
 
-# ================= CONFIG =================
-
-TOLERANCE = 0.0005  # puedes ajustar si operas JPY
-
 # ================= INDICADORES =================
 
 def calculate_indicators(df):
@@ -22,71 +18,64 @@ def calculate_indicators(df):
 # ================= BUY =================
 
 def check_buy_signal(df, pair=None):
-    if len(df) < 30:
+    if len(df) < 20:
         return False
 
-    # 🔥 ESTRUCTURA REAL (3 VELAS)
-    cross_candle = df.iloc[-4]   # donde ocurre el cruce
-    break_candle = df.iloc[-3]   # ruptura confirmada
-    entry_candle = df.iloc[-2]   # vela donde se entra
+    prev = df.iloc[-2]     # vela anterior
+    signal = df.iloc[-1]   # vela que acaba de cerrar
 
-    # ================= CRUCE REAL =================
+    # 1. cruce banda inferior sobre EMA 100
     cross = (
-        (cross_candle['lower_band'] < cross_candle['ema_100'] and
-         break_candle['lower_band'] > break_candle['ema_100'])
-        or
-        abs(break_candle['lower_band'] - break_candle['ema_100']) < TOLERANCE
+        prev['lower_band'] < prev['ema_100'] and
+        signal['lower_band'] > signal['ema_100']
     )
 
-    # ================= RUPTURA REAL =================
-    breakout = (
-        break_candle['close'] > break_candle['mid_band'] and
-        (break_candle['close'] - break_candle['mid_band']) > (TOLERANCE / 2)
+    # 2. vela roja
+    red_candle = signal['close'] < signal['open']
+
+    # 3. cruce de la media hacia arriba
+    mid_cross = (
+        signal['open'] < signal['mid_band'] and
+        signal['close'] > signal['mid_band']
     )
 
-    # ================= DEBUG =================
     if pair:
         print(f"\n📊 {pair} BUY")
-        print(f"Cross candle -> Lower: {cross_candle['lower_band']:.5f} | EMA: {cross_candle['ema_100']:.5f}")
-        print(f"Break candle -> Lower: {break_candle['lower_band']:.5f} | EMA: {break_candle['ema_100']:.5f}")
-        print(f"Break close: {break_candle['close']:.5f} | Mid: {break_candle['mid_band']:.5f}")
         print("CRUCE:", cross)
-        print("BREAK:", breakout)
+        print("VELA ROJA:", red_candle)
+        print("CRUCE MEDIA:", mid_cross)
 
-    return cross and breakout
+    return cross and red_candle and mid_cross
 
 
 # ================= SELL =================
 
 def check_sell_signal(df, pair=None):
-    if len(df) < 30:
+    if len(df) < 20:
         return False
 
-    cross_candle = df.iloc[-4]
-    break_candle = df.iloc[-3]
-    entry_candle = df.iloc[-2]
+    prev = df.iloc[-2]
+    signal = df.iloc[-1]
 
-    # ================= CRUCE REAL =================
+    # 1. cruce banda superior bajo EMA 100
     cross = (
-        (cross_candle['upper_band'] > cross_candle['ema_100'] and
-         break_candle['upper_band'] < break_candle['ema_100'])
-        or
-        abs(break_candle['upper_band'] - break_candle['ema_100']) < TOLERANCE
+        prev['upper_band'] > prev['ema_100'] and
+        signal['upper_band'] < signal['ema_100']
     )
 
-    # ================= RUPTURA REAL =================
-    breakout = (
-        break_candle['close'] < break_candle['mid_band'] and
-        (break_candle['mid_band'] - break_candle['close']) > (TOLERANCE / 2)
+    # 2. vela verde
+    green_candle = signal['close'] > signal['open']
+
+    # 3. cruce de la media hacia abajo
+    mid_cross = (
+        signal['open'] > signal['mid_band'] and
+        signal['close'] < signal['mid_band']
     )
 
-    # ================= DEBUG =================
     if pair:
         print(f"\n📊 {pair} SELL")
-        print(f"Cross candle -> Upper: {cross_candle['upper_band']:.5f} | EMA: {cross_candle['ema_100']:.5f}")
-        print(f"Break candle -> Upper: {break_candle['upper_band']:.5f} | EMA: {break_candle['ema_100']:.5f}")
-        print(f"Break close: {break_candle['close']:.5f} | Mid: {break_candle['mid_band']:.5f}")
         print("CRUCE:", cross)
-        print("BREAK:", breakout)
+        print("VELA VERDE:", green_candle)
+        print("CRUCE MEDIA:", mid_cross)
 
-    return cross and breakout
+    return cross and green_candle and mid_cross
