@@ -7,34 +7,51 @@ from iqoptionapi.stable_api import IQ_Option
 
 from estrategia import calculate_indicators, check_buy_signal, check_sell_signal
 
-# ================= CONFIG =================
+# ================= PROTECCIÓN THREADS =================
 
-TIMEFRAME = 60
-EXPIRATION = 2
-AMOUNT = 100
+def safe_thread_exception(args):
+    if "underlying" in str(args.exc_value):
+        print("⚠️ Error digital bloqueado")
+        return
+    print("Thread error:", args)
+
+threading.excepthook = safe_thread_exception
+
+# ================= VARIABLES =================
 
 EMAIL = os.getenv("IQ_EMAIL")
 PASSWORD = os.getenv("IQ_PASSWORD")
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
+TIMEFRAME = 60
+EXPIRATION = 2
+AMOUNT = 150
+
 # 🔥 CONTROL DE OPERACIONES
 last_candle_time = None
-last_trade_time = {}   # evita múltiples entradas por par
-COOLDOWN = 120         # segundos (2 minutos)
+last_trade_time = {}
+COOLDOWN = 120  # 2 minutos
 
 # ================= CONEXIÓN =================
 
 iq = IQ_Option(EMAIL, PASSWORD)
 
+# 🔥 BLOQUEO TOTAL DIGITAL (SOLUCIÓN ERROR underlying)
 try:
     iq.api.digital_option = None
+    iq.get_digital_underlying_list_data = lambda: {"underlying": []}
 except:
     pass
 
 iq.connect()
 iq.change_balance("PRACTICE")
 
+# 🔥 bloquear funciones digitales
+iq.subscribe_strike_list = lambda *args, **kwargs: None
+iq.unsubscribe_strike_list = lambda *args, **kwargs: None
+
+# 🔥 activos válidos
 VALID_ASSETS = set(iq.get_all_ACTIVES_OPCODE().keys())
 
 # ================= TELEGRAM =================
@@ -49,13 +66,17 @@ def send_telegram(msg):
     except:
         pass
 
-# ================= FUNCIONES =================
+# ================= RECONEXIÓN =================
 
 def reconnect():
-    if not iq.check_connect():
-        iq.connect()
-        iq.change_balance("PRACTICE")
+    try:
+        if not iq.check_connect():
+            iq.connect()
+            iq.change_balance("PRACTICE")
+    except:
+        pass
 
+# ================= PARES OTC =================
 
 def get_pairs():
     try:
@@ -67,30 +88,36 @@ def get_pairs():
     except:
         return []
 
+# ================= DATOS =================
 
 def get_candles(pair):
     try:
         candles = iq.get_candles(pair, TIMEFRAME, 100, time.time())
+
         if not candles or len(candles) < 50:
             return None
 
         df = pd.DataFrame(candles)
         df.rename(columns={"max": "high", "min": "low"}, inplace=True)
         return df
+
     except:
         return None
 
+# ================= CONTROL DE ENTRADAS =================
 
 def can_trade(pair):
     now = time.time()
     last = last_trade_time.get(pair, 0)
-
-    # 🔥 evita múltiples entradas
     return (now - last) > COOLDOWN
 
+# ================= TRADING =================
 
 def trade(direction, pair):
     try:
+        if pair not in VALID_ASSETS:
+            return
+
         if not can_trade(pair):
             return
 
@@ -104,8 +131,7 @@ def trade(direction, pair):
             send_telegram(msg)
 
     except Exception as e:
-        print("Trade error:", e)
-
+        print(f"Error trade {pair}:", e)
 
 # ================= INICIO =================
 
@@ -117,10 +143,11 @@ while True:
     try:
         reconnect()
 
+        # 🔥 sincronización con servidor
         server_time = iq.get_server_timestamp()
         current_candle = server_time // 60
 
-        # 🔥 SOLO CUANDO CIERRA UNA VELA
+        # 🔥 solo al cerrar vela
         if current_candle == last_candle_time:
             time.sleep(1)
             continue
@@ -135,12 +162,12 @@ while True:
             if df is None:
                 continue
 
-            # eliminar vela en formación
+            # 🔥 eliminar vela en formación
             df = df.iloc[:-1]
 
             df = calculate_indicators(df)
 
-            # 🔥 SOLO SEÑALES NUEVAS
+            # 🔥 evaluar estrategia
             buy = check_buy_signal(df, pair)
             sell = check_sell_signal(df, pair)
 
@@ -153,5 +180,5 @@ while True:
         time.sleep(1)
 
     except Exception as e:
-        print("Error:", e)
+        print("Error general:", e)
         time.sleep(3)
