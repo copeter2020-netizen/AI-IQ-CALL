@@ -1,75 +1,82 @@
 import pandas as pd
 
+# ================= INDICADORES =================
+
 def calculate_indicators(df):
+    # EMA 100
     df['ema_100'] = df['close'].ewm(span=100).mean()
 
+    # Bollinger Bands
     ma = df['close'].rolling(14).mean()
     std = df['close'].rolling(14).std()
 
     df['upper_band'] = ma + 2 * std
     df['lower_band'] = ma - 2 * std
+    df['mid_band'] = ma  # línea central
 
     return df
 
 
 # ================= BUY =================
 
-def check_buy_signal(df):
+def check_buy_signal(df, pair=None):
     if len(df) < 20:
         return False
 
-    # 🔥 AJUSTE CLAVE DE INDEXACIÓN
-    prev = df.iloc[-5]
-    c3 = df.iloc[-4]  # impulso
-    c4 = df.iloc[-3]
-    c5 = df.iloc[-2]
+    # 🔥 vela anterior al cruce
+    prev = df.iloc[-3]
 
-    # 🔥 CRUCE MÁS REALISTA (con tolerancia)
+    # 🔥 vela donde ocurre la señal (ya cerrada)
+    signal = df.iloc[-2]
+
+    # ================= CONDICIONES =================
+
+    # 1. cruce banda inferior sobre EMA 100
     cross = (
-        (c3['upper_band'] - c3['ema_100']) > -0.0001 and
-        (prev['upper_band'] - prev['ema_100']) <= 0
+        prev['lower_band'] <= prev['ema_100'] and
+        signal['lower_band'] > signal['ema_100']
     )
 
-    # 🔥 IMPULSO MÁS FLEXIBLE
-    impulse = (
-        c3['close'] < c3['open'] and
-        c3['close'] < c3['ema_100'] and
-        c3['close'] <= c3['lower_band'] * 1.02  # más tolerancia
-    )
+    # 2. ruptura de la media de bollinger
+    breakout = signal['close'] > signal['mid_band']
 
-    confirmations = (
-        c4['close'] > c4['open'] and
-        c5['close'] > c5['open']
-    )
+    # ================= DEBUG =================
 
-    return cross and impulse and confirmations
+    if pair:
+        print(f"\n📊 {pair} BUY")
+        print(f"Lower prev: {prev['lower_band']:.5f} | EMA prev: {prev['ema_100']:.5f}")
+        print(f"Lower now: {signal['lower_band']:.5f} | EMA now: {signal['ema_100']:.5f}")
+        print(f"Close: {signal['close']:.5f} | Mid: {signal['mid_band']:.5f}")
+        print("CRUCE:", cross)
+        print("BREAK:", breakout)
+
+    return cross and breakout
 
 
 # ================= SELL =================
 
-def check_sell_signal(df):
+def check_sell_signal(df, pair=None):
     if len(df) < 20:
         return False
 
-    prev = df.iloc[-5]
-    c3 = df.iloc[-4]
-    c4 = df.iloc[-3]
-    c5 = df.iloc[-2]
+    prev = df.iloc[-3]
+    signal = df.iloc[-2]
 
+    # 1. cruce banda superior bajo EMA 100
     cross = (
-        (c3['lower_band'] - c3['ema_100']) < 0.0001 and
-        (prev['lower_band'] - prev['ema_100']) >= 0
+        prev['upper_band'] >= prev['ema_100'] and
+        signal['upper_band'] < signal['ema_100']
     )
 
-    impulse = (
-        c3['close'] > c3['open'] and
-        c3['close'] > c3['ema_100'] and
-        c3['close'] >= c3['upper_band'] * 0.98
-    )
+    # 2. ruptura de la media hacia abajo
+    breakout = signal['close'] < signal['mid_band']
 
-    confirmations = (
-        c4['close'] < c4['open'] and
-        c5['close'] < c5['open']
-    )
+    if pair:
+        print(f"\n📊 {pair} SELL")
+        print(f"Upper prev: {prev['upper_band']:.5f} | EMA prev: {prev['ema_100']:.5f}")
+        print(f"Upper now: {signal['upper_band']:.5f} | EMA now: {signal['ema_100']:.5f}")
+        print(f"Close: {signal['close']:.5f} | Mid: {signal['mid_band']:.5f}")
+        print("CRUCE:", cross)
+        print("BREAK:", breakout)
 
-    return cross and impulse and confirmations
+    return cross and breakout
