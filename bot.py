@@ -5,7 +5,11 @@ import pandas as pd
 from iqoptionapi.stable_api import IQ_Option
 
 import estrategia
-from estrategia import calculate_indicators, check_buy_signal, check_sell_signal
+from estrategia import (
+    calculate_indicators,
+    pre_buy, pre_sell,
+    confirm_buy, confirm_sell
+)
 
 # ================= CONFIG =================
 
@@ -21,6 +25,10 @@ CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 last_trade_time = 0
 COOLDOWN = 60
+
+pending_signal = None
+signal_time = 0
+MAX_WAIT = 50  # segundos
 
 # ================= CONEXIÓN =================
 
@@ -41,7 +49,7 @@ def send_telegram(msg):
         pass
 
 
-# ================= CANDLES =================
+# ================= DATA =================
 
 def get_candles():
     candles = iq.get_candles(PAIR, TIMEFRAME, 100, time.time())
@@ -77,7 +85,7 @@ def trade(direction):
 
 # ================= LOOP =================
 
-print("🚀 BOT STRUCTURE LIVE ACTIVO (OHLC + S/R)")
+print("🚀 BOT HÍBRIDO PRO ACTIVO (PRE + CONFIRMACIÓN)")
 
 while True:
     try:
@@ -87,16 +95,30 @@ while True:
 
         df = calculate_indicators(df)
 
-        buy = check_buy_signal(df)
-        sell = check_sell_signal(df)
+        # ================= PRE-SEÑAL =================
+        if pending_signal is None:
+            if pre_buy(df):
+                pending_signal = "buy"
+                signal_time = time.time()
 
-        print("BUY:", buy, "SELL:", sell)
+            elif pre_sell(df):
+                pending_signal = "sell"
+                signal_time = time.time()
 
-        if buy and can_trade():
+        # ================= EXPIRACIÓN PRE-SEÑAL =================
+        if pending_signal and (time.time() - signal_time > MAX_WAIT):
+            pending_signal = None
+
+        # ================= CONFIRMACIÓN =================
+        if pending_signal == "buy" and confirm_buy(df) and can_trade():
             trade("call")
+            pending_signal = None
 
-        elif sell and can_trade():
+        elif pending_signal == "sell" and confirm_sell(df) and can_trade():
             trade("put")
+            pending_signal = None
+
+        print("PENDING:", pending_signal)
 
         time.sleep(1)
 
