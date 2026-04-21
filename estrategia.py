@@ -1,6 +1,6 @@
 import pandas as pd
 
-# ================= CONFIG =================
+# ================= CONFIG (se sobreescribe por par) =================
 
 TOL = 0.0003
 MIN_BODY = 0.00025
@@ -20,7 +20,7 @@ def calculate_indicators(df):
 
     df['bb_width'] = df['upper_band'] - df['lower_band']
 
-    # pendiente de EMA (fuerza de tendencia)
+    # pendiente EMA
     df['ema_slope'] = df['ema_100'].diff()
 
     return df
@@ -49,14 +49,6 @@ def check_buy_signal(df, pair=None):
     mid_break = c['close'] > c['mid_band']
     red = c['close'] < c['open']
 
-    if pair:
-        print(f"\n📊 {pair} BUY")
-        print("trend:", trend)
-        print("volatility:", volatility)
-        print("strong:", strong)
-        print("cross:", cross)
-        print("mid:", mid_break)
-
     return trend and volatility and strong and cross and mid_break and red
 
 
@@ -82,13 +74,5 @@ def check_sell_signal(df, pair=None):
 
     mid_break = c['close'] < c['mid_band']
     green = c['close'] > c['open']
-
-    if pair:
-        print(f"\n📊 {pair} SELL")
-        print("trend:", trend)
-        print("volatility:", volatility)
-        print("strong:", strong)
-        print("cross:", cross)
-        print("mid:", mid_break)
 
     return trend and volatility and strong and cross and mid_break and green
