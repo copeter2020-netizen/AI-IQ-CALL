@@ -1,11 +1,7 @@
 import pandas as pd
 from estrategia import calculate_indicators, check_buy_signal, check_sell_signal
 
-# ================= CONFIG =================
-
-EXPIRATION = 1  # 1 vela
-
-# ================= BACKTEST =================
+EXPIRATION = 1
 
 def run_backtest(df):
     df = calculate_indicators(df)
@@ -26,7 +22,6 @@ def run_backtest(df):
 
         if buy:
             trades += 1
-
             if result['close'] > entry['open']:
                 wins += 1
             else:
@@ -34,26 +29,19 @@ def run_backtest(df):
 
         elif sell:
             trades += 1
-
             if result['close'] < entry['open']:
                 wins += 1
             else:
                 losses += 1
 
-    # ================= RESULTADOS =================
-
     if trades == 0:
-        print("❌ No hubo operaciones")
+        print("No trades")
         return
 
     winrate = (wins / trades) * 100
-
-    print("\n===== RESULTADOS =====")
-    print("Trades:", trades)
-    print("Wins:", wins)
-    print("Losses:", losses)
-    print(f"Winrate: {winrate:.2f}%")
-
-    # payout estimado 80%
     profit = (wins * 0.8) - losses
-    print(f"Profit estimado: {profit}")
+
+    print("\nRESULTADOS")
+    print("Trades:", trades)
+    print("Winrate:", winrate)
+    print("Profit:", profit)
