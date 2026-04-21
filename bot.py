@@ -3,7 +3,7 @@ import os
 import requests
 import pandas as pd
 import threading
-from datetime import datetime, UTC
+from datetime import datetime, timezone
 from iqoptionapi.stable_api import IQ_Option
 
 import estrategia
@@ -26,13 +26,7 @@ last_candle_time = None
 last_trade_time = 0
 COOLDOWN = 60
 
-# ================= SESIÓN =================
-
-def is_trading_time():
-    # puedes dejarlo siempre activo o limitar horario
-    return True
-
-# ================= PROTECCIÓN =================
+# ================= THREAD SAFE =================
 
 def safe_thread_exception(args):
     if "underlying" in str(args.exc_value):
@@ -45,7 +39,6 @@ threading.excepthook = safe_thread_exception
 
 iq = IQ_Option(EMAIL, PASSWORD)
 
-# evitar error digital
 try:
     iq.api.digital_option = None
     iq.get_digital_underlying_list_data = lambda: {"underlying": []}
@@ -67,13 +60,15 @@ def send_telegram(msg):
     except:
         pass
 
-# ================= FUNCIONES =================
+# ================= RECONEXIÓN =================
 
 def reconnect():
     if not iq.check_connect():
-        print("Reconectando...")
+        print("🔄 Reconectando...")
         iq.connect()
         iq.change_balance("PRACTICE")
+
+# ================= CANDLES =================
 
 def get_candles():
     try:
@@ -84,10 +79,16 @@ def get_candles():
 
         df = pd.DataFrame(candles)
         df.rename(columns={"max": "high", "min": "low"}, inplace=True)
+
+        df = df.sort_values("from")
+        df.reset_index(drop=True, inplace=True)
+
         return df
 
     except:
         return None
+
+# ================= CONFIG PAIR =================
 
 def apply_config():
     config = PAIR_CONFIG.get(PAIR)
@@ -102,28 +103,34 @@ def apply_config():
 
     return True
 
+# ================= FILTRO DE MERCADO =================
+
+def market_filter(df):
+    last_range = df["high"].iloc[-1] - df["low"].iloc[-1]
+    avg_range = (df["high"] - df["low"]).mean()
+
+    return last_range >= avg_range * 0.6
+
+# ================= CONTROL DE TRADING =================
+
 def can_trade():
-    global last_trade_time
-    now = time.time()
-
-    if now - last_trade_time < COOLDOWN:
-        return False
-
-    last_trade_time = now
-    return True
+    return (time.time() - last_trade_time) >= COOLDOWN
 
 def wait_open():
-    # esperar apertura exacta de vela
     while True:
-        if iq.get_server_timestamp() % 60 == 0:
+        if iq.get_server_timestamp() % 60 < 1:
+            time.sleep(0.5)
             return
-        time.sleep(0.05)
+        time.sleep(0.1)
 
 def trade(direction):
+    global last_trade_time
+
     try:
         status, _ = iq.buy(AMOUNT, PAIR, direction, EXPIRATION)
 
         if status:
+            last_trade_time = time.time()
             msg = f"🎯 {PAIR} {direction.upper()}"
             print(msg)
             send_telegram(msg)
@@ -138,53 +145,51 @@ def trade(direction):
 print("🤖 BOT EURUSD-OTC ACTIVO")
 send_telegram("🤖 BOT EURUSD-OTC ACTIVO")
 
-# ================= LOOP =================
+if not apply_config():
+    exit()
+
+# ================= LOOP PRINCIPAL =================
 
 while True:
     try:
         reconnect()
-
-        # mantener contenedor vivo
         print(".", end="", flush=True)
-
-        if not is_trading_time():
-            time.sleep(5)
-            continue
 
         server_time = iq.get_server_timestamp()
         current_candle = server_time // 60
 
-        # detectar cierre de vela
+        # esperar nueva vela
         if current_candle == last_candle_time:
             time.sleep(0.2)
             continue
 
-        print("\nNueva vela cerrada")
         last_candle_time = current_candle
-
-        if not apply_config():
-            time.sleep(1)
-            continue
+        print("\n📊 Nueva vela cerrada")
 
         df = get_candles()
-
         if df is None:
             continue
 
         df = calculate_indicators(df)
+
+        if not market_filter(df):
+            continue
 
         buy = check_buy_signal(df)
         sell = check_sell_signal(df)
 
         print(f"EURUSD-OTC -> BUY:{buy} SELL:{sell}")
 
+        if buy and sell:
+            continue
+
         if buy and can_trade():
-            print("Esperando apertura...")
+            print("⏳ Esperando apertura...")
             wait_open()
             trade("call")
 
         elif sell and can_trade():
-            print("Esperando apertura...")
+            print("⏳ Esperando apertura...")
             wait_open()
             trade("put")
 
