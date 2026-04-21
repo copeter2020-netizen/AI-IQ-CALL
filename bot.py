@@ -28,11 +28,9 @@ COOLDOWN = 60
 # ================= SESIÓN =================
 
 def is_trading_time():
-    # ✅ FIX utcnow deprecated
-    hour = datetime.now(UTC).hour
-    return 7 <= hour <= 20
+    return True  # 🔥 SI QUIERES QUE OPERE SIEMPRE
 
-# ================= PROTECCIÓN THREAD =================
+# ================= PROTECCIÓN =================
 
 def safe_thread_exception(args):
     if "underlying" in str(args.exc_value):
@@ -45,7 +43,6 @@ threading.excepthook = safe_thread_exception
 
 iq = IQ_Option(EMAIL, PASSWORD)
 
-# evitar error digital
 try:
     iq.api.digital_option = None
     iq.get_digital_underlying_list_data = lambda: {"underlying": []}
@@ -122,6 +119,7 @@ def can_trade():
     return True
 
 def wait_open():
+    # espera apertura exacta de vela
     while True:
         if iq.get_server_timestamp() % 60 == 0:
             return
@@ -135,14 +133,16 @@ def trade(direction, pair):
             msg = f"🎯 {pair} {direction.upper()}"
             print(msg)
             send_telegram(msg)
+        else:
+            print(f"❌ Falló entrada {pair}")
 
     except Exception as e:
         print("Trade error:", e)
 
 # ================= INICIO =================
 
-print("Bot iniciado...")
-send_telegram("🤖 BOT ACTIVO Y ESTABLE")
+print("Bot ANALIZANDO Y OPERANDO...")
+send_telegram("🤖 BOT ACTIVO (ANÁLISIS + EJECUCIÓN)")
 
 # ================= LOOP =================
 
@@ -150,25 +150,26 @@ while True:
     try:
         reconnect()
 
-        # mantener vivo el contenedor
         print(".", end="", flush=True)
 
         if not is_trading_time():
-            time.sleep(10)
+            time.sleep(5)
             continue
 
         server_time = iq.get_server_timestamp()
         current_candle = server_time // 60
 
-        # esperar nueva vela
+        # detectar cierre de vela
         if current_candle == last_candle_time:
-            time.sleep(0.3)
+            time.sleep(0.2)
             continue
 
-        print("\nNueva vela detectada")
+        print("\nNueva vela cerrada")
         last_candle_time = current_candle
 
-        for pair in get_pairs():
+        pairs = get_pairs()
+
+        for pair in pairs:
 
             if not apply_pair_config(pair):
                 continue
@@ -183,15 +184,19 @@ while True:
             buy = check_buy_signal(df)
             sell = check_sell_signal(df)
 
+            print(f"{pair} -> BUY:{buy} SELL:{sell}")
+
             if buy and can_trade():
+                print("Esperando apertura...")
                 wait_open()
                 trade("call", pair)
 
             elif sell and can_trade():
+                print("Esperando apertura...")
                 wait_open()
                 trade("put", pair)
 
-        time.sleep(0.3)
+        time.sleep(0.2)
 
     except Exception as e:
         print("\nError:", e)
