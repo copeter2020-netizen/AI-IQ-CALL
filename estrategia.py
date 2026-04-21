@@ -2,76 +2,92 @@ import pandas as pd
 
 # ================= CONFIG =================
 
-TOL = 0.0003
-MIN_BODY = 0.0002
-MIN_WIDTH = 0.0005
+LOOKBACK = 25
+ZONE_TOL = 0.0004
 
 # ================= INDICADORES =================
 
 def calculate_indicators(df):
-    df['ema_100'] = df['close'].ewm(span=100).mean()
     df['ema_50'] = df['close'].ewm(span=50).mean()
-
-    ma = df['close'].rolling(14).mean()
-    std = df['close'].rolling(14).std()
-
-    df['upper_band'] = ma + 2 * std
-    df['lower_band'] = ma - 2 * std
-    df['mid_band'] = ma
-
-    df['bb_width'] = df['upper_band'] - df['lower_band']
-    df['ema_slope'] = df['ema_100'].diff()
-
+    df['ema_100'] = df['close'].ewm(span=100).mean()
+    df['ema_slope'] = df['ema_50'].diff()
     return df
+
+
+# ================= ESTRUCTURA =================
+
+def get_support_resistance(df):
+    recent = df.iloc[-LOOKBACK:]
+
+    support = recent['low'].min()
+    resistance = recent['high'].max()
+
+    return support, resistance
+
+
+# ================= TENDENCIA =================
+
+def get_trend(df):
+    slope = df['ema_slope'].iloc[-2]
+
+    if slope > 0:
+        return "up"
+    elif slope < 0:
+        return "down"
+    return "range"
+
+
+# ================= RECHAZOS =================
+
+def bullish_rejection(c, level):
+    return (
+        c['low'] <= level + ZONE_TOL and
+        c['close'] > level and
+        c['close'] > c['open']
+    )
+
+
+def bearish_rejection(c, level):
+    return (
+        c['high'] >= level - ZONE_TOL and
+        c['close'] < level and
+        c['close'] < c['open']
+    )
+
+
+def close_near_level(c, level):
+    return abs(c['close'] - level) <= ZONE_TOL
 
 
 # ================= BUY =================
 
-def check_buy_signal(df, pair=None):
+def check_buy_signal(df):
     if len(df) < 50:
         return False
 
+    support, resistance = get_support_resistance(df)
     c = df.iloc[-2]
 
-    # 🔥 tendencia bajista pero perdiendo fuerza (rebote)
-    trend = c['ema_slope'] < 0
+    trend = get_trend(df)
 
-    # 🔥 zona de soporte dinámico
-    pullback = c['low'] <= c['ema_100'] * (1 + TOL)
-
-    # 🔥 recuperación
-    close_back = c['close'] > c['ema_50']
-
-    # 🔥 fuerza mínima de vela
-    body = abs(c['close'] - c['open'])
-    strong = body > MIN_BODY
-
-    # 🔥 volatilidad mínima
-    volatility = c['bb_width'] > MIN_WIDTH
-
-    return trend and pullback and close_back and strong and volatility
+    return (
+        trend != "down" and
+        (bullish_rejection(c, support) or close_near_level(c, support))
+    )
 
 
 # ================= SELL =================
 
-def check_sell_signal(df, pair=None):
+def check_sell_signal(df):
     if len(df) < 50:
         return False
 
+    support, resistance = get_support_resistance(df)
     c = df.iloc[-2]
 
-    # 🔥 tendencia alcista perdiendo fuerza
-    trend = c['ema_slope'] > 0
+    trend = get_trend(df)
 
-    # 🔥 rechazo de zona EMA
-    pullback = c['high'] >= c['ema_100'] * (1 - TOL)
-
-    # 🔥 confirmación bajista
-    close_back = c['close'] < c['ema_50']
-
-    body = abs(c['close'] - c['open'])
-    strong = body > MIN_BODY
-
-    volatility = c['bb_width'] > MIN_WIDTH
-
-    return trend and pullback and close_back and strong and volatility
+    return (
+        trend != "up" and
+        (bearish_rejection(c, resistance) or close_near_level(c, resistance))
+    )
