@@ -1,15 +1,16 @@
 import pandas as pd
 
-# ================= CONFIG (se sobreescribe por par) =================
+# ================= CONFIG =================
 
 TOL = 0.0003
-MIN_BODY = 0.00025
-MIN_WIDTH = 0.0006
+MIN_BODY = 0.0002
+MIN_WIDTH = 0.0005
 
 # ================= INDICADORES =================
 
 def calculate_indicators(df):
     df['ema_100'] = df['close'].ewm(span=100).mean()
+    df['ema_50'] = df['close'].ewm(span=50).mean()
 
     ma = df['close'].rolling(14).mean()
     std = df['close'].rolling(14).std()
@@ -19,8 +20,6 @@ def calculate_indicators(df):
     df['mid_band'] = ma
 
     df['bb_width'] = df['upper_band'] - df['lower_band']
-
-    # pendiente EMA
     df['ema_slope'] = df['ema_100'].diff()
 
     return df
@@ -32,24 +31,25 @@ def check_buy_signal(df, pair=None):
     if len(df) < 50:
         return False
 
-    c = df.iloc[-2]  # vela cerrada
+    c = df.iloc[-2]
 
-    trend = c['close'] < c['ema_100'] and c['ema_slope'] < 0
-    volatility = c['bb_width'] > MIN_WIDTH
+    # 🔥 tendencia bajista pero perdiendo fuerza (rebote)
+    trend = c['ema_slope'] < 0
 
+    # 🔥 zona de soporte dinámico
+    pullback = c['low'] <= c['ema_100'] * (1 + TOL)
+
+    # 🔥 recuperación
+    close_back = c['close'] > c['ema_50']
+
+    # 🔥 fuerza mínima de vela
     body = abs(c['close'] - c['open'])
     strong = body > MIN_BODY
 
-    cross = (
-        c['lower_band'] > c['ema_100'] or
-        abs(c['lower_band'] - c['ema_100']) < TOL or
-        c['low'] < c['ema_100']
-    )
+    # 🔥 volatilidad mínima
+    volatility = c['bb_width'] > MIN_WIDTH
 
-    mid_break = c['close'] > c['mid_band']
-    red = c['close'] < c['open']
-
-    return trend and volatility and strong and cross and mid_break and red
+    return trend and pullback and close_back and strong and volatility
 
 
 # ================= SELL =================
@@ -60,19 +60,18 @@ def check_sell_signal(df, pair=None):
 
     c = df.iloc[-2]
 
-    trend = c['close'] > c['ema_100'] and c['ema_slope'] > 0
-    volatility = c['bb_width'] > MIN_WIDTH
+    # 🔥 tendencia alcista perdiendo fuerza
+    trend = c['ema_slope'] > 0
+
+    # 🔥 rechazo de zona EMA
+    pullback = c['high'] >= c['ema_100'] * (1 - TOL)
+
+    # 🔥 confirmación bajista
+    close_back = c['close'] < c['ema_50']
 
     body = abs(c['close'] - c['open'])
     strong = body > MIN_BODY
 
-    cross = (
-        c['upper_band'] < c['ema_100'] or
-        abs(c['upper_band'] - c['ema_100']) < TOL or
-        c['high'] > c['ema_100']
-    )
+    volatility = c['bb_width'] > MIN_WIDTH
 
-    mid_break = c['close'] < c['mid_band']
-    green = c['close'] > c['open']
-
-    return trend and volatility and strong and cross and mid_break and green
+    return trend and pullback and close_back and strong and volatility
