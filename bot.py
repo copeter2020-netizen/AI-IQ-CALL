@@ -9,7 +9,7 @@ from iqoptionapi.stable_api import IQ_Option
 PAIR = "EURUSD-OTC"
 TIMEFRAME = 60
 EXPIRATION = 1
-AMOUNT = 2000
+AMOUNT = 1000
 
 EMAIL = os.getenv("IQ_EMAIL")
 PASSWORD = os.getenv("IQ_PASSWORD")
@@ -17,7 +17,7 @@ TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 LOOKBACK = 30
-ZONE_TOL = 0.0006
+ZONE_TOL = 0.0005  # precisión de zona
 
 last_trade_time = 0
 COOLDOWN = 60
@@ -40,7 +40,6 @@ def send(msg):
     except:
         pass
 
-
 # ================= DATA =================
 
 def get_candles():
@@ -56,7 +55,6 @@ def get_candles():
 
     return df
 
-
 # ================= SOPORTE / RESISTENCIA =================
 
 def get_zones(df):
@@ -65,33 +63,29 @@ def get_zones(df):
     resistance = recent['high'].max()
     return support, resistance
 
-
 # ================= TIEMPO =================
 
 def near_close():
     server_time = iq.get_server_timestamp()
-    return server_time % 60 >= 55
+    return server_time % 60 >= 55  # últimos 5 segundos
 
+# ================= RECHAZO REAL =================
 
-# ================= MICRO RECHAZO =================
-
-def rejection_buy(c):
+def strong_rejection_buy(c):
     body = abs(c['close'] - c['open'])
-    wick = (c['open'] - c['low']) if c['close'] > c['open'] else (c['close'] - c['low'])
-    return wick > body
+    lower_wick = min(c['open'], c['close']) - c['low']
+    return lower_wick > body * 1.2  # mecha más grande que cuerpo
 
 
-def rejection_sell(c):
+def strong_rejection_sell(c):
     body = abs(c['close'] - c['open'])
-    wick = (c['high'] - c['close']) if c['close'] < c['open'] else (c['high'] - c['open'])
-    return wick > body
-
+    upper_wick = c['high'] - max(c['open'], c['close'])
+    return upper_wick > body * 1.2
 
 # ================= CONTROL =================
 
 def can_trade():
     return (time.time() - last_trade_time) > COOLDOWN
-
 
 # ================= TRADE =================
 
@@ -102,14 +96,13 @@ def trade(direction):
 
     if status:
         last_trade_time = time.time()
-        msg = f"⚡ TRADE {direction.upper()}"
+        msg = f"🎯 TRADE {direction.upper()} EN ZONA"
         print(msg)
         send(msg)
 
-
 # ================= LOOP =================
 
-print("🚀 BOT EXTREMOS ACTIVO")
+print("🚀 BOT ZONAS PURAS ACTIVO")
 
 while True:
     try:
@@ -122,15 +115,17 @@ while True:
 
         if near_close() and can_trade():
 
-            # 🔻 PRECIO ARRIBA → BUSCAR SELL
-            if c['high'] >= resistance - ZONE_TOL and rejection_sell(c):
-                send("📍 SEÑAL SELL (RESISTENCIA)")
-                trade("put")
+            # 🟢 SOPORTE → CALL
+            if c['low'] <= support + ZONE_TOL:
+                if strong_rejection_buy(c):
+                    send("📍 SOPORTE → CALL")
+                    trade("call")
 
-            # 🔺 PRECIO ABAJO → BUSCAR BUY
-            elif c['low'] <= support + ZONE_TOL and rejection_buy(c):
-                send("📍 SEÑAL BUY (SOPORTE)")
-                trade("call")
+            # 🔴 RESISTENCIA → PUT
+            elif c['high'] >= resistance - ZONE_TOL:
+                if strong_rejection_sell(c):
+                    send("📍 RESISTENCIA → PUT")
+                    trade("put")
 
         time.sleep(0.2)
 
