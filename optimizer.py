@@ -1,24 +1,24 @@
 import pandas as pd
 import itertools
+import estrategia
 from estrategia import calculate_indicators, check_buy_signal, check_sell_signal
 
 # ================= CONFIG =================
 
 EXPIRATION = 1
 
-# 🔥 RANGOS A PROBAR (puedes ampliarlos)
 PARAM_GRID = {
     "MIN_BODY": [0.0002, 0.00025, 0.0003],
     "MIN_WIDTH": [0.0005, 0.0006, 0.0007],
     "TOL": [0.0002, 0.0003, 0.0004]
 }
 
+MIN_TRADES = 30  # evitar configs irrelevantes
+
 # ================= BACKTEST =================
 
 def run_backtest(df):
-    wins = 0
-    losses = 0
-    trades = 0
+    wins, losses, trades = 0, 0, 0
 
     for i in range(50, len(df) - EXPIRATION - 1):
         sub_df = df.iloc[:i+1]
@@ -43,62 +43,95 @@ def run_backtest(df):
             else:
                 losses += 1
 
-    if trades == 0:
+    if trades < MIN_TRADES:
         return None
 
     winrate = wins / trades
     profit = (wins * 0.8) - losses
 
+    # 🎯 score más inteligente
+    score = profit * winrate
+
     return {
         "trades": trades,
         "winrate": winrate,
-        "profit": profit
+        "profit": profit,
+        "score": score
     }
 
-# ================= OPTIMIZADOR =================
+# ================= SPLIT DATOS =================
+
+def split_data(df, ratio=0.7):
+    split = int(len(df) * ratio)
+    return df[:split], df[split:]
+
+# ================= OPTIMIZACIÓN =================
 
 def optimize(df):
 
     df = calculate_indicators(df)
 
+    train_df, test_df = split_data(df)
+
     keys = PARAM_GRID.keys()
     combinations = list(itertools.product(*PARAM_GRID.values()))
 
-    best_result = None
-    best_config = None
+    results = []
 
-    print(f"🔍 Probando {len(combinations)} combinaciones...\n")
+    print(f"🔍 Probando {len(combinations)} configuraciones...\n")
 
     for values in combinations:
 
-        # aplicar parámetros dinámicamente
         config = dict(zip(keys, values))
 
-        # 🔥 inyectar valores en estrategia
-        import estrategia
+        # aplicar config
         estrategia.MIN_BODY = config["MIN_BODY"]
         estrategia.MIN_WIDTH = config["MIN_WIDTH"]
         estrategia.TOL = config["TOL"]
 
-        result = run_backtest(df)
+        train_result = run_backtest(train_df)
 
-        if result is None:
+        if not train_result:
             continue
 
-        print(
-            f"Config: {config} | "
-            f"WR: {result['winrate']:.2f} | "
-            f"Trades: {result['trades']} | "
-            f"Profit: {result['profit']:.2f}"
+        test_result = run_backtest(test_df)
+
+        if not test_result:
+            continue
+
+        # 🎯 evitar sobreajuste
+        stability = abs(train_result["winrate"] - test_result["winrate"])
+
+        final_score = (
+            test_result["score"] -
+            stability  # penaliza inestabilidad
         )
 
-        # criterio: maximizar profit
-        if best_result is None or result["profit"] > best_result["profit"]:
-            best_result = result
-            best_config = config
+        results.append({
+            "config": config,
+            "train": train_result,
+            "test": test_result,
+            "stability": stability,
+            "final_score": final_score
+        })
 
-    # ================= RESULTADO FINAL =================
+        print(
+            f"{config} | "
+            f"Train WR: {train_result['winrate']:.2f} | "
+            f"Test WR: {test_result['winrate']:.2f} | "
+            f"Score: {final_score:.2f}"
+        )
 
-    print("\n🏆 MEJOR CONFIGURACIÓN:")
-    print(best_config)
-    print("Resultado:", best_result)
+    # ================= TOP RESULTADOS =================
+
+    results = sorted(results, key=lambda x: x["final_score"], reverse=True)
+
+    print("\n🏆 TOP 5 CONFIGURACIONES:\n")
+
+    for r in results[:5]:
+        print("Config:", r["config"])
+        print("Train:", r["train"])
+        print("Test:", r["test"])
+        print("Stability:", r["stability"])
+        print("Score:", r["final_score"])
+        print("-" * 40)
