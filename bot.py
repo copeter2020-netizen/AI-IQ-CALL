@@ -9,19 +9,15 @@ from iqoptionapi.stable_api import IQ_Option
 PAIR = "EURUSD-OTC"
 TIMEFRAME = 60
 EXPIRATION = 1
-AMOUNT = 1000
+AMOUNT = 1090
 
 EMAIL = os.getenv("IQ_EMAIL")
 PASSWORD = os.getenv("IQ_PASSWORD")
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-LOOKBACK = 50
-ZONE_TOL = 0.0004
-MIN_TOUCHES = 2  # 🔥 mínimo 2 o 3 toques
-
-last_trade_time = 0
 COOLDOWN = 60
+last_trade_time = 0
 
 # ================= CONEXIÓN =================
 
@@ -41,7 +37,6 @@ def send(msg):
     except:
         pass
 
-
 # ================= DATA =================
 
 def get_candles():
@@ -57,77 +52,56 @@ def get_candles():
 
     return df
 
-
-# ================= DETECCIÓN DE ZONAS FUERTES =================
-
-def find_strong_zones(df):
-    recent = df.iloc[-LOOKBACK:]
-
-    supports = []
-    resistances = []
-
-    for i in range(2, len(recent) - 2):
-        low = recent['low'].iloc[i]
-        high = recent['high'].iloc[i]
-
-        # detectar pivote bajo
-        if low < recent['low'].iloc[i-1] and low < recent['low'].iloc[i+1]:
-            supports.append(low)
-
-        # detectar pivote alto
-        if high > recent['high'].iloc[i-1] and high > recent['high'].iloc[i+1]:
-            resistances.append(high)
-
-    # agrupar zonas repetidas
-    def cluster_levels(levels):
-        zones = []
-        for level in levels:
-            added = False
-            for z in zones:
-                if abs(level - z['price']) <= ZONE_TOL:
-                    z['count'] += 1
-                    added = True
-                    break
-            if not added:
-                zones.append({'price': level, 'count': 1})
-        return zones
-
-    support_zones = cluster_levels(supports)
-    resistance_zones = cluster_levels(resistances)
-
-    # filtrar zonas fuertes
-    strong_supports = [z['price'] for z in support_zones if z['count'] >= MIN_TOUCHES]
-    strong_resistances = [z['price'] for z in resistance_zones if z['count'] >= MIN_TOUCHES]
-
-    return strong_supports, strong_resistances
-
-
-# ================= RECHAZO =================
-
-def strong_rejection_buy(c):
-    body = abs(c['close'] - c['open'])
-    wick = min(c['open'], c['close']) - c['low']
-    return wick > body * 1.2
-
-
-def strong_rejection_sell(c):
-    body = abs(c['close'] - c['open'])
-    wick = c['high'] - max(c['open'], c['close'])
-    return wick > body * 1.2
-
-
 # ================= TIEMPO =================
 
-def near_close():
-    server_time = iq.get_server_timestamp()
-    return server_time % 60 >= 55
+def wait_open():
+    while True:
+        t = iq.get_server_timestamp()
+        if t % 60 == 0:
+            time.sleep(0.3)
+            return
+        time.sleep(0.05)
 
+# ================= CONTINUIDAD =================
+
+def bullish_continuation(c):
+    body = c['close'] - c['open']
+    total = c['high'] - c['low']
+
+    if total == 0:
+        return False
+
+    upper_wick = c['high'] - c['close']
+    lower_wick = c['open'] - c['low']
+
+    return (
+        body > 0 and
+        body > total * 0.6 and          # cuerpo dominante
+        upper_wick < body * 0.3 and     # poca mecha arriba
+        c['close'] >= c['high'] - (total * 0.2)
+    )
+
+def bearish_continuation(c):
+    body = c['open'] - c['close']
+    total = c['high'] - c['low']
+
+    if total == 0:
+        return False
+
+    lower_wick = c['close'] - c['low']
+    upper_wick = c['high'] - c['open']
+
+    return (
+        body > 0 and
+        body > total * 0.6
+        and lower_wick < body * 0.3
+        and c['close'] <= c['low'] + (total * 0.2)
+    )
 
 # ================= CONTROL =================
 
 def can_trade():
     return (time.time() - last_trade_time) > COOLDOWN
-
 
 # ================= TRADE =================
 
@@ -138,14 +112,13 @@ def trade(direction):
 
     if status:
         last_trade_time = time.time()
-        msg = f"🎯 TRADE {direction.upper()} (ZONA FUERTE)"
+        msg = f"🎯 CONTINUIDAD {direction.upper()}"
         print(msg)
         send(msg)
 
-
 # ================= LOOP =================
 
-print("🚀 BOT ZONAS FUERTES ACTIVO")
+print("🚀 BOT CONTINUIDAD ACTIVO")
 
 while True:
     try:
@@ -153,26 +126,24 @@ while True:
         if df is None:
             continue
 
-        supports, resistances = find_strong_zones(df)
-        c = df.iloc[-1]
+        if len(df) < 20:
+            continue
 
-        if near_close() and can_trade():
+        c = df.iloc[-2]  # vela cerrada
 
-            # 🟢 SOPORTES
-            for s in supports:
-                if c['low'] <= s + ZONE_TOL:
-                    if strong_rejection_buy(c):
-                        send("📍 SOPORTE FUERTE → CALL")
-                        trade("call")
-                        break
+        if can_trade():
 
-            # 🔴 RESISTENCIAS
-            for r in resistances:
-                if c['high'] >= r - ZONE_TOL:
-                    if strong_rejection_sell(c):
-                        send("📍 RESISTENCIA FUERTE → PUT")
-                        trade("put")
-                        break
+            # 🟢 CONTINUIDAD ALCISTA
+            if bullish_continuation(c):
+                send("📈 CONTINUIDAD CALL")
+                wait_open()
+                trade("call")
+
+            # 🔴 CONTINUIDAD BAJISTA
+            elif bearish_continuation(c):
+                send("📉 CONTINUIDAD PUT")
+                wait_open()
+                trade("put")
 
         time.sleep(0.2)
 
