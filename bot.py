@@ -9,7 +9,7 @@ from estrategia import calculate_indicators, check_buy_signal, check_sell_signal
 
 TIMEFRAME = 60
 EXPIRATION = 1
-AMOUNT = 1000
+AMOUNT = 1080
 
 EMAIL = os.getenv("IQ_EMAIL")
 PASSWORD = os.getenv("IQ_PASSWORD")
