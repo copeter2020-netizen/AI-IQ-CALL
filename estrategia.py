@@ -4,6 +4,7 @@ import pandas as pd
 
 LOOKBACK = 25
 ZONE_TOL = 0.0004
+PRE_TOL = 0.0008  # tolerancia de anticipación
 
 # ================= INDICADORES =================
 
@@ -37,57 +38,55 @@ def get_trend(df):
     return "range"
 
 
-# ================= RECHAZOS =================
+# ================= PRE-SEÑAL (INTRAVELA) =================
 
-def bullish_rejection(c, level):
+def pre_buy(df):
+    c = df.iloc[-1]  # vela en formación
+    support, _ = get_support_resistance(df)
+
     return (
-        c['low'] <= level + ZONE_TOL and
-        c['close'] > level and
-        c['close'] > c['open']
+        c['low'] <= support + PRE_TOL
     )
 
 
-def bearish_rejection(c, level):
+def pre_sell(df):
+    c = df.iloc[-1]
+    _, resistance = get_support_resistance(df)
+
     return (
-        c['high'] >= level - ZONE_TOL and
-        c['close'] < level and
-        c['close'] < c['open']
+        c['high'] >= resistance - PRE_TOL
     )
 
 
-def close_near_level(c, level):
-    return abs(c['close'] - level) <= ZONE_TOL
+# ================= CONFIRMACIÓN (CIERRE) =================
 
-
-# ================= BUY =================
-
-def check_buy_signal(df):
+def confirm_buy(df):
     if len(df) < 50:
         return False
 
-    support, resistance = get_support_resistance(df)
     c = df.iloc[-2]
+    support, _ = get_support_resistance(df)
 
     trend = get_trend(df)
 
     return (
         trend != "down" and
-        (bullish_rejection(c, support) or close_near_level(c, support))
+        c['close'] > c['open'] and
+        abs(c['close'] - support) <= ZONE_TOL
     )
 
 
-# ================= SELL =================
-
-def check_sell_signal(df):
+def confirm_sell(df):
     if len(df) < 50:
         return False
 
-    support, resistance = get_support_resistance(df)
     c = df.iloc[-2]
+    _, resistance = get_support_resistance(df)
 
     trend = get_trend(df)
 
     return (
         trend != "up" and
-        (bearish_rejection(c, resistance) or close_near_level(c, resistance))
+        c['close'] < c['open'] and
+        abs(c['close'] - resistance) <= ZONE_TOL
     )
