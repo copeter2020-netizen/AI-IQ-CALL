@@ -3,16 +3,18 @@ import os
 import requests
 import pandas as pd
 import threading
-from datetime import datetime
+from datetime import datetime, UTC
 from iqoptionapi.stable_api import IQ_Option
 
 import estrategia
 from estrategia import calculate_indicators, check_buy_signal, check_sell_signal
 from config import PAIR_CONFIG
 
+# ================= CONFIG =================
+
 TIMEFRAME = 60
 EXPIRATION = 1
-AMOUNT = 10000
+AMOUNT = 1000
 
 EMAIL = os.getenv("IQ_EMAIL")
 PASSWORD = os.getenv("IQ_PASSWORD")
@@ -23,9 +25,14 @@ last_candle_time = None
 last_trade_time = 0
 COOLDOWN = 60
 
+# ================= SESIÓN =================
+
 def is_trading_time():
-    hour = datetime.utcnow().hour
+    # ✅ FIX utcnow deprecated
+    hour = datetime.now(UTC).hour
     return 7 <= hour <= 20
+
+# ================= PROTECCIÓN THREAD =================
 
 def safe_thread_exception(args):
     if "underlying" in str(args.exc_value):
@@ -34,8 +41,11 @@ def safe_thread_exception(args):
 
 threading.excepthook = safe_thread_exception
 
+# ================= CONEXIÓN =================
+
 iq = IQ_Option(EMAIL, PASSWORD)
 
+# evitar error digital
 try:
     iq.api.digital_option = None
     iq.get_digital_underlying_list_data = lambda: {"underlying": []}
@@ -44,6 +54,8 @@ except:
 
 iq.connect()
 iq.change_balance("PRACTICE")
+
+# ================= TELEGRAM =================
 
 def send_telegram(msg):
     try:
@@ -55,8 +67,11 @@ def send_telegram(msg):
     except:
         pass
 
+# ================= FUNCIONES =================
+
 def reconnect():
     if not iq.check_connect():
+        print("Reconectando...")
         iq.connect()
         iq.change_balance("PRACTICE")
 
@@ -124,11 +139,19 @@ def trade(direction, pair):
     except Exception as e:
         print("Trade error:", e)
 
-send_telegram("🤖 BOT OPTIMIZADO ACTIVO")
+# ================= INICIO =================
+
+print("Bot iniciado...")
+send_telegram("🤖 BOT ACTIVO Y ESTABLE")
+
+# ================= LOOP =================
 
 while True:
     try:
         reconnect()
+
+        # mantener vivo el contenedor
+        print(".", end="", flush=True)
 
         if not is_trading_time():
             time.sleep(10)
@@ -137,10 +160,12 @@ while True:
         server_time = iq.get_server_timestamp()
         current_candle = server_time // 60
 
+        # esperar nueva vela
         if current_candle == last_candle_time:
             time.sleep(0.3)
             continue
 
+        print("\nNueva vela detectada")
         last_candle_time = current_candle
 
         for pair in get_pairs():
@@ -169,5 +194,5 @@ while True:
         time.sleep(0.3)
 
     except Exception as e:
-        print("Error:", e)
+        print("\nError:", e)
         time.sleep(3)
