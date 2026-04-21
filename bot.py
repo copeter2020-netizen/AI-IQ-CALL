@@ -16,7 +16,7 @@ from estrategia import (
 PAIR = "EURUSD-OTC"
 TIMEFRAME = 60
 EXPIRATION = 1
-AMOUNT = 1000
+AMOUNT = 1700
 
 EMAIL = os.getenv("IQ_EMAIL")
 PASSWORD = os.getenv("IQ_PASSWORD")
@@ -35,7 +35,6 @@ MAX_WAIT = 50
 iq = IQ_Option(EMAIL, PASSWORD)
 iq.connect()
 iq.change_balance("PRACTICE")
-
 
 # ================= TELEGRAM =================
 
@@ -59,11 +58,21 @@ def get_candles():
 
     df = pd.DataFrame(candles)
     df.rename(columns={"max": "high", "min": "low"}, inplace=True)
-
     df = df.sort_values("from")
     df.reset_index(drop=True, inplace=True)
 
     return df
+
+
+# ================= TIEMPO EXACTO =================
+
+def wait_open():
+    while True:
+        server_time = iq.get_server_timestamp()
+        if server_time % 60 < 1:  # 🔥 apertura exacta
+            time.sleep(0.3)
+            return
+        time.sleep(0.05)
 
 
 # ================= TRADE =================
@@ -76,7 +85,7 @@ def trade(direction):
     if status:
         last_trade_time = time.time()
 
-        msg = f"🎯 EJECUCIÓN {direction.upper()}"
+        msg = f"🎯 ENTRADA {direction.upper()} (APERTURA VELA)"
         print(msg)
         send(msg)
 
@@ -89,7 +98,7 @@ def can_trade():
 
 # ================= LOOP =================
 
-print("🚀 BOT LIMPIO ACTIVO")
+print("🚀 BOT ENTRADA EXACTA ACTIVO")
 
 while True:
     try:
@@ -120,15 +129,18 @@ while True:
         # ================= CONFIRMACIÓN =================
 
         if pending == "buy" and confirm_buy(df) and can_trade():
-            trade("CALL")
+            send("⏳ Esperando apertura...")
+            wait_open()
+            trade("call")
             pending = None
 
         elif pending == "sell" and confirm_sell(df) and can_trade():
-            trade("PUT")
+            send("⏳ Esperando apertura...")
+            wait_open()
+            trade("put")
             pending = None
 
-        # 🔇 SILENCIO TOTAL (NO SPAM EN RAILWAY)
-        time.sleep(1)
+        time.sleep(0.2)
 
     except Exception as e:
         print("ERROR:", e)
