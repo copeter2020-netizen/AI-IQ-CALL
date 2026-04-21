@@ -8,8 +8,7 @@ import estrategia
 from estrategia import (
     calculate_indicators,
     pre_buy, pre_sell,
-    confirm_buy, confirm_sell,
-    get_support_resistance
+    confirm_buy, confirm_sell
 )
 
 # ================= CONFIG =================
@@ -17,7 +16,7 @@ from estrategia import (
 PAIR = "EURUSD-OTC"
 TIMEFRAME = 60
 EXPIRATION = 1
-AMOUNT = 10000
+AMOUNT = 1000
 
 EMAIL = os.getenv("IQ_EMAIL")
 PASSWORD = os.getenv("IQ_PASSWORD")
@@ -27,15 +26,9 @@ CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 last_trade_time = 0
 COOLDOWN = 60
 
-# 🔥 CONTROL DE ZONA (ANTI-SPAM)
-last_zone = None
-zone_time = 0
-ZONE_COOLDOWN = 120
-
-pending_signal = None
+pending = None
 signal_time = 0
 MAX_WAIT = 50
-
 
 # ================= CONEXIÓN =================
 
@@ -46,7 +39,7 @@ iq.change_balance("PRACTICE")
 
 # ================= TELEGRAM =================
 
-def send_telegram(msg):
+def send(msg):
     try:
         requests.post(
             f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
@@ -61,7 +54,6 @@ def send_telegram(msg):
 
 def get_candles():
     candles = iq.get_candles(PAIR, TIMEFRAME, 100, time.time())
-
     if not candles:
         return None
 
@@ -74,11 +66,7 @@ def get_candles():
     return df
 
 
-# ================= CONTROL =================
-
-def can_trade():
-    return (time.time() - last_trade_time) > COOLDOWN
-
+# ================= TRADE =================
 
 def trade(direction):
     global last_trade_time
@@ -87,13 +75,21 @@ def trade(direction):
 
     if status:
         last_trade_time = time.time()
-        print("TRADE:", direction)
-        send_telegram(f"📊 {PAIR} {direction.upper()}")
+
+        msg = f"🎯 EJECUCIÓN {direction.upper()}"
+        print(msg)
+        send(msg)
+
+
+# ================= CONTROL =================
+
+def can_trade():
+    return (time.time() - last_trade_time) > COOLDOWN
 
 
 # ================= LOOP =================
 
-print("🚀 BOT HÍBRIDO PRO SIN SPAM ACTIVO")
+print("🚀 BOT LIMPIO ACTIVO")
 
 while True:
     try:
@@ -103,47 +99,35 @@ while True:
 
         df = calculate_indicators(df)
 
-        support, resistance = get_support_resistance(df)
-
         # ================= PRE-SEÑAL =================
 
-        current_zone = None
-
-        if pre_buy(df):
-            current_zone = "buy_zone"
-
-        elif pre_sell(df):
-            current_zone = "sell_zone"
-
-        # ================= ANTI-SPAM ZONA =================
-
-        if current_zone:
-            if current_zone == last_zone and (time.time() - zone_time < ZONE_COOLDOWN):
-                print("⛔ Zona ignorada (cooldown)")
-            else:
-                pending_signal = current_zone
+        if pending is None:
+            if pre_buy(df):
+                pending = "buy"
                 signal_time = time.time()
-                last_zone = current_zone
-                zone_time = time.time()
-                print("📍 Nueva zona:", current_zone)
+                send("📍 SEÑAL BUY")
+
+            elif pre_sell(df):
+                pending = "sell"
+                signal_time = time.time()
+                send("📍 SEÑAL SELL")
 
         # ================= EXPIRACIÓN =================
 
-        if pending_signal and (time.time() - signal_time > MAX_WAIT):
-            pending_signal = None
+        if pending and (time.time() - signal_time > MAX_WAIT):
+            pending = None
 
         # ================= CONFIRMACIÓN =================
 
-        if pending_signal == "buy_zone" and confirm_buy(df) and can_trade():
-            trade("call")
-            pending_signal = None
+        if pending == "buy" and confirm_buy(df) and can_trade():
+            trade("CALL")
+            pending = None
 
-        elif pending_signal == "sell_zone" and confirm_sell(df) and can_trade():
-            trade("put")
-            pending_signal = None
+        elif pending == "sell" and confirm_sell(df) and can_trade():
+            trade("PUT")
+            pending = None
 
-        print("PENDING:", pending_signal)
-
+        # 🔇 SILENCIO TOTAL (NO SPAM EN RAILWAY)
         time.sleep(1)
 
     except Exception as e:
