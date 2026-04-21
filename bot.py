@@ -1,109 +1,151 @@
+import time
+import os
+import requests
 import pandas as pd
+from iqoptionapi.stable_api import IQ_Option
+
+import estrategia
+from estrategia import (
+    calculate_indicators,
+    pre_buy, pre_sell,
+    confirm_buy, confirm_sell,
+    get_support_resistance
+)
 
 # ================= CONFIG =================
 
-LOOKBACK = 25
-ZONE_TOL = 0.0004
-PRE_TOL = 0.0008
+PAIR = "EURUSD-OTC"
+TIMEFRAME = 60
+EXPIRATION = 1
+AMOUNT = 10000
+
+EMAIL = os.getenv("IQ_EMAIL")
+PASSWORD = os.getenv("IQ_PASSWORD")
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+
+last_trade_time = 0
+COOLDOWN = 60
+
+# 🔥 CONTROL DE ZONA (ANTI-SPAM)
+last_zone = None
+zone_time = 0
+ZONE_COOLDOWN = 120
+
+pending_signal = None
+signal_time = 0
+MAX_WAIT = 50
 
 
-# ================= INDICADORES =================
+# ================= CONEXIÓN =================
 
-def calculate_indicators(df):
-    df['ema_50'] = df['close'].ewm(span=50).mean()
-    df['ema_100'] = df['close'].ewm(span=100).mean()
-    df['ema_slope'] = df['ema_50'].diff()
+iq = IQ_Option(EMAIL, PASSWORD)
+iq.connect()
+iq.change_balance("PRACTICE")
+
+
+# ================= TELEGRAM =================
+
+def send_telegram(msg):
+    try:
+        requests.post(
+            f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
+            data={"chat_id": CHAT_ID, "text": msg},
+            timeout=5
+        )
+    except:
+        pass
+
+
+# ================= DATA =================
+
+def get_candles():
+    candles = iq.get_candles(PAIR, TIMEFRAME, 100, time.time())
+
+    if not candles:
+        return None
+
+    df = pd.DataFrame(candles)
+    df.rename(columns={"max": "high", "min": "low"}, inplace=True)
+
+    df = df.sort_values("from")
+    df.reset_index(drop=True, inplace=True)
+
     return df
 
 
-# ================= ESTRUCTURA =================
+# ================= CONTROL =================
 
-def get_support_resistance(df):
-    recent = df.iloc[-LOOKBACK:]
-    support = recent['low'].min()
-    resistance = recent['high'].max()
-    return support, resistance
+def can_trade():
+    return (time.time() - last_trade_time) > COOLDOWN
 
 
-# ================= TENDENCIA =================
+def trade(direction):
+    global last_trade_time
 
-def get_trend(df):
-    slope = df['ema_slope'].iloc[-2]
+    status, _ = iq.buy(AMOUNT, PAIR, direction, EXPIRATION)
 
-    if slope > 0:
-        return "up"
-    elif slope < 0:
-        return "down"
-    return "range"
-
-
-# ================= RECHAZOS =================
-
-def bullish_rejection(c, level):
-    return (
-        c['low'] <= level + ZONE_TOL and
-        c['close'] > c['open']
-    )
+    if status:
+        last_trade_time = time.time()
+        print("TRADE:", direction)
+        send_telegram(f"📊 {PAIR} {direction.upper()}")
 
 
-def bearish_rejection(c, level):
-    return (
-        c['high'] >= level - ZONE_TOL and
-        c['close'] < c['open']
-    )
+# ================= LOOP =================
 
+print("🚀 BOT HÍBRIDO PRO SIN SPAM ACTIVO")
 
-def close_near_level(c, level):
-    return abs(c['close'] - level) <= ZONE_TOL
+while True:
+    try:
+        df = get_candles()
+        if df is None:
+            continue
 
+        df = calculate_indicators(df)
 
-# ================= PRE-SEÑAL =================
+        support, resistance = get_support_resistance(df)
 
-def pre_buy(df):
-    c = df.iloc[-1]
-    support, _ = get_support_resistance(df)
+        # ================= PRE-SEÑAL =================
 
-    return (
-        c['low'] <= support + PRE_TOL and
-        c['close'] > c['open']
-    )
+        current_zone = None
 
+        if pre_buy(df):
+            current_zone = "buy_zone"
 
-def pre_sell(df):
-    c = df.iloc[-1]
-    _, resistance = get_support_resistance(df)
+        elif pre_sell(df):
+            current_zone = "sell_zone"
 
-    return (
-        c['high'] >= resistance - PRE_TOL and
-        c['close'] < c['open']
-    )
+        # ================= ANTI-SPAM ZONA =================
 
+        if current_zone:
+            if current_zone == last_zone and (time.time() - zone_time < ZONE_COOLDOWN):
+                print("⛔ Zona ignorada (cooldown)")
+            else:
+                pending_signal = current_zone
+                signal_time = time.time()
+                last_zone = current_zone
+                zone_time = time.time()
+                print("📍 Nueva zona:", current_zone)
 
-# ================= CONFIRMACIÓN =================
+        # ================= EXPIRACIÓN =================
 
-def confirm_buy(df):
-    if len(df) < 50:
-        return False
+        if pending_signal and (time.time() - signal_time > MAX_WAIT):
+            pending_signal = None
 
-    c = df.iloc[-2]
-    support, _ = get_support_resistance(df)
-    trend = get_trend(df)
+        # ================= CONFIRMACIÓN =================
 
-    return (
-        trend != "down" and
-        (bullish_rejection(c, support) or close_near_level(c, support))
-    )
+        if pending_signal == "buy_zone" and confirm_buy(df) and can_trade():
+            trade("call")
+            pending_signal = None
 
+        elif pending_signal == "sell_zone" and confirm_sell(df) and can_trade():
+            trade("put")
+            pending_signal = None
 
-def confirm_sell(df):
-    if len(df) < 50:
-        return False
+        print("PENDING:", pending_signal)
 
-    c = df.iloc[-2]
-    _, resistance = get_support_resistance(df)
-    trend = get_trend(df)
+        time.sleep(1)
 
-    return (
-        trend != "up" and
-        (bearish_rejection(c, resistance) or close_near_level(c, resistance))
-    )
+    except Exception as e:
+        print("ERROR:", e)
+        time.sleep(3)
