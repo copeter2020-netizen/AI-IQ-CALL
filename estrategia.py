@@ -1,6 +1,12 @@
 import pandas as pd
 
+# ================= CONFIG =================
+
 TOL = 0.0003
+MIN_BODY = 0.00025
+MIN_WIDTH = 0.0006
+
+# ================= INDICADORES =================
 
 def calculate_indicators(df):
     df['ema_100'] = df['close'].ewm(span=100).mean()
@@ -12,74 +18,77 @@ def calculate_indicators(df):
     df['lower_band'] = ma - 2 * std
     df['mid_band'] = ma
 
+    df['bb_width'] = df['upper_band'] - df['lower_band']
+
+    # pendiente de EMA (fuerza de tendencia)
+    df['ema_slope'] = df['ema_100'].diff()
+
     return df
 
 
 # ================= BUY =================
 
 def check_buy_signal(df, pair=None):
-    if len(df) < 20:
+    if len(df) < 50:
         return False
 
-    closed = df.iloc[-2]  # vela cerrada
-    live = df.iloc[-1]    # vela en formación
+    c = df.iloc[-2]  # vela cerrada
 
-    # 🔥 cruce detectado en vivo
-    live_cross = (
-        live['lower_band'] > live['ema_100'] or
-        abs(live['lower_band'] - live['ema_100']) < TOL or
-        live['low'] < live['ema_100']
+    trend = c['close'] < c['ema_100'] and c['ema_slope'] < 0
+    volatility = c['bb_width'] > MIN_WIDTH
+
+    body = abs(c['close'] - c['open'])
+    strong = body > MIN_BODY
+
+    cross = (
+        c['lower_band'] > c['ema_100'] or
+        abs(c['lower_band'] - c['ema_100']) < TOL or
+        c['low'] < c['ema_100']
     )
 
-    # 🔥 confirmación al cierre
-    close_cross = closed['lower_band'] > closed['ema_100']
-
-    red = closed['close'] < closed['open']
-
-    mid_break = (
-        closed['close'] > closed['mid_band'] or
-        closed['high'] > closed['mid_band']
-    )
+    mid_break = c['close'] > c['mid_band']
+    red = c['close'] < c['open']
 
     if pair:
         print(f"\n📊 {pair} BUY")
-        print("LIVE:", live_cross)
-        print("CLOSE:", close_cross)
-        print("ROJA:", red)
-        print("MID:", mid_break)
+        print("trend:", trend)
+        print("volatility:", volatility)
+        print("strong:", strong)
+        print("cross:", cross)
+        print("mid:", mid_break)
 
-    return live_cross and close_cross and red and mid_break
+    return trend and volatility and strong and cross and mid_break and red
 
 
 # ================= SELL =================
 
 def check_sell_signal(df, pair=None):
-    if len(df) < 20:
+    if len(df) < 50:
         return False
 
-    closed = df.iloc[-2]
-    live = df.iloc[-1]
+    c = df.iloc[-2]
 
-    live_cross = (
-        live['upper_band'] < live['ema_100'] or
-        abs(live['upper_band'] - live['ema_100']) < TOL or
-        live['high'] > live['ema_100']
+    trend = c['close'] > c['ema_100'] and c['ema_slope'] > 0
+    volatility = c['bb_width'] > MIN_WIDTH
+
+    body = abs(c['close'] - c['open'])
+    strong = body > MIN_BODY
+
+    cross = (
+        c['upper_band'] < c['ema_100'] or
+        abs(c['upper_band'] - c['ema_100']) < TOL or
+        c['high'] > c['ema_100']
     )
 
-    close_cross = closed['upper_band'] < closed['ema_100']
-
-    green = closed['close'] > closed['open']
-
-    mid_break = (
-        closed['close'] < closed['mid_band'] or
-        closed['low'] < closed['mid_band']
-    )
+    mid_break = c['close'] < c['mid_band']
+    green = c['close'] > c['open']
 
     if pair:
         print(f"\n📊 {pair} SELL")
-        print("LIVE:", live_cross)
-        print("CLOSE:", close_cross)
-        print("VERDE:", green)
-        print("MID:", mid_break)
+        print("trend:", trend)
+        print("volatility:", volatility)
+        print("strong:", strong)
+        print("cross:", cross)
+        print("mid:", mid_break)
 
-    return live_cross and close_cross and green and mid_break
+    return trend and volatility and strong and cross and mid_break and green
