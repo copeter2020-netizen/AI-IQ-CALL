@@ -12,6 +12,7 @@ from config import PAIR_CONFIG
 
 # ================= CONFIG =================
 
+PAIR = "EURUSD-OTC"
 TIMEFRAME = 60
 EXPIRATION = 1
 AMOUNT = 1000
@@ -28,7 +29,8 @@ COOLDOWN = 60
 # ================= SESIÓN =================
 
 def is_trading_time():
-    return True  # 🔥 SI QUIERES QUE OPERE SIEMPRE
+    # puedes dejarlo siempre activo o limitar horario
+    return True
 
 # ================= PROTECCIÓN =================
 
@@ -43,6 +45,7 @@ threading.excepthook = safe_thread_exception
 
 iq = IQ_Option(EMAIL, PASSWORD)
 
+# evitar error digital
 try:
     iq.api.digital_option = None
     iq.get_digital_underlying_list_data = lambda: {"underlying": []}
@@ -72,19 +75,9 @@ def reconnect():
         iq.connect()
         iq.change_balance("PRACTICE")
 
-def get_pairs():
+def get_candles():
     try:
-        open_time = iq.get_all_open_time()
-        return [
-            p for p in open_time["binary"].keys()
-            if p.endswith("-OTC") and p in PAIR_CONFIG
-        ]
-    except:
-        return []
-
-def get_candles(pair):
-    try:
-        candles = iq.get_candles(pair, TIMEFRAME, 100, time.time())
+        candles = iq.get_candles(PAIR, TIMEFRAME, 100, time.time())
 
         if not candles or len(candles) < 50:
             return None
@@ -96,10 +89,11 @@ def get_candles(pair):
     except:
         return None
 
-def apply_pair_config(pair):
-    config = PAIR_CONFIG.get(pair)
+def apply_config():
+    config = PAIR_CONFIG.get(PAIR)
 
     if not config:
+        print("❌ No hay configuración para EURUSD-OTC")
         return False
 
     estrategia.MIN_BODY = config["MIN_BODY"]
@@ -119,30 +113,30 @@ def can_trade():
     return True
 
 def wait_open():
-    # espera apertura exacta de vela
+    # esperar apertura exacta de vela
     while True:
         if iq.get_server_timestamp() % 60 == 0:
             return
         time.sleep(0.05)
 
-def trade(direction, pair):
+def trade(direction):
     try:
-        status, _ = iq.buy(AMOUNT, pair, direction, EXPIRATION)
+        status, _ = iq.buy(AMOUNT, PAIR, direction, EXPIRATION)
 
         if status:
-            msg = f"🎯 {pair} {direction.upper()}"
+            msg = f"🎯 {PAIR} {direction.upper()}"
             print(msg)
             send_telegram(msg)
         else:
-            print(f"❌ Falló entrada {pair}")
+            print("❌ Falló ejecución")
 
     except Exception as e:
         print("Trade error:", e)
 
 # ================= INICIO =================
 
-print("Bot ANALIZANDO Y OPERANDO...")
-send_telegram("🤖 BOT ACTIVO (ANÁLISIS + EJECUCIÓN)")
+print("🤖 BOT EURUSD-OTC ACTIVO")
+send_telegram("🤖 BOT EURUSD-OTC ACTIVO")
 
 # ================= LOOP =================
 
@@ -150,6 +144,7 @@ while True:
     try:
         reconnect()
 
+        # mantener contenedor vivo
         print(".", end="", flush=True)
 
         if not is_trading_time():
@@ -167,34 +162,31 @@ while True:
         print("\nNueva vela cerrada")
         last_candle_time = current_candle
 
-        pairs = get_pairs()
+        if not apply_config():
+            time.sleep(1)
+            continue
 
-        for pair in pairs:
+        df = get_candles()
 
-            if not apply_pair_config(pair):
-                continue
+        if df is None:
+            continue
 
-            df = get_candles(pair)
+        df = calculate_indicators(df)
 
-            if df is None:
-                continue
+        buy = check_buy_signal(df)
+        sell = check_sell_signal(df)
 
-            df = calculate_indicators(df)
+        print(f"EURUSD-OTC -> BUY:{buy} SELL:{sell}")
 
-            buy = check_buy_signal(df)
-            sell = check_sell_signal(df)
+        if buy and can_trade():
+            print("Esperando apertura...")
+            wait_open()
+            trade("call")
 
-            print(f"{pair} -> BUY:{buy} SELL:{sell}")
-
-            if buy and can_trade():
-                print("Esperando apertura...")
-                wait_open()
-                trade("call", pair)
-
-            elif sell and can_trade():
-                print("Esperando apertura...")
-                wait_open()
-                trade("put", pair)
+        elif sell and can_trade():
+            print("Esperando apertura...")
+            wait_open()
+            trade("put")
 
         time.sleep(0.2)
 
