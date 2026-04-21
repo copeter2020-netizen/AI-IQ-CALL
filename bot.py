@@ -6,7 +6,8 @@ from iqoptionapi.stable_api import IQ_Option
 
 # ================= CONFIG =================
 
-PAIR = "EURUSD-OTC"
+PAIRS = ["EURUSD", "GBPUSD", "EURJPY", "USDCHF", "EURGBP"]
+
 TIMEFRAME = 60
 EXPIRATION = 1
 AMOUNT = 100
@@ -39,18 +40,21 @@ def send(msg):
 
 # ================= DATA =================
 
-def get_candles():
-    candles = iq.get_candles(PAIR, TIMEFRAME, 100, time.time())
+def get_candles(pair):
+    try:
+        candles = iq.get_candles(pair, TIMEFRAME, 100, time.time())
 
-    if not candles:
+        if not candles:
+            return None
+
+        df = pd.DataFrame(candles)
+        df.rename(columns={"max": "high", "min": "low"}, inplace=True)
+        df = df.sort_values("from")
+        df.reset_index(drop=True, inplace=True)
+
+        return df
+    except:
         return None
-
-    df = pd.DataFrame(candles)
-    df.rename(columns={"max": "high", "min": "low"}, inplace=True)
-    df = df.sort_values("from")
-    df.reset_index(drop=True, inplace=True)
-
-    return df
 
 # ================= TIEMPO =================
 
@@ -72,12 +76,11 @@ def bullish_continuation(c):
         return False
 
     upper_wick = c['high'] - c['close']
-    lower_wick = c['open'] - c['low']
 
     return (
         body > 0 and
-        body > total * 0.6 and          # cuerpo dominante
-        upper_wick < body * 0.3 and     # poca mecha arriba
+        body > total * 0.6 and
+        upper_wick < body * 0.3 and
         c['close'] >= c['high'] - (total * 0.2)
     )
 
@@ -89,13 +92,12 @@ def bearish_continuation(c):
         return False
 
     lower_wick = c['close'] - c['low']
-    upper_wick = c['high'] - c['open']
 
     return (
         body > 0 and
-        body > total * 0.6
-        and lower_wick < body * 0.3
-        and c['close'] <= c['low'] + (total * 0.2)
+        body > total * 0.6 and
+        lower_wick < body * 0.3 and
+        c['close'] <= c['low'] + (total * 0.2)
     )
 
 # ================= CONTROL =================
@@ -105,45 +107,49 @@ def can_trade():
 
 # ================= TRADE =================
 
-def trade(direction):
+def trade(pair, direction):
     global last_trade_time
 
-    status, _ = iq.buy(AMOUNT, PAIR, direction, EXPIRATION)
+    status, _ = iq.buy(AMOUNT, pair, direction, EXPIRATION)
 
     if status:
         last_trade_time = time.time()
-        msg = f"🎯 CONTINUIDAD {direction.upper()}"
+
+        msg = f"🎯 {pair} {direction.upper()}"
         print(msg)
         send(msg)
 
 # ================= LOOP =================
 
-print("🚀 BOT CONTINUIDAD ACTIVO")
+print("🚀 BOT MULTI-PAR ACTIVO")
 
 while True:
     try:
-        df = get_candles()
-        if df is None:
+        if not can_trade():
+            time.sleep(0.5)
             continue
 
-        if len(df) < 20:
-            continue
+        for pair in PAIRS:
 
-        c = df.iloc[-2]  # vela cerrada
+            df = get_candles(pair)
+            if df is None or len(df) < 20:
+                continue
 
-        if can_trade():
+            c = df.iloc[-2]  # vela cerrada
 
-            # 🟢 CONTINUIDAD ALCISTA
+            # 🟢 CALL
             if bullish_continuation(c):
-                send("📈 CONTINUIDAD CALL")
+                send(f"📈 {pair} CONTINUIDAD CALL")
                 wait_open()
-                trade("call")
+                trade(pair, "call")
+                break
 
-            # 🔴 CONTINUIDAD BAJISTA
+            # 🔴 PUT
             elif bearish_continuation(c):
-                send("📉 CONTINUIDAD PUT")
+                send(f"📉 {pair} CONTINUIDAD PUT")
                 wait_open()
-                trade("put")
+                trade(pair, "put")
+                break
 
         time.sleep(0.2)
 
