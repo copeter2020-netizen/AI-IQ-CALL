@@ -7,8 +7,6 @@ from iqoptionapi.stable_api import IQ_Option
 
 from estrategia import calculate_indicators, check_buy_signal, check_sell_signal
 
-# ================= CONFIG =================
-
 TIMEFRAME = 60
 EXPIRATION = 1
 AMOUNT = 1000
@@ -21,21 +19,15 @@ CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 last_candle_time = None
 last_trade_candle = {}
 
-# ================= PROTECCIÓN THREAD =================
-
 def safe_thread_exception(args):
     if "underlying" in str(args.exc_value):
-        print("⚠️ Error digital bloqueado")
         return
     print("Thread error:", args)
 
 threading.excepthook = safe_thread_exception
 
-# ================= CONEXIÓN =================
-
 iq = IQ_Option(EMAIL, PASSWORD)
 
-# 🔥 bloquear digital (evita error underlying)
 try:
     iq.api.digital_option = None
     iq.get_digital_underlying_list_data = lambda: {"underlying": []}
@@ -45,10 +37,7 @@ except:
 iq.connect()
 iq.change_balance("PRACTICE")
 
-# activos válidos
 VALID_ASSETS = set(iq.get_all_ACTIVES_OPCODE().keys())
-
-# ================= TELEGRAM =================
 
 def send_telegram(msg):
     try:
@@ -60,16 +49,10 @@ def send_telegram(msg):
     except:
         pass
 
-# ================= FUNCIONES =================
-
 def reconnect():
-    try:
-        if not iq.check_connect():
-            iq.connect()
-            iq.change_balance("PRACTICE")
-    except:
-        pass
-
+    if not iq.check_connect():
+        iq.connect()
+        iq.change_balance("PRACTICE")
 
 def get_pairs():
     try:
@@ -81,7 +64,6 @@ def get_pairs():
     except:
         return []
 
-
 def get_candles(pair):
     try:
         candles = iq.get_candles(pair, TIMEFRAME, 100, time.time())
@@ -92,50 +74,32 @@ def get_candles(pair):
         df = pd.DataFrame(candles)
         df.rename(columns={"max": "high", "min": "low"}, inplace=True)
         return df
-
     except:
         return None
 
-
-# 🔥 evitar múltiples entradas en misma vela
 def can_trade(pair, candle_time):
     if last_trade_candle.get(pair) == candle_time:
         return False
-
     last_trade_candle[pair] = candle_time
     return True
 
-
-# 🔥 esperar apertura exacta de vela
 def wait_open():
     while True:
         if iq.get_server_timestamp() % 60 == 0:
             return
         time.sleep(0.05)
 
-
 def trade(direction, pair):
     try:
-        if pair not in VALID_ASSETS:
-            return
-
         status, _ = iq.buy(AMOUNT, pair, direction, EXPIRATION)
-
         if status:
             msg = f"✅ {pair} {direction.upper()} M1"
             print(msg)
             send_telegram(msg)
-        else:
-            print(f"❌ Fallo ejecución {pair}")
-
     except Exception as e:
-        print(f"Error trade {pair}:", e)
+        print("Trade error:", e)
 
-# ================= INICIO =================
-
-send_telegram("🤖 BOT ACTIVO")
-
-# ================= LOOP =================
+send_telegram("🤖 BOT ACTIVO (MODO HÍBRIDO)")
 
 while True:
     try:
@@ -144,9 +108,9 @@ while True:
         server_time = iq.get_server_timestamp()
         current_candle = server_time // 60
 
-        # 🔥 solo cuando cierra vela
+        # detectar cierre
         if current_candle == last_candle_time:
-            time.sleep(0.5)
+            time.sleep(0.3)
             continue
 
         last_candle_time = current_candle
@@ -159,12 +123,8 @@ while True:
             if df is None:
                 continue
 
-            # 🔥 eliminar vela en formación
-            df = df.iloc[:-1]
-
             df = calculate_indicators(df)
 
-            # 🔥 evaluar señal en vela recién cerrada
             buy = check_buy_signal(df, pair)
             sell = check_sell_signal(df, pair)
 
@@ -176,8 +136,8 @@ while True:
                 wait_open()
                 trade("put", pair)
 
-        time.sleep(0.5)
+        time.sleep(0.3)
 
     except Exception as e:
-        print("Error general:", e)
+        print("Error:", e)
         time.sleep(3)
