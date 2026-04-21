@@ -9,7 +9,7 @@ from iqoptionapi.stable_api import IQ_Option
 PAIR = "EURUSD-OTC"
 TIMEFRAME = 60
 EXPIRATION = 1
-AMOUNT = 1090
+AMOUNT = 100
 
 EMAIL = os.getenv("IQ_EMAIL")
 PASSWORD = os.getenv("IQ_PASSWORD")
