@@ -4,6 +4,8 @@ import requests
 import pandas as pd
 from iqoptionapi.stable_api import IQ_Option
 
+from estrategia import bullish_confirmation, bearish_confirmation
+
 # ================= CONFIG =================
 
 PAIRS = ["EURUSD", "GBPUSD", "EURJPY", "USDCHF", "EURGBP"]
@@ -19,6 +21,7 @@ CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 COOLDOWN = 60
 last_trade_time = 0
+last_candle_time = None
 
 # ================= CONEXIÓN =================
 
@@ -43,7 +46,6 @@ def send(msg):
 def get_candles(pair):
     try:
         candles = iq.get_candles(pair, TIMEFRAME, 100, time.time())
-
         if not candles:
             return None
 
@@ -62,43 +64,9 @@ def wait_open():
     while True:
         t = iq.get_server_timestamp()
         if t % 60 == 0:
-            time.sleep(0.3)
+            time.sleep(0.2)
             return
         time.sleep(0.05)
-
-# ================= CONTINUIDAD =================
-
-def bullish_continuation(c):
-    body = c['close'] - c['open']
-    total = c['high'] - c['low']
-
-    if total == 0:
-        return False
-
-    upper_wick = c['high'] - c['close']
-
-    return (
-        body > 0 and
-        body > total * 0.6 and
-        upper_wick < body * 0.3 and
-        c['close'] >= c['high'] - (total * 0.2)
-    )
-
-def bearish_continuation(c):
-    body = c['open'] - c['close']
-    total = c['high'] - c['low']
-
-    if total == 0:
-        return False
-
-    lower_wick = c['close'] - c['low']
-
-    return (
-        body > 0 and
-        body > total * 0.6 and
-        lower_wick < body * 0.3 and
-        c['close'] <= c['low'] + (total * 0.2)
-    )
 
 # ================= CONTROL =================
 
@@ -114,20 +82,29 @@ def trade(pair, direction):
 
     if status:
         last_trade_time = time.time()
-
         msg = f"🎯 {pair} {direction.upper()}"
         print(msg)
         send(msg)
 
 # ================= LOOP =================
 
-print("🚀 BOT MULTI-PAR ACTIVO")
+print("🚀 BOT TIEMPO REAL ACTIVO")
 
 while True:
     try:
         if not can_trade():
             time.sleep(0.5)
             continue
+
+        server_time = iq.get_server_timestamp()
+        current_candle = server_time // 60
+
+        # 🔥 detectar cierre de vela
+        if current_candle == last_candle_time:
+            time.sleep(0.1)
+            continue
+
+        last_candle_time = current_candle
 
         for pair in PAIRS:
 
@@ -138,20 +115,20 @@ while True:
             c = df.iloc[-2]  # vela cerrada
 
             # 🟢 CALL
-            if bullish_continuation(c):
-                send(f"📈 {pair} CONTINUIDAD CALL")
+            if bullish_confirmation(c):
+                send(f"📈 {pair} CONFIRMACIÓN CALL")
                 wait_open()
                 trade(pair, "call")
                 break
 
             # 🔴 PUT
-            elif bearish_continuation(c):
-                send(f"📉 {pair} CONTINUIDAD PUT")
+            elif bearish_confirmation(c):
+                send(f"📉 {pair} CONFIRMACIÓN PUT")
                 wait_open()
                 trade(pair, "put")
                 break
 
-        time.sleep(0.2)
+        time.sleep(0.1)
 
     except Exception as e:
         print("ERROR:", e)
