@@ -11,7 +11,7 @@ PAIRS = ["EURUSD", "GBPUSD", "EURJPY", "USDCHF", "EURGBP"]
 
 TIMEFRAME = 60
 EXPIRATION = 1
-AMOUNT = 10
+AMOUNT = 100
 COOLDOWN = 180
 
 EMAIL = os.getenv("IQ_EMAIL")
@@ -45,48 +45,44 @@ def send(msg):
 
 # ================= HORA BOGOTÁ =================
 
-def get_bogota_hour():
-    utc_now = datetime.utcnow().replace(tzinfo=timezone.utc)
+def get_bogota_time():
+    utc_now = datetime.now(timezone.utc)  # ✅ FIX sin deprecated
     bogota_time = utc_now - timedelta(hours=5)
-    return bogota_time.hour, bogota_time.minute
+    return bogota_time
 
 def is_trading_time():
-    hour, minute = get_bogota_hour()
+    now = get_bogota_time()
+    hour = now.hour
 
-    # 🔥 Overlap Bogotá: 08:00 - 11:00
-    if hour == 8:
-        return True
-    elif hour == 9:
-        return True
-    elif hour == 10:
-        return True
-    elif hour == 11 and minute == 0:
-        return True
-
-    return False
+    # 🔥 SOLO OVERLAP: 08:00 – 11:00
+    return 8 <= hour < 11
 
 # ================= CONEXIÓN =================
 
 iq = IQ_Option(EMAIL, PASSWORD)
 
 def connect():
-    print("🔌 Conectando...")
-    iq.connect()
+    while True:
+        try:
+            print("🔌 Conectando...")
+            iq.connect()
 
-    if not iq.check_connect():
-        raise Exception("❌ No conecta a IQ Option")
+            if iq.check_connect():
+                iq.change_balance("PRACTICE")
+                print("✅ Conectado")
+                return
+            else:
+                print("❌ Fallo conexión, reintentando...")
 
-    iq.change_balance("PRACTICE")
-    print("✅ Conectado")
+        except Exception as e:
+            print("❌ Error conexión:", e)
+
+        time.sleep(5)
 
 def reconnect():
     if not iq.check_connect():
         print("🔄 Reconectando...")
-        try:
-            iq.connect()
-            iq.change_balance("PRACTICE")
-        except:
-            time.sleep(3)
+        connect()
 
 # ================= DATA =================
 
@@ -127,12 +123,14 @@ def buy_signal(df):
     high, low = get_liquidity(df)
     prev = df.iloc[-3]
     c = df.iloc[-2]
+
     return prev["low"] < low and c["close"] > low and strong_bullish(c)
 
 def sell_signal(df):
     high, low = get_liquidity(df)
     prev = df.iloc[-3]
     c = df.iloc[-2]
+
     return prev["high"] > high and c["close"] < high and strong_bearish(c)
 
 # ================= CONTROL =================
@@ -170,59 +168,67 @@ def trade(pair, direction):
     except Exception as e:
         print("❌ Error trade:", e)
 
+# ================= LOOP PRINCIPAL =================
+
+def main():
+    global last_candle_time
+
+    reconnect()
+
+    if not is_trading_time():
+        print("⏸ Fuera de horario Bogotá")
+        time.sleep(60)
+        return
+
+    if not can_trade():
+        time.sleep(0.5)
+        return
+
+    try:
+        server_time = iq.get_server_timestamp()
+    except:
+        time.sleep(1)
+        return
+
+    current_candle = server_time // 60
+
+    if current_candle == last_candle_time:
+        time.sleep(0.1)
+        return
+
+    last_candle_time = current_candle
+
+    for pair in PAIRS:
+        df = get_candles(pair)
+        if df is None or len(df) < 30:
+            continue
+
+        if buy_signal(df):
+            send(f"💧 {pair} BUY")
+            wait_open()
+            trade(pair, "call")
+            return
+
+        elif sell_signal(df):
+            send(f"💧 {pair} SELL")
+            wait_open()
+            trade(pair, "put")
+            return
+
 # ================= INICIO =================
 
+print("🚀 BOT INICIANDO...")
 connect()
-send("🔥 BOT ACTIVO (HORA BOGOTÁ 08:00–11:00)")
+send("🔥 BOT ACTIVO (OVERLAP BOGOTÁ)")
 
-# ================= LOOP =================
+# ================= ANTI-CRASH LOOP =================
 
 while True:
     try:
-        reconnect()
-
-        if not is_trading_time():
-            print("⏸ Fuera de horario Bogotá")
-            time.sleep(60)
-            continue
-
-        if not can_trade():
-            time.sleep(0.5)
-            continue
-
-        try:
-            server_time = iq.get_server_timestamp()
-        except:
-            time.sleep(1)
-            continue
-
-        current_candle = server_time // 60
-
-        if current_candle == last_candle_time:
-            time.sleep(0.1)
-            continue
-
-        last_candle_time = current_candle
-
-        for pair in PAIRS:
-            df = get_candles(pair)
-            if df is None or len(df) < 30:
-                continue
-
-            if buy_signal(df):
-                send(f"💧 {pair} BUY (BOGOTÁ)")
-                wait_open()
-                trade(pair, "call")
-                break
-
-            elif sell_signal(df):
-                send(f"💧 {pair} SELL (BOGOTÁ)")
-                wait_open()
-                trade(pair, "put")
-                break
-
+        main()
+        print("🟢 Bot corriendo...")
         time.sleep(0.1)
 
     except Exception as e:
-        print("❌ ERROR LOOP:", e)
-        time.sleep(3)
+        print("🔥 ERROR GLOBAL:", e)
+        time.sleep(5)
