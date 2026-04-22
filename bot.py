@@ -4,7 +4,7 @@ import requests
 import pandas as pd
 from iqoptionapi.stable_api import IQ_Option
 
-from estrategia import bullish_confirmation, bearish_confirmation
+from estrategia import apply_indicators, trend, strong_bullish, strong_bearish, not_exhausted
 
 # ================= CONFIG =================
 
@@ -12,14 +12,15 @@ PAIRS = ["EURUSD", "GBPUSD", "EURJPY", "USDCHF", "EURGBP"]
 
 TIMEFRAME = 60
 EXPIRATION = 1
-AMOUNT = 100
+AMOUNT = 1
+
+COOLDOWN = 90  # 🔥 menos trades, más calidad
 
 EMAIL = os.getenv("IQ_EMAIL")
 PASSWORD = os.getenv("IQ_PASSWORD")
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-COOLDOWN = 60
 last_trade_time = 0
 last_candle_time = None
 
@@ -88,7 +89,7 @@ def trade(pair, direction):
 
 # ================= LOOP =================
 
-print("🚀 BOT TIEMPO REAL ACTIVO")
+print("🚀 BOT PROFESIONAL ACTIVO")
 
 while True:
     try:
@@ -99,7 +100,6 @@ while True:
         server_time = iq.get_server_timestamp()
         current_candle = server_time // 60
 
-        # 🔥 detectar cierre de vela
         if current_candle == last_candle_time:
             time.sleep(0.1)
             continue
@@ -109,24 +109,31 @@ while True:
         for pair in PAIRS:
 
             df = get_candles(pair)
-            if df is None or len(df) < 20:
+            if df is None or len(df) < 50:
                 continue
 
-            c = df.iloc[-2]  # vela cerrada
+            df = apply_indicators(df)
 
-            # 🟢 CALL
-            if bullish_confirmation(c):
-                send(f"📈 {pair} CONFIRMACIÓN CALL")
-                wait_open()
-                trade(pair, "call")
-                break
+            c = df.iloc[-2]
+            prev = df.iloc[-3]
 
-            # 🔴 PUT
-            elif bearish_confirmation(c):
-                send(f"📉 {pair} CONFIRMACIÓN PUT")
-                wait_open()
-                trade(pair, "put")
-                break
+            t = trend(df)
+
+            # 🟢 BUY SOLO EN TENDENCIA ALCISTA
+            if t == "up":
+                if strong_bullish(c) and not_exhausted(prev, c):
+                    send(f"📈 {pair} CALL (TENDENCIA)")
+                    wait_open()
+                    trade(pair, "call")
+                    break
+
+            # 🔴 SELL SOLO EN TENDENCIA BAJISTA
+            elif t == "down":
+                if strong_bearish(c) and not_exhausted(prev, c):
+                    send(f"📉 {pair} PUT (TENDENCIA)")
+                    wait_open()
+                    trade(pair, "put")
+                    break
 
         time.sleep(0.1)
 
