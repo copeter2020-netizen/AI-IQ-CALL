@@ -11,15 +11,13 @@ PAIRS = ["EURUSD", "GBPUSD", "EURJPY", "USDCHF", "EURGBP"]
 
 TIMEFRAME = 60
 EXPIRATION = 1
-AMOUNT = 100
+AMOUNT = 175
 COOLDOWN = 180
 
 EMAIL = os.getenv("IQ_EMAIL")
 PASSWORD = os.getenv("IQ_PASSWORD")
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
-
-# ================= VALIDACIÓN =================
 
 if not EMAIL or not PASSWORD:
     raise Exception("❌ Faltan credenciales IQ Option")
@@ -46,16 +44,12 @@ def send(msg):
 # ================= HORA BOGOTÁ =================
 
 def get_bogota_time():
-    utc_now = datetime.now(timezone.utc)  # ✅ FIX sin deprecated
-    bogota_time = utc_now - timedelta(hours=5)
-    return bogota_time
+    utc_now = datetime.now(timezone.utc)
+    return utc_now - timedelta(hours=5)
 
 def is_trading_time():
-    now = get_bogota_time()
-    hour = now.hour
-
-    # 🔥 SOLO OVERLAP: 08:00 – 11:00
-    return 8 <= hour < 11
+    hour = get_bogota_time().hour
+    return 8 <= hour < 11  # 08:00 - 11:00
 
 # ================= CONEXIÓN =================
 
@@ -123,14 +117,12 @@ def buy_signal(df):
     high, low = get_liquidity(df)
     prev = df.iloc[-3]
     c = df.iloc[-2]
-
     return prev["low"] < low and c["close"] > low and strong_bullish(c)
 
 def sell_signal(df):
     high, low = get_liquidity(df)
     prev = df.iloc[-3]
     c = df.iloc[-2]
-
     return prev["high"] > high and c["close"] < high and strong_bearish(c)
 
 # ================= CONTROL =================
@@ -159,7 +151,7 @@ def trade(pair, direction):
 
         if status:
             last_trade_time = time.time()
-            msg = f"🎯 {pair} {direction.upper()} (BOGOTÁ)"
+            msg = f"🎯 {pair} {direction.upper()} (OVERLAP BOGOTÁ)"
             print(msg)
             send(msg)
         else:
@@ -168,7 +160,7 @@ def trade(pair, direction):
     except Exception as e:
         print("❌ Error trade:", e)
 
-# ================= LOOP PRINCIPAL =================
+# ================= LÓGICA PRINCIPAL =================
 
 def main():
     global last_candle_time
@@ -176,7 +168,6 @@ def main():
     reconnect()
 
     if not is_trading_time():
-        print("⏸ Fuera de horario Bogotá")
         time.sleep(60)
         return
 
@@ -221,13 +212,20 @@ print("🚀 BOT INICIANDO...")
 connect()
 send("🔥 BOT ACTIVO (OVERLAP BOGOTÁ)")
 
-# ================= ANTI-CRASH LOOP =================
+# ================= LOOP ESTABLE =================
+
+last_log_time = 0
 
 while True:
     try:
         main()
-        print("🟢 Bot corriendo...")
-        time.sleep(0.1)
+
+        now = time.time()
+        if now - last_log_time > 30:
+            print("🟢 Bot activo...")
+            last_log_time = now
+
+        time.sleep(0.2)
 
     except Exception as e:
         print("🔥 ERROR GLOBAL:", e)
