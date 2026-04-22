@@ -4,7 +4,7 @@ import requests
 import pandas as pd
 from iqoptionapi.stable_api import IQ_Option
 
-from estrategia import apply_indicators, trend, strong_bullish, strong_bearish, not_exhausted
+from estrategia import buy_liquidity_sweep, sell_liquidity_sweep
 
 # ================= CONFIG =================
 
@@ -14,7 +14,7 @@ TIMEFRAME = 60
 EXPIRATION = 1
 AMOUNT = 1
 
-COOLDOWN = 90  # 🔥 menos trades, más calidad
+COOLDOWN = 120  # 🔥 menos trades, más calidad
 
 EMAIL = os.getenv("IQ_EMAIL")
 PASSWORD = os.getenv("IQ_PASSWORD")
@@ -83,13 +83,13 @@ def trade(pair, direction):
 
     if status:
         last_trade_time = time.time()
-        msg = f"🎯 {pair} {direction.upper()}"
+        msg = f"💧 {pair} {direction.upper()} (LIQUIDEZ)"
         print(msg)
         send(msg)
 
 # ================= LOOP =================
 
-print("🚀 BOT PROFESIONAL ACTIVO")
+print("🚀 BOT INSTITUCIONAL ACTIVO")
 
 while True:
     try:
@@ -109,31 +109,22 @@ while True:
         for pair in PAIRS:
 
             df = get_candles(pair)
-            if df is None or len(df) < 50:
+            if df is None or len(df) < 30:
                 continue
 
-            df = apply_indicators(df)
+            # 🟢 BUY (liquidez barrida abajo)
+            if buy_liquidity_sweep(df):
+                send(f"💧 {pair} BUY (LIQUIDITY SWEEP)")
+                wait_open()
+                trade(pair, "call")
+                break
 
-            c = df.iloc[-2]
-            prev = df.iloc[-3]
-
-            t = trend(df)
-
-            # 🟢 BUY SOLO EN TENDENCIA ALCISTA
-            if t == "up":
-                if strong_bullish(c) and not_exhausted(prev, c):
-                    send(f"📈 {pair} CALL (TENDENCIA)")
-                    wait_open()
-                    trade(pair, "call")
-                    break
-
-            # 🔴 SELL SOLO EN TENDENCIA BAJISTA
-            elif t == "down":
-                if strong_bearish(c) and not_exhausted(prev, c):
-                    send(f"📉 {pair} PUT (TENDENCIA)")
-                    wait_open()
-                    trade(pair, "put")
-                    break
+            # 🔴 SELL (liquidez barrida arriba)
+            elif sell_liquidity_sweep(df):
+                send(f"💧 {pair} SELL (LIQUIDITY SWEEP)")
+                wait_open()
+                trade(pair, "put")
+                break
 
         time.sleep(0.1)
 
