@@ -2,7 +2,7 @@ import time
 import os
 import requests
 import pandas as pd
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from iqoptionapi.stable_api import IQ_Option
 
 # ================= CONFIG =================
@@ -12,7 +12,7 @@ PAIRS = ["EURUSD", "GBPUSD", "EURJPY", "USDCHF", "EURGBP"]
 TIMEFRAME = 60
 EXPIRATION = 1
 AMOUNT = 10
-COOLDOWN = 180  # 🔥 más selectivo aún
+COOLDOWN = 180
 
 EMAIL = os.getenv("IQ_EMAIL")
 PASSWORD = os.getenv("IQ_PASSWORD")
@@ -43,14 +43,27 @@ def send(msg):
     except:
         pass
 
-# ================= HORARIO (SOLO OVERLAP) =================
+# ================= HORA BOGOTÁ =================
+
+def get_bogota_hour():
+    utc_now = datetime.utcnow().replace(tzinfo=timezone.utc)
+    bogota_time = utc_now - timedelta(hours=5)
+    return bogota_time.hour, bogota_time.minute
 
 def is_trading_time():
-    now = datetime.now(timezone.utc)
-    hour = now.hour
+    hour, minute = get_bogota_hour()
 
-    # 🔥 SOLO overlap Londres - NY
-    return 13 <= hour < 16
+    # 🔥 Overlap Bogotá: 08:00 - 11:00
+    if hour == 8:
+        return True
+    elif hour == 9:
+        return True
+    elif hour == 10:
+        return True
+    elif hour == 11 and minute == 0:
+        return True
+
+    return False
 
 # ================= CONEXIÓN =================
 
@@ -91,7 +104,7 @@ def get_candles(pair):
     except:
         return None
 
-# ================= ESTRATEGIA (LIQUIDEZ) =================
+# ================= ESTRATEGIA =================
 
 LOOKBACK = 20
 MIN_BODY = 0.0002
@@ -114,14 +127,12 @@ def buy_signal(df):
     high, low = get_liquidity(df)
     prev = df.iloc[-3]
     c = df.iloc[-2]
-
     return prev["low"] < low and c["close"] > low and strong_bullish(c)
 
 def sell_signal(df):
     high, low = get_liquidity(df)
     prev = df.iloc[-3]
     c = df.iloc[-2]
-
     return prev["high"] > high and c["close"] < high and strong_bearish(c)
 
 # ================= CONTROL =================
@@ -150,7 +161,7 @@ def trade(pair, direction):
 
         if status:
             last_trade_time = time.time()
-            msg = f"🎯 {pair} {direction.upper()} (OVERLAP)"
+            msg = f"🎯 {pair} {direction.upper()} (BOGOTÁ)"
             print(msg)
             send(msg)
         else:
@@ -162,7 +173,7 @@ def trade(pair, direction):
 # ================= INICIO =================
 
 connect()
-send("🔥 BOT OVERLAP ACTIVO (ULTRA SELECTIVO)")
+send("🔥 BOT ACTIVO (HORA BOGOTÁ 08:00–11:00)")
 
 # ================= LOOP =================
 
@@ -170,9 +181,8 @@ while True:
     try:
         reconnect()
 
-        # 🔥 SOLO OVERLAP
         if not is_trading_time():
-            print("⏸ Esperando overlap Londres-NY...")
+            print("⏸ Fuera de horario Bogotá")
             time.sleep(60)
             continue
 
@@ -200,13 +210,13 @@ while True:
                 continue
 
             if buy_signal(df):
-                send(f"💧 {pair} BUY (OVERLAP)")
+                send(f"💧 {pair} BUY (BOGOTÁ)")
                 wait_open()
                 trade(pair, "call")
                 break
 
             elif sell_signal(df):
-                send(f"💧 {pair} SELL (OVERLAP)")
+                send(f"💧 {pair} SELL (BOGOTÁ)")
                 wait_open()
                 trade(pair, "put")
                 break
