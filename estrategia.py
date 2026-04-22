@@ -2,40 +2,56 @@ import pandas as pd
 
 # ================= CONFIG =================
 
-MIN_BODY_RATIO = 0.6
-MAX_WICK_RATIO = 0.3
+EMA_PERIOD = 50
+MIN_BODY = 0.0002
+MIN_RANGE = 0.0005
 
-# ================= CONTINUIDAD =================
+# ================= INDICADORES =================
 
-def bullish_confirmation(c):
+def apply_indicators(df):
+    df['ema'] = df['close'].ewm(span=EMA_PERIOD).mean()
+    df['ema_slope'] = df['ema'].diff()
+    return df
+
+# ================= TENDENCIA =================
+
+def trend(df):
+    slope = df['ema_slope'].iloc[-2]
+
+    if slope > 0:
+        return "up"
+    elif slope < 0:
+        return "down"
+    return "range"
+
+# ================= FILTRO DE FUERZA =================
+
+def strong_bullish(c):
     body = c['close'] - c['open']
-    total = c['high'] - c['low']
-
-    if total == 0:
-        return False
-
-    upper_wick = c['high'] - c['close']
+    rng = c['high'] - c['low']
 
     return (
-        body > 0 and
-        body > total * MIN_BODY_RATIO and
-        upper_wick < body * MAX_WICK_RATIO and
-        c['close'] >= c['high'] - (total * 0.2)
+        body > MIN_BODY and
+        rng > MIN_RANGE and
+        c['close'] > c['open'] and
+        c['close'] > (c['high'] - rng * 0.2)
     )
 
-
-def bearish_confirmation(c):
+def strong_bearish(c):
     body = c['open'] - c['close']
-    total = c['high'] - c['low']
-
-    if total == 0:
-        return False
-
-    lower_wick = c['close'] - c['low']
+    rng = c['high'] - c['low']
 
     return (
-        body > 0 and
-        body > total * MIN_BODY_RATIO and
-        lower_wick < body * MAX_WICK_RATIO and
-        c['close'] <= c['low'] + (total * 0.2)
+        body > MIN_BODY and
+        rng > MIN_RANGE and
+        c['close'] < c['open'] and
+        c['close'] < (c['low'] + rng * 0.2)
     )
+
+# ================= EVITAR AGOTAMIENTO =================
+
+def not_exhausted(prev, c):
+    prev_range = prev['high'] - prev['low']
+    curr_range = c['high'] - c['low']
+
+    return curr_range < prev_range * 1.8  # evita velas explosivas tardías
