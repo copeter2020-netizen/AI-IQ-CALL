@@ -2,6 +2,7 @@ import time
 import os
 import requests
 import pandas as pd
+from datetime import datetime, timezone
 from iqoptionapi.stable_api import IQ_Option
 
 # ================= CONFIG =================
@@ -10,8 +11,8 @@ PAIRS = ["EURUSD", "GBPUSD", "EURJPY", "USDCHF", "EURGBP"]
 
 TIMEFRAME = 60
 EXPIRATION = 1
-AMOUNT = 1
-COOLDOWN = 120
+AMOUNT = 10
+COOLDOWN = 180  # 🔥 más selectivo aún
 
 EMAIL = os.getenv("IQ_EMAIL")
 PASSWORD = os.getenv("IQ_PASSWORD")
@@ -42,16 +43,25 @@ def send(msg):
     except:
         pass
 
+# ================= HORARIO (SOLO OVERLAP) =================
+
+def is_trading_time():
+    now = datetime.now(timezone.utc)
+    hour = now.hour
+
+    # 🔥 SOLO overlap Londres - NY
+    return 13 <= hour < 16
+
 # ================= CONEXIÓN =================
 
 iq = IQ_Option(EMAIL, PASSWORD)
 
 def connect():
-    print("🔌 Conectando a IQ Option...")
+    print("🔌 Conectando...")
     iq.connect()
 
     if not iq.check_connect():
-        raise Exception("❌ No se pudo conectar a IQ Option")
+        raise Exception("❌ No conecta a IQ Option")
 
     iq.change_balance("PRACTICE")
     print("✅ Conectado")
@@ -81,7 +91,7 @@ def get_candles(pair):
     except:
         return None
 
-# ================= ESTRATEGIA =================
+# ================= ESTRATEGIA (LIQUIDEZ) =================
 
 LOOKBACK = 20
 MIN_BODY = 0.0002
@@ -140,11 +150,11 @@ def trade(pair, direction):
 
         if status:
             last_trade_time = time.time()
-            msg = f"🎯 {pair} {direction.upper()}"
+            msg = f"🎯 {pair} {direction.upper()} (OVERLAP)"
             print(msg)
             send(msg)
         else:
-            print(f"❌ Falló trade en {pair}")
+            print(f"❌ Falló trade {pair}")
 
     except Exception as e:
         print("❌ Error trade:", e)
@@ -152,13 +162,19 @@ def trade(pair, direction):
 # ================= INICIO =================
 
 connect()
-send("🤖 BOT INSTITUCIONAL ACTIVO")
+send("🔥 BOT OVERLAP ACTIVO (ULTRA SELECTIVO)")
 
 # ================= LOOP =================
 
 while True:
     try:
         reconnect()
+
+        # 🔥 SOLO OVERLAP
+        if not is_trading_time():
+            print("⏸ Esperando overlap Londres-NY...")
+            time.sleep(60)
+            continue
 
         if not can_trade():
             time.sleep(0.5)
@@ -184,13 +200,13 @@ while True:
                 continue
 
             if buy_signal(df):
-                send(f"💧 {pair} BUY")
+                send(f"💧 {pair} BUY (OVERLAP)")
                 wait_open()
                 trade(pair, "call")
                 break
 
             elif sell_signal(df):
-                send(f"💧 {pair} SELL")
+                send(f"💧 {pair} SELL (OVERLAP)")
                 wait_open()
                 trade(pair, "put")
                 break
