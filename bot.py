@@ -13,16 +13,13 @@ PAIRS = ["EURUSD", "GBPUSD", "EURJPY", "USDCHF", "EURGBP"]
 
 TIMEFRAME = 60
 EXPIRATION = 1
-AMOUNT = 1000
-COOLDOWN = 60  # 🔥 más oportunidades
+AMOUNT = 3300
+COOLDOWN = 60
 
 EMAIL = os.getenv("IQ_EMAIL")
 PASSWORD = os.getenv("IQ_PASSWORD")
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
-
-if not EMAIL or not PASSWORD:
-    raise Exception("Faltan credenciales")
 
 # ================= ESTADO =================
 
@@ -41,7 +38,7 @@ def send(msg):
     except:
         pass
 
-# ================= HORA BOGOTÁ =================
+# ================= HORA =================
 
 def get_hour():
     utc = datetime.now(timezone.utc)
@@ -103,14 +100,15 @@ def trade(pair, direction):
 
     if status:
         last_trade_time = time.time()
-        msg = f"🎯 {pair} {direction.upper()}"
+        msg = f"🎯 {pair} {direction.upper()} (ZONA CONFIRMADA)"
         print(msg)
         send(msg)
 
 # ================= LOOP =================
 
-print("BOT ACTIVO")
+print("BOT PRO ZONAS ACTIVO")
 connect()
+send("🔥 BOT ZONAS ACTIVADO")
 
 while True:
     try:
@@ -141,7 +139,7 @@ while True:
             signal = get_signal(df)
 
             if signal:
-                send(f"📊 {pair} {signal.upper()}")
+                send(f"📊 {pair} {signal.upper()} CONFIRMADO")
                 wait_open()
                 trade(pair, signal)
                 break
