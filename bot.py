@@ -13,7 +13,7 @@ PAIRS = ["EURUSD", "GBPUSD", "EURJPY", "USDCHF", "EURGBP"]
 
 TIMEFRAME = 60
 EXPIRATION = 1
-AMOUNT = 2000
+AMOUNT = 10000
 COOLDOWN = 60
 
 EMAIL = os.getenv("IQ_EMAIL")
@@ -58,15 +58,25 @@ def connect():
             iq.connect()
             if iq.check_connect():
                 iq.change_balance("PRACTICE")
-                print("Conectado")
+                print("✅ Conectado")
                 return
-        except:
-            pass
+        except Exception as e:
+            print("Error conexión:", e)
         time.sleep(5)
 
 def reconnect():
     if not iq.check_connect():
+        print("Reconectando...")
         connect()
+
+# ================= VALIDACIÓN =================
+
+def is_pair_open(pair):
+    try:
+        open_time = iq.get_all_open_time()
+        return open_time["binary"][pair]["open"]
+    except:
+        return False
 
 # ================= DATA =================
 
@@ -84,30 +94,40 @@ def get_candles(pair):
 def can_trade():
     return (time.time() - last_trade_time) > COOLDOWN
 
-# ================= TRADE =================
+# ================= TRADE PRO =================
 
 def trade(pair, direction):
     global last_trade_time
 
-    try:
-        status, _ = iq.buy(AMOUNT, pair, direction, EXPIRATION)
+    if not is_pair_open(pair):
+        print(f"⚠️ {pair} cerrado")
+        return
 
-        if status:
-            last_trade_time = time.time()
-            msg = f"🎯 {pair} {direction.upper()} (INMEDIATO)"
-            print(msg)
-            send(msg)
-        else:
-            print("❌ Falló trade")
+    for i in range(3):  # 🔁 reintento
+        try:
+            status, result = iq.buy(AMOUNT, pair, direction, EXPIRATION)
 
-    except Exception as e:
-        print("ERROR TRADE:", e)
+            if status:
+                last_trade_time = time.time()
+                msg = f"🎯 {pair} {direction.upper()} EJECUTADO"
+                print(msg)
+                send(msg)
+                return
+            else:
+                print(f"❌ intento {i+1} falló:", result)
+
+        except Exception as e:
+            print("Error trade:", e)
+
+        time.sleep(1)
+
+    print("🚫 No se pudo ejecutar operación")
 
 # ================= LOOP =================
 
-print("BOT ENTRADA INMEDIATA")
+print("🔥 BOT ANTI-FALLOS ACTIVO")
 connect()
-send("🔥 BOT MODO INMEDIATO ACTIVADO")
+send("🔥 BOT ANTI-FALLOS ACTIVADO")
 
 while True:
     try:
@@ -131,6 +151,9 @@ while True:
         last_candle_time = candle
 
         for pair in PAIRS:
+            if not is_pair_open(pair):
+                continue
+
             df = get_candles(pair)
             if df is None or len(df) < 30:
                 continue
@@ -140,9 +163,10 @@ while True:
             if signal:
                 send(f"📊 {pair} {signal.upper()} DETECTADO")
 
-                # 🔥 EJECUCIÓN INMEDIATA (SIN ESPERAR)
-                trade(pair, signal)
+                # 🔥 pequeña espera para evitar rechazo por timing
+                time.sleep(0.5)
 
+                trade(pair, signal)
                 break
 
     except Exception as e:
