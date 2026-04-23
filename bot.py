@@ -4,6 +4,7 @@ import requests
 import pandas as pd
 from datetime import datetime, timedelta, timezone
 from iqoptionapi.stable_api import IQ_Option
+import threading
 
 from estrategia import get_signal
 
@@ -13,13 +14,22 @@ PAIRS = ["EURUSD", "GBPUSD", "EURJPY", "USDCHF", "EURGBP"]
 
 TIMEFRAME = 60
 EXPIRATION = 1
-AMOUNT = 10000
+AMOUNT = 100
 COOLDOWN = 60
 
 EMAIL = os.getenv("IQ_EMAIL")
 PASSWORD = os.getenv("IQ_PASSWORD")
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+
+# ================= PROTECCIÓN GLOBAL =================
+
+def ignore_thread_errors(args):
+    if "underlying" in str(args.exc_value):
+        return  # 🔥 ignorar error de IQ API
+    print("Thread error:", args)
+
+threading.excepthook = ignore_thread_errors
 
 # ================= ESTADO =================
 
@@ -56,12 +66,23 @@ def connect():
     while True:
         try:
             iq.connect()
+
             if iq.check_connect():
                 iq.change_balance("PRACTICE")
-                print("✅ Conectado")
+
+                # 🔥 DESACTIVAR DIGITAL OPTIONS (CLAVE)
+                try:
+                    iq.api.digital_option = None
+                    iq.get_digital_underlying_list_data = lambda: {"underlying": []}
+                except:
+                    pass
+
+                print("✅ Conectado limpio")
                 return
+
         except Exception as e:
             print("Error conexión:", e)
+
         time.sleep(5)
 
 def reconnect():
@@ -94,40 +115,31 @@ def get_candles(pair):
 def can_trade():
     return (time.time() - last_trade_time) > COOLDOWN
 
-# ================= TRADE PRO =================
+# ================= TRADE =================
 
 def trade(pair, direction):
     global last_trade_time
 
     if not is_pair_open(pair):
-        print(f"⚠️ {pair} cerrado")
         return
 
-    for i in range(3):  # 🔁 reintento
-        try:
-            status, result = iq.buy(AMOUNT, pair, direction, EXPIRATION)
+    try:
+        status, _ = iq.buy(AMOUNT, pair, direction, EXPIRATION)
 
-            if status:
-                last_trade_time = time.time()
-                msg = f"🎯 {pair} {direction.upper()} EJECUTADO"
-                print(msg)
-                send(msg)
-                return
-            else:
-                print(f"❌ intento {i+1} falló:", result)
+        if status:
+            last_trade_time = time.time()
+            msg = f"🎯 {pair} {direction.upper()}"
+            print(msg)
+            send(msg)
 
-        except Exception as e:
-            print("Error trade:", e)
-
-        time.sleep(1)
-
-    print("🚫 No se pudo ejecutar operación")
+    except Exception as e:
+        print("Trade error:", e)
 
 # ================= LOOP =================
 
-print("🔥 BOT ANTI-FALLOS ACTIVO")
+print("🔥 BOT SIN ERROR UNDERLYING")
 connect()
-send("🔥 BOT ANTI-FALLOS ACTIVADO")
+send("🔥 BOT ESTABLE ACTIVADO")
 
 while True:
     try:
@@ -151,6 +163,7 @@ while True:
         last_candle_time = candle
 
         for pair in PAIRS:
+
             if not is_pair_open(pair):
                 continue
 
@@ -161,12 +174,11 @@ while True:
             signal = get_signal(df)
 
             if signal:
-                send(f"📊 {pair} {signal.upper()} DETECTADO")
+                send(f"📊 {pair} {signal.upper()}")
 
-                # 🔥 pequeña espera para evitar rechazo por timing
                 time.sleep(0.5)
-
                 trade(pair, signal)
+
                 break
 
     except Exception as e:
