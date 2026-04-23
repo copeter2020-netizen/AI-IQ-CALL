@@ -1,91 +1,93 @@
 import pandas as pd
 
 LOOKBACK = 20
+ZONE_TOL = 0.0003
 MIN_BODY = 0.00015
 
-# ================= LIQUIDEZ =================
+# ================= ZONAS =================
 
-def get_levels(df):
+def get_zones(df):
     recent = df.iloc[-LOOKBACK:]
-    return recent['high'].max(), recent['low'].min()
+    resistance = recent['high'].max()
+    support = recent['low'].min()
+    return resistance, support
+
+def in_resistance(price, resistance):
+    return abs(price - resistance) < ZONE_TOL
+
+def in_support(price, support):
+    return abs(price - support) < ZONE_TOL
 
 # ================= FUERZA =================
 
-def bullish_strength(c):
+def bullish(c):
     body = c['close'] - c['open']
-    rng = c['high'] - c['low']
-    return body > MIN_BODY and c['close'] > (c['high'] - rng * 0.3)
+    return body > MIN_BODY and c['close'] > c['open']
 
-def bearish_strength(c):
+def bearish(c):
     body = c['open'] - c['close']
-    rng = c['high'] - c['low']
-    return body > MIN_BODY and c['close'] < (c['low'] + rng * 0.3)
+    return body > MIN_BODY and c['close'] < c['open']
 
-# ================= 1. LIQUIDITY SWEEP =================
+# ================= RECHAZO =================
 
-def buy_sweep(df):
-    high, low = get_levels(df)
-    prev = df.iloc[-3]
+def rejection_buy(df):
+    res, sup = get_zones(df)
     c = df.iloc[-2]
 
-    return prev['low'] < low and c['close'] > low and bullish_strength(c)
+    return in_support(c['low'], sup) and bullish(c)
 
-def sell_sweep(df):
-    high, low = get_levels(df)
-    prev = df.iloc[-3]
+def rejection_sell(df):
+    res, sup = get_zones(df)
     c = df.iloc[-2]
 
-    return prev['high'] > high and c['close'] < high and bearish_strength(c)
+    return in_resistance(c['high'], res) and bearish(c)
 
-# ================= 2. REBOTE EN SOPORTE / RESISTENCIA =================
+# ================= RUPTURA =================
 
-def buy_rejection(df):
-    high, low = get_levels(df)
-    c = df.iloc[-2]
-
-    return (
-        abs(c['low'] - low) < 0.0003 and
-        c['close'] > c['open']
-    )
-
-def sell_rejection(df):
-    high, low = get_levels(df)
-    c = df.iloc[-2]
-
-    return (
-        abs(c['high'] - high) < 0.0003 and
-        c['close'] < c['open']
-    )
-
-# ================= 3. CONTINUIDAD =================
-
-def buy_continuation(df):
+def breakout_up(df):
+    res, sup = get_zones(df)
     c = df.iloc[-2]
     prev = df.iloc[-3]
 
-    return (
-        c['close'] > c['open'] and
-        prev['close'] > prev['open'] and
-        c['close'] > prev['close']
-    )
+    return prev['close'] < res and c['close'] > res
 
-def sell_continuation(df):
+def breakout_down(df):
+    res, sup = get_zones(df)
     c = df.iloc[-2]
     prev = df.iloc[-3]
 
-    return (
-        c['close'] < c['open'] and
-        prev['close'] < prev['open'] and
-        c['close'] < prev['close']
-    )
+    return prev['close'] > sup and c['close'] < sup
 
-# ================= MASTER SIGNAL =================
+# ================= CONFIRMACIÓN =================
+
+def continuation_buy(df):
+    c = df.iloc[-2]
+    prev = df.iloc[-3]
+
+    return bullish(c) and c['close'] > prev['close']
+
+def continuation_sell(df):
+    c = df.iloc[-2]
+    prev = df.iloc[-3]
+
+    return bearish(c) and c['close'] < prev['close']
+
+# ================= FILTRO CENTRAL =================
 
 def get_signal(df):
-    if buy_sweep(df) or buy_rejection(df) or buy_continuation(df):
+
+    # 🔥 1. RECHAZO EN ZONA
+    if rejection_buy(df):
         return "call"
 
-    if sell_sweep(df) or sell_rejection(df) or sell_continuation(df):
+    if rejection_sell(df):
+        return "put"
+
+    # 🔥 2. RUPTURA + CONFIRMACIÓN
+    if breakout_up(df) and continuation_buy(df):
+        return "call"
+
+    if breakout_down(df) and continuation_sell(df):
         return "put"
 
     return None
