@@ -13,7 +13,7 @@ PAIRS = ["EURUSD", "GBPUSD", "EURJPY", "USDCHF", "EURGBP"]
 
 TIMEFRAME = 60
 EXPIRATION = 1
-AMOUNT = 3300
+AMOUNT = 2000
 COOLDOWN = 60
 
 EMAIL = os.getenv("IQ_EMAIL")
@@ -84,31 +84,30 @@ def get_candles(pair):
 def can_trade():
     return (time.time() - last_trade_time) > COOLDOWN
 
-def wait_open():
-    while True:
-        if iq.get_server_timestamp() % 60 == 0:
-            time.sleep(0.2)
-            return
-        time.sleep(0.05)
-
 # ================= TRADE =================
 
 def trade(pair, direction):
     global last_trade_time
 
-    status, _ = iq.buy(AMOUNT, pair, direction, EXPIRATION)
+    try:
+        status, _ = iq.buy(AMOUNT, pair, direction, EXPIRATION)
 
-    if status:
-        last_trade_time = time.time()
-        msg = f"🎯 {pair} {direction.upper()} (ZONA CONFIRMADA)"
-        print(msg)
-        send(msg)
+        if status:
+            last_trade_time = time.time()
+            msg = f"🎯 {pair} {direction.upper()} (INMEDIATO)"
+            print(msg)
+            send(msg)
+        else:
+            print("❌ Falló trade")
+
+    except Exception as e:
+        print("ERROR TRADE:", e)
 
 # ================= LOOP =================
 
-print("BOT PRO ZONAS ACTIVO")
+print("BOT ENTRADA INMEDIATA")
 connect()
-send("🔥 BOT ZONAS ACTIVADO")
+send("🔥 BOT MODO INMEDIATO ACTIVADO")
 
 while True:
     try:
@@ -139,9 +138,11 @@ while True:
             signal = get_signal(df)
 
             if signal:
-                send(f"📊 {pair} {signal.upper()} CONFIRMADO")
-                wait_open()
+                send(f"📊 {pair} {signal.upper()} DETECTADO")
+
+                # 🔥 EJECUCIÓN INMEDIATA (SIN ESPERAR)
                 trade(pair, signal)
+
                 break
 
     except Exception as e:
