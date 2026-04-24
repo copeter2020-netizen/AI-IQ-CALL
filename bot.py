@@ -5,34 +5,27 @@ import pandas as pd
 from datetime import datetime, timezone
 
 from iqoptionapi.stable_api import IQ_Option
-from estrategia import calculate_indicators, check_signal
+from estrategia import detect_block_signal
 
 # ================= CONFIG =================
 
 PAIRS = ["EURUSD", "EURJPY", "GBPUSD", "USDCHF", "EURGBP"]
 
-TIMEFRAME = 60
-EXPIRATION = 4
-AMOUNT = 1  # ✅ 1 DÓLAR
+TIMEFRAME = 60       # velas de 1 minuto
+EXPIRATION = 30      # 30 minutos
+AMOUNT = 1           # $1
 
 EMAIL = os.getenv("IQ_EMAIL")
 PASSWORD = os.getenv("IQ_PASSWORD")
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-last_candle = {}
-pending_signal = {}  # 🔥 guarda señal para siguiente vela
-
-# ================= HORARIO =================
-
-def is_trading_time():
-    now = datetime.now(timezone.utc)
-    bogota_hour = (now.hour - 5) % 24
-    return 7 <= bogota_hour < 10  # overlap
+last_block = None
+pending_signal = None
 
 # ================= TELEGRAM =================
 
-def send_telegram(msg):
+def send(msg):
     try:
         requests.post(
             f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
@@ -42,11 +35,11 @@ def send_telegram(msg):
     except:
         pass
 
-# ================= IQ OPTION =================
+# ================= IQ =================
 
 iq = IQ_Option(EMAIL, PASSWORD)
 
-# FIX ERROR UNDERLYING
+# 🔥 eliminar error underlying
 try:
     iq.api.digital_option = None
     iq.get_digital_underlying_list_data = lambda: {"underlying": []}
@@ -63,36 +56,41 @@ def reconnect():
         iq.connect()
         iq.change_balance("PRACTICE")
 
-def get_candles(pair):
-    try:
-        candles = iq.get_candles(pair, TIMEFRAME, 120, time.time())
-        if not candles:
-            return None
+def get_block_candles(pair):
+    candles = iq.get_candles(pair, 60, 60, time.time())
 
-        df = pd.DataFrame(candles)
-        df.rename(columns={"max": "high", "min": "low"}, inplace=True)
-        return df
-    except:
+    if not candles or len(candles) < 30:
         return None
+
+    df = pd.DataFrame(candles)
+    df.rename(columns={"max": "high", "min": "low"}, inplace=True)
+
+    return df.tail(30)
+
+def get_block_id():
+    now = datetime.now(timezone.utc)
+    return (now.hour, now.minute // 30)
+
+# ================= TRADE =================
 
 def trade(pair, direction):
     try:
         status, _ = iq.buy(AMOUNT, pair, direction, EXPIRATION)
 
         if status:
-            msg = f"🔥 {pair} {direction.upper()} EJECUTADO ($1)"
+            msg = f"🔥 {pair} {direction.upper()} 30M"
             print(msg)
-            send_telegram(msg)
+            send(msg)
         else:
-            print(f"❌ Falló trade {pair}")
+            print("❌ Falló trade")
 
     except Exception as e:
         print("Trade error:", e)
 
 # ================= INICIO =================
 
-print("🔥 BOT TII NEXT CANDLE ACTIVO ($1)")
-send_telegram("🔥 BOT TII NEXT CANDLE ACTIVO ($1)")
+print("🔥 BOT TII 30M REAL ACTIVO")
+send("🔥 BOT TII 30M REAL ACTIVADO")
 
 # ================= LOOP =================
 
@@ -100,42 +98,35 @@ while True:
     try:
         reconnect()
 
-        if not is_trading_time():
-            time.sleep(5)
-            continue
+        current_block = get_block_id()
 
-        server_time = iq.get_server_timestamp()
-        current_candle = server_time // 60
+        # NUEVO BLOQUE
+        if current_block != last_block:
 
-        for pair in PAIRS:
+            last_block = current_block
 
-            # detectar nueva vela
-            if pair in last_candle and last_candle[pair] == current_candle:
-                continue
-
-            last_candle[pair] = current_candle
-
-            # 🔥 SI HAY SEÑAL PENDIENTE → EJECUTA
-            if pair in pending_signal:
-                direction = pending_signal[pair]
+            # 🔥 EJECUTAR OPERACIÓN
+            if pending_signal:
+                pair, direction = pending_signal
                 trade(pair, direction)
-                del pending_signal[pair]
-                continue
+                pending_signal = None
 
-            # 🔍 ANALIZAR NUEVA SEÑAL
-            df = get_candles(pair)
-            if df is None:
-                continue
+            # 🔍 ANALIZAR BLOQUE QUE TERMINÓ
+            for pair in PAIRS:
 
-            df = calculate_indicators(df)
-            signal = check_signal(df)
+                df = get_block_candles(pair)
+                if df is None:
+                    continue
 
-            if signal:
-                pending_signal[pair] = signal
-                send_telegram(f"📡 {pair} {signal.upper()} PREPARADO (SIGUIENTE VELA)")
+                signal = detect_block_signal(df)
 
-        time.sleep(0.2)
+                if signal:
+                    pending_signal = (pair, signal)
+                    send(f"📊 {pair} {signal.upper()} DETECTADO → SIGUIENTE BLOQUE")
+                    break
+
+        time.sleep(1)
 
     except Exception as e:
         print("Error:", e)
-        time.sleep(2)
+        time.sleep(3)
