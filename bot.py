@@ -39,6 +39,7 @@ def send(msg):
 
 iq = IQ_Option(EMAIL, PASSWORD)
 
+# 🔥 FIX UNDERLYING ERROR
 try:
     iq.api.digital_option = None
     iq.get_digital_underlying_list_data = lambda: {"underlying": []}
@@ -88,8 +89,8 @@ def trade(pair, direction):
 
 # ================= INICIO =================
 
-print("🔥 BOT TII MEJORADO ACTIVO")
-send("🔥 BOT TII MEJORADO ACTIVADO")
+print("🔥 BOT FUNCIONANDO")
+send("🔥 BOT ACTIVADO")
 
 # ================= LOOP =================
 
@@ -103,13 +104,13 @@ while True:
 
             last_block = current_block
 
-            # EJECUTAR
+            # EJECUTAR TRADE
             if pending_signal:
                 pair, direction = pending_signal
                 trade(pair, direction)
                 pending_signal = None
 
-            # ANALIZAR TODOS LOS PARES
+            # ANALIZAR
             for pair in PAIRS:
 
                 df = get_candles(pair)
