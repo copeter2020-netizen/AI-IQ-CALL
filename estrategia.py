@@ -1,93 +1,47 @@
 import pandas as pd
 
-LOOKBACK = 20
-ZONE_TOL = 0.0003
-MIN_BODY = 0.00015
+# ================= CONFIG =================
 
-# ================= ZONAS =================
+PERIOD = 60  # igual al indicador de tu pantalla
 
-def get_zones(df):
-    recent = df.iloc[-LOOKBACK:]
-    resistance = recent['high'].max()
-    support = recent['low'].min()
-    return resistance, support
+# ================= INDICADOR =================
 
-def in_resistance(price, resistance):
-    return abs(price - resistance) < ZONE_TOL
+def calculate_indicators(df):
+    # Trend Intensity Index (aproximación fiel)
+    close = df['close']
 
-def in_support(price, support):
-    return abs(price - support) < ZONE_TOL
+    ma = close.rolling(PERIOD).mean()
+    deviation = close - ma
 
-# ================= FUERZA =================
+    pos_dev = deviation.copy()
+    neg_dev = deviation.copy()
 
-def bullish(c):
-    body = c['close'] - c['open']
-    return body > MIN_BODY and c['close'] > c['open']
+    pos_dev[pos_dev < 0] = 0
+    neg_dev[neg_dev > 0] = 0
 
-def bearish(c):
-    body = c['open'] - c['close']
-    return body > MIN_BODY and c['close'] < c['open']
+    sum_pos = pos_dev.rolling(PERIOD).sum()
+    sum_neg = abs(neg_dev.rolling(PERIOD).sum())
 
-# ================= RECHAZO =================
+    df['tii'] = 100 * (sum_pos / (sum_pos + sum_neg))
 
-def rejection_buy(df):
-    res, sup = get_zones(df)
-    c = df.iloc[-2]
+    return df
 
-    return in_support(c['low'], sup) and bullish(c)
 
-def rejection_sell(df):
-    res, sup = get_zones(df)
-    c = df.iloc[-2]
+# ================= SEÑALES =================
 
-    return in_resistance(c['high'], res) and bearish(c)
+def check_signal(df):
+    if len(df) < 100:
+        return None
 
-# ================= RUPTURA =================
-
-def breakout_up(df):
-    res, sup = get_zones(df)
-    c = df.iloc[-2]
     prev = df.iloc[-3]
+    last = df.iloc[-2]
 
-    return prev['close'] < res and c['close'] > res
-
-def breakout_down(df):
-    res, sup = get_zones(df)
-    c = df.iloc[-2]
-    prev = df.iloc[-3]
-
-    return prev['close'] > sup and c['close'] < sup
-
-# ================= CONFIRMACIÓN =================
-
-def continuation_buy(df):
-    c = df.iloc[-2]
-    prev = df.iloc[-3]
-
-    return bullish(c) and c['close'] > prev['close']
-
-def continuation_sell(df):
-    c = df.iloc[-2]
-    prev = df.iloc[-3]
-
-    return bearish(c) and c['close'] < prev['close']
-
-# ================= FILTRO CENTRAL =================
-
-def get_signal(df):
-
-    # 🔥 1. RECHAZO EN ZONA
-    if rejection_buy(df):
+    # ===== CALL (desde zona baja)
+    if prev['tii'] < 20 and last['tii'] > 20:
         return "call"
 
-    if rejection_sell(df):
-        return "put"
-
-    # 🔥 2. RUPTURA + CONFIRMACIÓN
-    if breakout_up(df) and continuation_buy(df):
-        return "call"
-
-    if breakout_down(df) and continuation_sell(df):
+    # ===== PUT (desde zona alta)
+    if prev['tii'] > 80 and last['tii'] < 80:
         return "put"
 
     return None
