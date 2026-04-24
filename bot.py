@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 
 from iqoptionapi.stable_api import IQ_Option
 
+# IMPORT CORRECTO
 from estrategia import calculate_indicators, check_signal
 
 # ================= CONFIG =================
@@ -15,7 +16,7 @@ PAIRS = ["EURUSD", "EURJPY", "GBPUSD", "USDCHF", "EURGBP"]
 
 TIMEFRAME = 60
 EXPIRATION = 4
-AMOUNT = 1
+AMOUNT = 100
 
 EMAIL = os.getenv("IQ_EMAIL")
 PASSWORD = os.getenv("IQ_PASSWORD")
@@ -32,7 +33,7 @@ def is_trading_time():
     now = datetime.now(timezone.utc)
     bogota_hour = (now.hour - 5) % 24
 
-    # 7 AM - 10 AM Bogotá
+    # SOLO OVERLAP: 7 AM - 10 AM Bogotá
     return 7 <= bogota_hour < 10
 
 # ================= TELEGRAM =================
@@ -51,7 +52,7 @@ def send_telegram(msg):
 
 iq = IQ_Option(EMAIL, PASSWORD)
 
-# FIX ERROR UNDERLYING
+# 🔥 FIX ERROR UNDERLYING (CRÍTICO)
 try:
     iq.api.digital_option = None
     iq.get_digital_underlying_list_data = lambda: {"underlying": []}
@@ -65,6 +66,7 @@ iq.change_balance("PRACTICE")
 
 def reconnect():
     if not iq.check_connect():
+        print("Reconectando...")
         iq.connect()
         iq.change_balance("PRACTICE")
 
@@ -107,7 +109,7 @@ def trade(pair, direction):
             print(msg)
             send_telegram(msg)
         else:
-            print("❌ Falló trade")
+            print(f"❌ Falló trade {pair}")
 
     except Exception as e:
         print("Trade error:", e)
@@ -144,6 +146,7 @@ while True:
 
             df = calculate_indicators(df)
 
+            # USO CORRECTO
             signal = check_signal(df)
 
             if signal and can_trade():
