@@ -2,43 +2,42 @@ import time
 import os
 import requests
 import pandas as pd
-from datetime import datetime, timedelta, timezone
-from iqoptionapi.stable_api import IQ_Option
 import threading
+from datetime import datetime, timezone
 
-from estrategia import get_signal
+from iqoptionapi.stable_api import IQ_Option
+
+from estrategia import calculate_indicators, check_signal
 
 # ================= CONFIG =================
 
-PAIRS = ["EURUSD", "GBPUSD", "EURJPY", "USDCHF", "EURGBP"]
+PAIRS = ["EURUSD", "EURJPY", "GBPUSD", "USDCHF", "EURGBP"]
 
 TIMEFRAME = 60
-EXPIRATION = 1
-AMOUNT = 100
-COOLDOWN = 60
+EXPIRATION = 4
+AMOUNT = 1
 
 EMAIL = os.getenv("IQ_EMAIL")
 PASSWORD = os.getenv("IQ_PASSWORD")
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-# ================= PROTECCIÓN GLOBAL =================
-
-def ignore_thread_errors(args):
-    if "underlying" in str(args.exc_value):
-        return  # 🔥 ignorar error de IQ API
-    print("Thread error:", args)
-
-threading.excepthook = ignore_thread_errors
-
-# ================= ESTADO =================
-
+last_candle = {}
 last_trade_time = 0
-last_candle_time = None
+COOLDOWN = 60
+
+# ================= HORARIO OVERLAP =================
+
+def is_trading_time():
+    now = datetime.now(timezone.utc)
+    bogota_hour = (now.hour - 5) % 24
+
+    # 7 AM - 10 AM Bogotá
+    return 7 <= bogota_hour < 10
 
 # ================= TELEGRAM =================
 
-def send(msg):
+def send_telegram(msg):
     try:
         requests.post(
             f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
@@ -48,139 +47,115 @@ def send(msg):
     except:
         pass
 
-# ================= HORA =================
-
-def get_hour():
-    utc = datetime.now(timezone.utc)
-    bogota = utc - timedelta(hours=5)
-    return bogota.hour
-
-def is_trading_time():
-    return 8 <= get_hour() < 11
-
-# ================= IQ =================
+# ================= CONEXIÓN =================
 
 iq = IQ_Option(EMAIL, PASSWORD)
 
-def connect():
-    while True:
-        try:
-            iq.connect()
+# FIX ERROR UNDERLYING
+try:
+    iq.api.digital_option = None
+    iq.get_digital_underlying_list_data = lambda: {"underlying": []}
+except:
+    pass
 
-            if iq.check_connect():
-                iq.change_balance("PRACTICE")
+iq.connect()
+iq.change_balance("PRACTICE")
 
-                # 🔥 DESACTIVAR DIGITAL OPTIONS (CLAVE)
-                try:
-                    iq.api.digital_option = None
-                    iq.get_digital_underlying_list_data = lambda: {"underlying": []}
-                except:
-                    pass
-
-                print("✅ Conectado limpio")
-                return
-
-        except Exception as e:
-            print("Error conexión:", e)
-
-        time.sleep(5)
+# ================= CORE =================
 
 def reconnect():
     if not iq.check_connect():
-        print("Reconectando...")
-        connect()
-
-# ================= VALIDACIÓN =================
-
-def is_pair_open(pair):
-    try:
-        open_time = iq.get_all_open_time()
-        return open_time["binary"][pair]["open"]
-    except:
-        return False
-
-# ================= DATA =================
+        iq.connect()
+        iq.change_balance("PRACTICE")
 
 def get_candles(pair):
     try:
-        candles = iq.get_candles(pair, TIMEFRAME, 100, time.time())
+        candles = iq.get_candles(pair, TIMEFRAME, 120, time.time())
+
+        if not candles:
+            return None
+
         df = pd.DataFrame(candles)
         df.rename(columns={"max": "high", "min": "low"}, inplace=True)
+
         return df
     except:
         return None
 
-# ================= CONTROL =================
-
 def can_trade():
-    return (time.time() - last_trade_time) > COOLDOWN
+    global last_trade_time
+    now = time.time()
 
-# ================= TRADE =================
+    if now - last_trade_time < COOLDOWN:
+        return False
+
+    last_trade_time = now
+    return True
+
+def wait_next_candle():
+    while True:
+        if int(time.time()) % 60 == 0:
+            return
+        time.sleep(0.05)
 
 def trade(pair, direction):
-    global last_trade_time
-
-    if not is_pair_open(pair):
-        return
-
     try:
         status, _ = iq.buy(AMOUNT, pair, direction, EXPIRATION)
 
         if status:
-            last_trade_time = time.time()
-            msg = f"🎯 {pair} {direction.upper()}"
+            msg = f"🔥 {pair} {direction.upper()} (4M)"
             print(msg)
-            send(msg)
+            send_telegram(msg)
+        else:
+            print("❌ Falló trade")
 
     except Exception as e:
         print("Trade error:", e)
 
-# ================= LOOP =================
+# ================= INICIO =================
 
-print("🔥 BOT SIN ERROR UNDERLYING")
-connect()
-send("🔥 BOT ESTABLE ACTIVADO")
+print("🔥 BOT TII ACTIVO (OVERLAP)")
+send_telegram("🔥 BOT TII ACTIVO (OVERLAP)")
+
+# ================= LOOP =================
 
 while True:
     try:
         reconnect()
 
         if not is_trading_time():
-            time.sleep(60)
+            time.sleep(5)
             continue
-
-        if not can_trade():
-            time.sleep(0.5)
-            continue
-
-        server_time = iq.get_server_timestamp()
-        candle = server_time // 60
-
-        if candle == last_candle_time:
-            time.sleep(0.1)
-            continue
-
-        last_candle_time = candle
 
         for pair in PAIRS:
 
-            if not is_pair_open(pair):
+            server_time = iq.get_server_timestamp()
+            candle_id = server_time // 60
+
+            if pair in last_candle and last_candle[pair] == candle_id:
                 continue
+
+            last_candle[pair] = candle_id
 
             df = get_candles(pair)
-            if df is None or len(df) < 30:
+
+            if df is None:
                 continue
 
-            signal = get_signal(df)
+            df = calculate_indicators(df)
 
-            if signal:
-                send(f"📊 {pair} {signal.upper()}")
+            signal = check_signal(df)
 
-                time.sleep(0.5)
+            if signal and can_trade():
+                send_telegram(f"📡 {pair} {signal.upper()} DETECTADO")
+
+                # esperar siguiente vela
+                wait_next_candle()
+
                 trade(pair, signal)
 
-                break
+        time.sleep(0.2)
 
     except Exception as e:
-        print("ERROR:", e)
+        print("Error:", e)
         time.sleep(3)
