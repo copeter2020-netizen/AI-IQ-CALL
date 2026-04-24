@@ -1,47 +1,52 @@
 import pandas as pd
 
-# ================= CONFIG =================
+PERIOD = 60
 
-PERIOD = 60  # igual al indicador de tu pantalla
+# ================= TII REAL =================
 
-# ================= INDICADOR =================
-
-def calculate_indicators(df):
-    # Trend Intensity Index (aproximación fiel)
+def calculate_tii(df):
     close = df['close']
 
+    # media móvil
     ma = close.rolling(PERIOD).mean()
-    deviation = close - ma
 
-    pos_dev = deviation.copy()
-    neg_dev = deviation.copy()
+    # desviación
+    dev = close - ma
 
-    pos_dev[pos_dev < 0] = 0
-    neg_dev[neg_dev > 0] = 0
+    # separar positivos y negativos
+    pos = dev.copy()
+    neg = dev.copy()
 
-    sum_pos = pos_dev.rolling(PERIOD).sum()
-    sum_neg = abs(neg_dev.rolling(PERIOD).sum())
+    pos[pos < 0] = 0
+    neg[neg > 0] = 0
+
+    sum_pos = pos.rolling(PERIOD).sum()
+    sum_neg = abs(neg.rolling(PERIOD).sum())
 
     df['tii'] = 100 * (sum_pos / (sum_pos + sum_neg))
 
     return df
 
 
-# ================= SEÑALES =================
+# ================= DETECCIÓN EN BLOQUE =================
 
-def check_signal(df):
-    if len(df) < 100:
-        return None
+def detect_block_signal(df):
+    """
+    df: velas de 1 minuto dentro del bloque de 30 min
+    """
 
-    prev = df.iloc[-3]
-    last = df.iloc[-2]
+    df = calculate_tii(df)
 
-    # ===== CALL (desde zona baja)
-    if prev['tii'] < 20 and last['tii'] > 20:
-        return "call"
+    for i in range(1, len(df)):
+        prev = df.iloc[i - 1]
+        curr = df.iloc[i]
 
-    # ===== PUT (desde zona alta)
-    if prev['tii'] > 80 and last['tii'] < 80:
-        return "put"
+        # 🔥 CALL → cruza 20 hacia arriba
+        if prev['tii'] < 20 and curr['tii'] > 20:
+            return "call"
+
+        # 🔥 PUT → cruza 80 hacia abajo
+        if prev['tii'] > 80 and curr['tii'] < 80:
+            return "put"
 
     return None
