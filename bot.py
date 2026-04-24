@@ -5,15 +5,15 @@ import pandas as pd
 from datetime import datetime, timezone
 
 from iqoptionapi.stable_api import IQ_Option
-from estrategia import detect_block_signal
+from estrategia import detect_signal
 
 # ================= CONFIG =================
 
 PAIRS = ["EURUSD", "EURJPY", "GBPUSD", "USDCHF", "EURGBP"]
 
-TIMEFRAME = 60       # velas de 1 minuto
-EXPIRATION = 30      # 30 minutos
-AMOUNT = 1           # $1
+TIMEFRAME = 60
+EXPIRATION = 30
+AMOUNT = 1
 
 EMAIL = os.getenv("IQ_EMAIL")
 PASSWORD = os.getenv("IQ_PASSWORD")
@@ -39,7 +39,6 @@ def send(msg):
 
 iq = IQ_Option(EMAIL, PASSWORD)
 
-# 🔥 eliminar error underlying
 try:
     iq.api.digital_option = None
     iq.get_digital_underlying_list_data = lambda: {"underlying": []}
@@ -56,16 +55,16 @@ def reconnect():
         iq.connect()
         iq.change_balance("PRACTICE")
 
-def get_block_candles(pair):
-    candles = iq.get_candles(pair, 60, 60, time.time())
+def get_candles(pair):
+    candles = iq.get_candles(pair, 60, 150, time.time())
 
-    if not candles or len(candles) < 30:
+    if not candles or len(candles) < 100:
         return None
 
     df = pd.DataFrame(candles)
     df.rename(columns={"max": "high", "min": "low"}, inplace=True)
 
-    return df.tail(30)
+    return df
 
 def get_block_id():
     now = datetime.now(timezone.utc)
@@ -89,8 +88,8 @@ def trade(pair, direction):
 
 # ================= INICIO =================
 
-print("🔥 BOT TII 30M REAL ACTIVO")
-send("🔥 BOT TII 30M REAL ACTIVADO")
+print("🔥 BOT TII MEJORADO ACTIVO")
+send("🔥 BOT TII MEJORADO ACTIVADO")
 
 # ================= LOOP =================
 
@@ -100,29 +99,28 @@ while True:
 
         current_block = get_block_id()
 
-        # NUEVO BLOQUE
         if current_block != last_block:
 
             last_block = current_block
 
-            # 🔥 EJECUTAR OPERACIÓN
+            # EJECUTAR
             if pending_signal:
                 pair, direction = pending_signal
                 trade(pair, direction)
                 pending_signal = None
 
-            # 🔍 ANALIZAR BLOQUE QUE TERMINÓ
+            # ANALIZAR TODOS LOS PARES
             for pair in PAIRS:
 
-                df = get_block_candles(pair)
+                df = get_candles(pair)
                 if df is None:
                     continue
 
-                signal = detect_block_signal(df)
+                signal = detect_signal(df)
 
                 if signal:
                     pending_signal = (pair, signal)
-                    send(f"📊 {pair} {signal.upper()} DETECTADO → SIGUIENTE BLOQUE")
+                    send(f"📊 {pair} {signal.upper()} DETECTADO")
                     break
 
         time.sleep(1)
