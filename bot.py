@@ -10,8 +10,8 @@ from estrategia import calculate_indicators, check_signal
 # ================= CONFIG =================
 
 TIMEFRAME = 60
-EXPIRATION = 2
-AMOUNT = 1.75
+EXPIRATION = 1
+AMOUNT = 1
 
 EMAIL = os.getenv("IQ_EMAIL")
 PASSWORD = os.getenv("IQ_PASSWORD")
@@ -113,6 +113,14 @@ def get_candles(pair):
     except:
         return None
 
+# 🔥 INVERSIÓN DE SEÑAL
+def invert_signal(signal):
+    if signal == "call":
+        return "put"
+    if signal == "put":
+        return "call"
+    return None
+
 def trade(pair, direction):
     try:
         status, _ = iq.buy(AMOUNT, pair, direction, EXPIRATION)
@@ -129,8 +137,8 @@ def trade(pair, direction):
 
 # ================= INICIO =================
 
-print("🔥 BOT OTC 1M ACTIVO")
-send_telegram("🔥 BOT OTC 1M ACTIVO")
+print("🔥 BOT OTC 1M INVERTIDO ACTIVO")
+send_telegram("🔥 BOT OTC 1M INVERTIDO ACTIVO")
 
 # ================= LOOP =================
 
@@ -158,14 +166,17 @@ while True:
 
             last_candle[pair] = current_candle
 
-            # 🔥 EJECUTAR
+            # ================= EJECUTAR =================
             if pair in pending_signal:
                 direction = pending_signal[pair]
+
+                print(f"🚀 Ejecutando {pair} {direction}")
                 trade(pair, direction)
+
                 del pending_signal[pair]
                 continue
 
-            # 🔍 ANALIZAR
+            # ================= ANALIZAR =================
             df = get_candles(pair)
             if df is None or len(df) < 50:
                 continue
@@ -174,8 +185,11 @@ while True:
             signal = check_signal(df)
 
             if signal:
-                pending_signal[pair] = signal
-                send_telegram(f"📡 {pair} {signal.upper()} → SIGUIENTE VELA")
+                inverted = invert_signal(signal)
+
+                if inverted:
+                    pending_signal[pair] = inverted
+                    send_telegram(f"📡 {pair} {inverted.upper()} (INVERTIDO) → SIGUIENTE VELA")
 
         time.sleep(0.5)
 
