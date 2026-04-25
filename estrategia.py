@@ -1,53 +1,58 @@
-import pandas as pd
+import numpy as np
 
-# ================= INDICADORES =================
-
-def calculate(df):
-    df['ema50'] = df['close'].ewm(span=50).mean()
-
-    # fuerza de vela
-    df['body'] = abs(df['close'] - df['open'])
-
-    # volatilidad simple
-    df['volatility'] = df['high'] - df['low']
-
-    return df
-
-
-# ================= SCORE =================
-
-def evaluate_pair(df):
-    df = calculate(df)
-
-    if len(df) < 60:
+def calcular_tii(close_prices, periodo=20):
+    if len(close_prices) < periodo:
         return None
 
-    c = df.iloc[-2]  # vela cerrada
+    ma = np.mean(close_prices[-periodo:])
+    diff = close_prices[-periodo:] - ma
 
-    score = 0
-    direction = None
+    positivos = np.sum(diff[diff > 0]) if np.any(diff > 0) else 0
+    negativos = abs(np.sum(diff[diff < 0])) if np.any(diff < 0) else 0
 
-    # 🔥 TENDENCIA
-    if c['close'] > c['ema50']:
-        direction = "call"
-        score += 1
-    elif c['close'] < c['ema50']:
-        direction = "put"
-        score += 1
+    if positivos + negativos == 0:
+        return 50
 
-    # 🔥 PULLBACK (precio cerca EMA)
-    if abs(c['close'] - c['ema50']) < 0.0005:
-        score += 1
+    tii = (positivos / (positivos + negativos)) * 100
+    return tii
 
-    # 🔥 FUERZA
-    if c['body'] > 0.0003:
-        score += 1
 
-    # 🔥 VOLATILIDAD
-    if c['volatility'] > 0.0006:
-        score += 1
+def detectar_cruce(tii_actual, tii_anterior):
+    señal = None
+    fuerza = abs(tii_actual - tii_anterior)
 
-    return {
-        "score": score,
-        "direction": direction
-    }
+    # CRUCE DESDE ABAJO (COMPRA)
+    if tii_anterior < 20 and tii_actual > 20:
+        señal = "call"
+
+    # CRUCE DESDE ARRIBA (VENTA)
+    elif tii_anterior > 80 and tii_actual < 80:
+        señal = "put"
+
+    return señal, fuerza
+
+
+def detect_signal(candles):
+    try:
+        close_prices = np.array([c["close"] for c in candles])
+
+        tii_actual = calcular_tii(close_prices)
+        tii_anterior = calcular_tii(close_prices[:-1])
+
+        if tii_actual is None or tii_anterior is None:
+            return None
+
+        señal, fuerza = detectar_cruce(tii_actual, tii_anterior)
+
+        if señal:
+            return {
+                "signal": señal,
+                "strength": fuerza,
+                "tii": tii_actual
+            }
+
+        return None
+
+    except Exception as e:
+        print(f"❌ Error estrategia: {e}")
+        return None
