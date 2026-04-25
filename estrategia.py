@@ -1,47 +1,53 @@
 import pandas as pd
 
-PERIOD = 60
+# ================= INDICADORES =================
 
-def calculate_tii(df):
-    close = df['close']
+def calculate(df):
+    df['ema50'] = df['close'].ewm(span=50).mean()
 
-    ma = close.rolling(PERIOD).mean()
-    dev = close - ma
+    # fuerza de vela
+    df['body'] = abs(df['close'] - df['open'])
 
-    pos = dev.copy()
-    neg = dev.copy()
-
-    pos[pos < 0] = 0
-    neg[neg > 0] = 0
-
-    sum_pos = pos.rolling(PERIOD).sum()
-    sum_neg = abs(neg.rolling(PERIOD).sum())
-
-    df['tii'] = 100 * (sum_pos / (sum_pos + sum_neg))
+    # volatilidad simple
+    df['volatility'] = df['high'] - df['low']
 
     return df
 
 
-def detect_signal(df):
-    """
-    Detecta cruce en últimas velas del bloque
-    """
+# ================= SCORE =================
 
-    df = calculate_tii(df)
+def evaluate_pair(df):
+    df = calculate(df)
 
-    # revisar últimas 10 velas (más flexible)
-    recent = df.tail(10)
+    if len(df) < 60:
+        return None
 
-    for i in range(1, len(recent)):
-        prev = recent.iloc[i - 1]
-        curr = recent.iloc[i]
+    c = df.iloc[-2]  # vela cerrada
 
-        # CALL
-        if prev['tii'] < 20 and curr['tii'] > 20:
-            return "call"
+    score = 0
+    direction = None
 
-        # PUT
-        if prev['tii'] > 80 and curr['tii'] < 80:
-            return "put"
+    # 🔥 TENDENCIA
+    if c['close'] > c['ema50']:
+        direction = "call"
+        score += 1
+    elif c['close'] < c['ema50']:
+        direction = "put"
+        score += 1
 
-    return None
+    # 🔥 PULLBACK (precio cerca EMA)
+    if abs(c['close'] - c['ema50']) < 0.0005:
+        score += 1
+
+    # 🔥 FUERZA
+    if c['body'] > 0.0003:
+        score += 1
+
+    # 🔥 VOLATILIDAD
+    if c['volatility'] > 0.0006:
+        score += 1
+
+    return {
+        "score": score,
+        "direction": direction
+    }
