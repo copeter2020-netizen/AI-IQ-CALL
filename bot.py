@@ -2,7 +2,7 @@ import time
 import os
 import requests
 import pandas as pd
-from datetime import datetime, timezone
+import threading
 
 from iqoptionapi.stable_api import IQ_Option
 from estrategia import calculate_indicators, check_signal
@@ -10,7 +10,7 @@ from estrategia import calculate_indicators, check_signal
 # ================= CONFIG =================
 
 TIMEFRAME = 60
-EXPIRATION = 5  # 🔥 1 MINUTO
+EXPIRATION = 1
 AMOUNT = 1
 
 EMAIL = os.getenv("IQ_EMAIL")
@@ -20,6 +20,15 @@ CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 last_candle = {}
 pending_signal = {}
+
+# ================= FIX THREAD ERROR =================
+
+def ignore_thread_error(args):
+    if "underlying" in str(args.exc_value):
+        return
+    print("Thread error:", args)
+
+threading.excepthook = ignore_thread_error
 
 # ================= TELEGRAM =================
 
@@ -33,35 +42,62 @@ def send_telegram(msg):
     except:
         pass
 
-# ================= IQ OPTION =================
+# ================= CONEXIÓN =================
 
-iq = IQ_Option(EMAIL, PASSWORD)
-iq.connect()
-iq.change_balance("PRACTICE")
+def connect_iq():
+    iq = IQ_Option(EMAIL, PASSWORD)
+
+    print("🔌 Conectando...")
+    iq.connect()
+
+    if not iq.check_connect():
+        print("❌ Error conexión")
+        return None
+
+    iq.change_balance("PRACTICE")
+    print("✅ Conectado")
+
+    return iq
+
+iq = connect_iq()
+
+# ================= FIX UNDERLYING =================
+
+def safe_get_underlying():
+    try:
+        data = iq.get_digital_underlying_list_data()
+        if not data or "underlying" not in data:
+            return {"underlying": []}
+        return data
+    except:
+        return {"underlying": []}
+
+if iq:
+    iq.get_digital_underlying_list_data = safe_get_underlying
 
 # ================= FUNCIONES =================
 
 def reconnect():
-    if not iq.check_connect():
-        print("Reconectando...")
-        iq.connect()
-        iq.change_balance("PRACTICE")
+    global iq
+    if iq is None or not iq.check_connect():
+        print("♻️ Reconectando...")
+        iq = connect_iq()
+
+        if iq:
+            iq.get_digital_underlying_list_data = safe_get_underlying
 
 def get_all_otc_pairs():
-    """Obtiene TODOS los pares OTC abiertos"""
     try:
-        all_assets = iq.get_all_open_time()
+        data = iq.get_all_open_time()
         pairs = []
 
-        for market in all_assets:
-            for pair in all_assets[market]:
-                if "OTC" in pair and all_assets[market][pair]["open"]:
-                    pairs.append(pair)
+        for pair in data["binary"]:
+            if "OTC" in pair and data["binary"][pair]["open"]:
+                pairs.append(pair)
 
         return pairs
 
-    except Exception as e:
-        print("Error obteniendo pares:", e)
+    except:
         return []
 
 def get_candles(pair):
@@ -93,8 +129,8 @@ def trade(pair, direction):
 
 # ================= INICIO =================
 
-print("🔥 BOT OTC SCANNER 1M ACTIVO")
-send_telegram("🔥 BOT OTC SCANNER 1M ACTIVO")
+print("🔥 BOT OTC 1M ACTIVO")
+send_telegram("🔥 BOT OTC 1M ACTIVO")
 
 # ================= LOOP =================
 
@@ -102,10 +138,13 @@ while True:
     try:
         reconnect()
 
+        if iq is None:
+            time.sleep(3)
+            continue
+
         pairs = get_all_otc_pairs()
 
         if not pairs:
-            print("No hay pares OTC abiertos")
             time.sleep(5)
             continue
 
@@ -114,13 +153,12 @@ while True:
 
         for pair in pairs:
 
-            # evitar repetir vela
             if pair in last_candle and last_candle[pair] == current_candle:
                 continue
 
             last_candle[pair] = current_candle
 
-            # 🔥 EJECUTAR SI HAY SEÑAL PENDIENTE
+            # 🔥 EJECUTAR
             if pair in pending_signal:
                 direction = pending_signal[pair]
                 trade(pair, direction)
@@ -137,9 +175,7 @@ while True:
 
             if signal:
                 pending_signal[pair] = signal
-                msg = f"📡 {pair} {signal.upper()} PREPARADO (SIGUIENTE VELA)"
-                print(msg)
-                send_telegram(msg)
+                send_telegram(f"📡 {pair} {signal.upper()} → SIGUIENTE VELA")
 
         time.sleep(0.5)
 
