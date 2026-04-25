@@ -8,14 +8,26 @@ PASSWORD = "TU_PASSWORD"
 AMOUNT = 1
 EXPIRATION = 5  # minutos
 
-iq = IQ_Option(EMAIL, PASSWORD)
-iq.connect()
+def conectar():
+    while True:
+        try:
+            print("🔌 Conectando a IQ Option...")
+            iq = IQ_Option(EMAIL, PASSWORD)
+            iq.connect()
 
-if not iq.check_connect():
-    print("❌ Error conectando")
-    exit()
+            if iq.check_connect():
+                print("✅ Conectado correctamente")
+                return iq
+            else:
+                print("❌ Falló conexión, reintentando en 5s...")
+                time.sleep(5)
 
-print("✅ Conectado correctamente")
+        except Exception as e:
+            print(f"❌ Error conexión: {e}")
+            time.sleep(5)
+
+
+iq = conectar()
 
 
 def obtener_pares():
@@ -65,7 +77,13 @@ def analizar_par(par):
 
 def ejecutar_trade(par, direccion):
     try:
-        status, id = iq.buy_digital_spot(par, AMOUNT, direccion, EXPIRATION)
+        # Verificar conexión antes de operar
+        if not iq.check_connect():
+            print("⚠️ Reconectando...")
+            global iq
+            iq = conectar()
+
+        status, trade_id = iq.buy_digital_spot(par, AMOUNT, direccion, EXPIRATION)
 
         if status:
             print(f"🚀 OPERANDO {par} {direccion.upper()} (${AMOUNT})")
@@ -80,6 +98,11 @@ print("🔥 BOT SCANNER ACTIVO (5M)")
 
 while True:
     try:
+        # Verifica conexión constantemente
+        if not iq.check_connect():
+            print("⚠️ Conexión perdida, reconectando...")
+            iq = conectar()
+
         pares = obtener_pares()
 
         mejor = None
