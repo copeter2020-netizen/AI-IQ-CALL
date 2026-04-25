@@ -1,135 +1,104 @@
 import time
-import os
-import requests
-import pandas as pd
-from datetime import datetime
-
 from iqoptionapi.stable_api import IQ_Option
-from estrategia import evaluate_pair
+from estrategia import detect_signal
 
-# ================= CONFIG =================
+EMAIL = "TU_CORREO"
+PASSWORD = "TU_PASSWORD"
 
-PAIRS = [
-    "EURUSD", "EURJPY", "GBPUSD",
-    "USDCHF", "EURGBP", "AUDUSD",
-    "USDJPY", "GBPJPY"
-]
-
-TIMEFRAME = 60
-EXPIRATION = 5   # 🔥 5 minutos
 AMOUNT = 1
-
-EMAIL = os.getenv("IQ_EMAIL")
-PASSWORD = os.getenv("IQ_PASSWORD")
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
-
-last_trade_time = 0
-
-# ================= TELEGRAM =================
-
-def send(msg):
-    try:
-        requests.post(
-            f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
-            data={"chat_id": CHAT_ID, "text": msg},
-            timeout=5
-        )
-    except:
-        pass
-
-# ================= IQ =================
+EXPIRATION = 5  # minutos
 
 iq = IQ_Option(EMAIL, PASSWORD)
-
-try:
-    iq.api.digital_option = None
-    iq.get_digital_underlying_list_data = lambda: {"underlying": []}
-except:
-    pass
-
 iq.connect()
-iq.change_balance("PRACTICE")
 
-# ================= FUNCIONES =================
+if not iq.check_connect():
+    print("❌ Error conectando")
+    exit()
 
-def reconnect():
-    if not iq.check_connect():
-        iq.connect()
-        iq.change_balance("PRACTICE")
+print("✅ Conectado correctamente")
 
-def get_candles(pair):
-    candles = iq.get_candles(pair, TIMEFRAME, 100, time.time())
 
-    if not candles:
-        return None
-
-    df = pd.DataFrame(candles)
-    df.rename(columns={"max": "high", "min": "low"}, inplace=True)
-
-    return df
-
-# ================= TRADE =================
-
-def trade(pair, direction):
+def obtener_pares():
     try:
-        status, _ = iq.buy(AMOUNT, pair, direction, EXPIRATION)
+        activos = iq.get_all_ACTIVES_OPCODE()
+        abiertos = iq.get_all_open_time()
 
-        if status:
-            msg = f"🔥 {pair} {direction.upper()} (5M)"
-            print(msg)
-            send(msg)
-        else:
-            print("❌ Falló trade")
+        pares = []
+
+        for par in activos:
+            try:
+                if abiertos["digital"][par]["open"]:
+                    pares.append(par)
+            except:
+                continue
+
+        return pares
 
     except Exception as e:
-        print("Trade error:", e)
+        print(f"❌ Error obteniendo pares: {e}")
+        return []
 
-# ================= INICIO =================
+
+def analizar_par(par):
+    try:
+        candles = iq.get_candles(par, 60, 50, time.time())
+
+        if not candles:
+            return None
+
+        señal = detect_signal(candles)
+
+        if señal:
+            print(f"📊 {par} | Señal: {señal['signal']} | Fuerza: {señal['strength']:.2f}")
+            return {
+                "par": par,
+                "signal": señal["signal"],
+                "strength": señal["strength"]
+            }
+
+        return None
+
+    except Exception as e:
+        print(f"❌ Error analizando {par}: {e}")
+        return None
+
+
+def ejecutar_trade(par, direccion):
+    try:
+        status, id = iq.buy_digital_spot(par, AMOUNT, direccion, EXPIRATION)
+
+        if status:
+            print(f"🚀 OPERANDO {par} {direccion.upper()} (${AMOUNT})")
+        else:
+            print(f"❌ Falló trade en {par}")
+
+    except Exception as e:
+        print(f"❌ Error ejecutando trade: {e}")
+
 
 print("🔥 BOT SCANNER ACTIVO (5M)")
-send("🔥 BOT SCANNER 5M ACTIVADO")
-
-# ================= LOOP =================
 
 while True:
     try:
-        reconnect()
+        pares = obtener_pares()
 
-        best = None
+        mejor = None
 
-        # 🔍 ESCANEAR TODOS LOS PARES
-        for pair in PAIRS:
+        for par in pares:
+            data = analizar_par(par)
 
-            df = get_candles(pair)
-            if df is None:
-                continue
+            if data:
+                if mejor is None or data["strength"] > mejor["strength"]:
+                    mejor = data
 
-            result = evaluate_pair(df)
-
-            if result is None:
-                continue
-
-            if best is None or result["score"] > best["score"]:
-                best = {
-                    "pair": pair,
-                    "score": result["score"],
-                    "direction": result["direction"]
-                }
-
-        # 🔥 ENTRAR SOLO SI ES BUENA
-        if best and best["score"] >= 3:
-
-            now = time.time()
-
-            # evitar sobreoperar
-            if now - last_trade_time > 300:
-
-                trade(best["pair"], best["direction"])
-                last_trade_time = now
+        if mejor:
+            print(f"🏆 MEJOR PAR: {mejor['par']} | Señal: {mejor['signal']}")
+            ejecutar_trade(mejor["par"], mejor["signal"])
+        else:
+            print("⏳ Sin oportunidades claras...")
 
         time.sleep(10)
 
     except Exception as e:
-        print("Error:", e)
+        print(f"❌ Error general: {e}")
         time.sleep(5)
