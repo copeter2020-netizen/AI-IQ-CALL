@@ -2,7 +2,6 @@ import time
 import os
 import requests
 import pandas as pd
-from datetime import datetime, timezone
 
 from iqoptionapi.stable_api import IQ_Option
 from estrategia import calculate_indicators, check_signal
@@ -11,9 +10,9 @@ from estrategia import calculate_indicators, check_signal
 
 PAIRS = ["EURUSD", "EURJPY", "GBPUSD", "USDCHF", "EURGBP"]
 
-TIMEFRAME = 60          # velas de 1 minuto
-EXPIRATION = 4          # expiración 4 minutos
-AMOUNT = 1              # 1 dólar
+TIMEFRAME = 60
+EXPIRATION = 5
+AMOUNT = 2
 
 EMAIL = os.getenv("IQ_EMAIL")
 PASSWORD = os.getenv("IQ_PASSWORD")
@@ -35,12 +34,12 @@ def send_telegram(msg):
     except Exception as e:
         print("Telegram error:", e)
 
-# ================= IQ OPTION =================
+# ================= CONEXIÓN =================
 
 def connect_iq():
     iq = IQ_Option(EMAIL, PASSWORD)
 
-    print("🔌 Conectando...")
+    print("🔌 Conectando a IQ Option...")
     iq.connect()
 
     if not iq.check_connect():
@@ -49,8 +48,8 @@ def connect_iq():
         return None
 
     iq.change_balance("PRACTICE")
-    print("✅ Conectado")
-    send_telegram("✅ Bot conectado a IQ Option")
+    print("✅ Conectado correctamente")
+    send_telegram("✅ Bot conectado")
 
     return iq
 
@@ -77,7 +76,7 @@ def get_candles(pair):
         return df
 
     except Exception as e:
-        print(f"Error obteniendo velas {pair}:", e)
+        print(f"Error velas {pair}:", e)
         return None
 
 def is_asset_open(pair):
@@ -111,7 +110,7 @@ def trade(pair, direction):
 print("🔥 BOT TII NEXT CANDLE ACTIVO ($1)")
 send_telegram("🔥 BOT TII NEXT CANDLE ACTIVO ($1)")
 
-# ================= LOOP =================
+# ================= LOOP PRINCIPAL =================
 
 while True:
     try:
@@ -121,21 +120,21 @@ while True:
             time.sleep(3)
             continue
 
-        # Tiempo del servidor
+        # Tiempo servidor IQ
         server_time = iq.get_server_timestamp()
         current_candle = server_time // 60
 
         for pair in PAIRS:
 
-            # Ejecutar solo en nueva vela
+            # Solo ejecutar en nueva vela
             if pair in last_candle and last_candle[pair] == current_candle:
                 continue
 
             last_candle[pair] = current_candle
 
-            print(f"\n📊 Nueva vela detectada: {pair}")
+            print(f"\n📊 Nueva vela: {pair}")
 
-            # ================= EJECUTAR SEÑAL =================
+            # ================= EJECUTAR =================
             if pair in pending_signal:
                 direction = pending_signal[pair]
 
@@ -156,7 +155,7 @@ while True:
             if signal:
                 pending_signal[pair] = signal
 
-                msg = f"📡 {pair} {signal.upper()} DETECTADO → ENTRADA SIGUIENTE VELA"
+                msg = f"📡 {pair} {signal.upper()} DETECTADO → SIGUIENTE VELA"
                 print(msg)
                 send_telegram(msg)
 
