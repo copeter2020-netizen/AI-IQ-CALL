@@ -17,8 +17,14 @@ def conectar():
             iq = IQ_Option(EMAIL, PASSWORD)
             iq.connect()
 
+            # 👇 Forzar sesión (importante en algunos casos)
+            try:
+                iq.change_balance("PRACTICE")
+            except:
+                pass
+
             if iq.check_connect():
-                print("✅ Conectado")
+                print("✅ Conectado correctamente")
                 return iq
             else:
                 print("❌ Falló conexión, reintentando...")
@@ -31,12 +37,17 @@ def conectar():
 
 # 🔄 VERIFICAR CONEXIÓN
 def asegurar_conexion(iq):
-    if not iq.check_connect():
-        print("⚠️ Reconectando...")
+    try:
+        if not iq.check_connect():
+            print("⚠️ Conexión perdida, reconectando...")
+            return conectar()
+    except:
         return conectar()
+
     return iq
 
 
+# 📊 OBTENER PARES ABIERTOS
 def obtener_pares(iq):
     try:
         iq = asegurar_conexion(iq)
@@ -56,10 +67,11 @@ def obtener_pares(iq):
         return pares
 
     except Exception as e:
-        print(f"❌ Error pares: {e}")
+        print(f"❌ Error obteniendo pares: {e}")
         return []
 
 
+# 🔍 ANALIZAR PAR
 def analizar_par(iq, par):
     try:
         iq = asegurar_conexion(iq)
@@ -72,7 +84,7 @@ def analizar_par(iq, par):
         señal = detect_signal(candles)
 
         if señal:
-            print(f"📊 {par} | {señal['signal']} | fuerza {señal['strength']:.2f}")
+            print(f"📊 {par} | Señal: {señal['signal']} | Fuerza: {señal['strength']:.2f}")
             return {
                 "par": par,
                 "signal": señal["signal"],
@@ -82,10 +94,11 @@ def analizar_par(iq, par):
         return None
 
     except Exception as e:
-        print(f"❌ Error {par}: {e}")
+        print(f"❌ Error analizando {par}: {e}")
         return None
 
 
+# 🚀 EJECUTAR TRADE
 def ejecutar_trade(iq, par, direccion):
     try:
         iq = asegurar_conexion(iq)
@@ -93,18 +106,18 @@ def ejecutar_trade(iq, par, direccion):
         status, trade_id = iq.buy_digital_spot(par, AMOUNT, direccion, EXPIRATION)
 
         if status:
-            print(f"🚀 TRADE {par} {direccion.upper()} (${AMOUNT})")
+            print(f"🚀 OPERANDO {par} {direccion.upper()} (${AMOUNT})")
         else:
             print(f"❌ Falló trade en {par}")
 
         return iq
 
     except Exception as e:
-        print(f"❌ Error trade: {e}")
+        print(f"❌ Error ejecutando trade: {e}")
         return iq
 
 
-# 🚀 INICIO
+# 🚀 INICIO DEL BOT
 iq = conectar()
 
 print("🔥 BOT SCANNER ACTIVO (5M)")
@@ -125,10 +138,10 @@ while True:
                     mejor = data
 
         if mejor:
-            print(f"🏆 MEJOR: {mejor['par']} {mejor['signal']}")
+            print(f"🏆 MEJOR PAR: {mejor['par']} | Señal: {mejor['signal']}")
             iq = ejecutar_trade(iq, mejor["par"], mejor["signal"])
         else:
-            print("⏳ Sin señales...")
+            print("⏳ Sin oportunidades claras...")
 
         time.sleep(10)
 
