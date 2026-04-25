@@ -1,58 +1,66 @@
-import numpy as np
+import pandas as pd
 
-def calcular_tii(close_prices, periodo=20):
-    if len(close_prices) < periodo:
-        return None
+# ==============================
+# 🔥 INDICADOR TII (REAL)
+# ==============================
 
-    ma = np.mean(close_prices[-periodo:])
-    diff = close_prices[-periodo:] - ma
-
-    positivos = np.sum(diff[diff > 0]) if np.any(diff > 0) else 0
-    negativos = abs(np.sum(diff[diff < 0])) if np.any(diff < 0) else 0
-
-    if positivos + negativos == 0:
-        return 50
-
-    tii = (positivos / (positivos + negativos)) * 100
-    return tii
-
-
-def detectar_cruce(tii_actual, tii_anterior):
-    señal = None
-    fuerza = abs(tii_actual - tii_anterior)
-
-    # CRUCE DESDE ABAJO (COMPRA)
-    if tii_anterior < 20 and tii_actual > 20:
-        señal = "call"
-
-    # CRUCE DESDE ARRIBA (VENTA)
-    elif tii_anterior > 80 and tii_actual < 80:
-        señal = "put"
-
-    return señal, fuerza
-
-
-def detect_signal(candles):
+def calculate_indicators(df):
     try:
-        close_prices = np.array([c["close"] for c in candles])
+        close = df["close"]
 
-        tii_actual = calcular_tii(close_prices)
-        tii_anterior = calcular_tii(close_prices[:-1])
+        period = 60
 
-        if tii_actual is None or tii_anterior is None:
+        # Media móvil
+        ma = close.rolling(period).mean()
+
+        # Diferencia
+        diff = close - ma
+
+        # Separar positivos y negativos
+        positive = diff.clip(lower=0)
+        negative = (-diff).clip(lower=0)
+
+        sum_pos = positive.rolling(period).sum()
+        sum_neg = negative.rolling(period).sum()
+
+        # Evitar división por cero
+        tii = 100 * (sum_pos / (sum_pos + sum_neg + 1e-9))
+
+        df["tii"] = tii
+
+        return df
+
+    except Exception as e:
+        print("Error en indicadores:", e)
+        return df
+
+
+# ==============================
+# 🎯 SEÑALES
+# ==============================
+
+def check_signal(df):
+    try:
+        if "tii" not in df.columns:
             return None
 
-        señal, fuerza = detectar_cruce(tii_actual, tii_anterior)
+        # Asegurar suficientes datos
+        if len(df) < 3:
+            return None
 
-        if señal:
-            return {
-                "signal": señal,
-                "strength": fuerza,
-                "tii": tii_actual
-            }
+        prev = df["tii"].iloc[-2]
+        curr = df["tii"].iloc[-1]
+
+        # 🟢 CALL → cruza desde abajo 20 hacia arriba
+        if prev < 20 and curr > 20:
+            return "call"
+
+        # 🔴 PUT → cruza desde arriba 80 hacia abajo
+        if prev > 80 and curr < 80:
+            return "put"
 
         return None
 
     except Exception as e:
-        print(f"❌ Error estrategia: {e}")
+        print("Error en señal:", e)
         return None
