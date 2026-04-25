@@ -11,9 +11,9 @@ from estrategia import calculate_indicators, check_signal
 
 PAIRS = ["EURUSD", "EURJPY", "GBPUSD", "USDCHF", "EURGBP"]
 
-TIMEFRAME = 60
-EXPIRATION = 5
-AMOUNT = 1
+TIMEFRAME = 60          # velas de 1 minuto
+EXPIRATION = 4          # expiración 4 minutos
+AMOUNT = 1              # 1 dólar
 
 EMAIL = os.getenv("IQ_EMAIL")
 PASSWORD = os.getenv("IQ_PASSWORD")
@@ -40,17 +40,17 @@ def send_telegram(msg):
 def connect_iq():
     iq = IQ_Option(EMAIL, PASSWORD)
 
-    print("🔌 Conectando a IQ Option...")
+    print("🔌 Conectando...")
     iq.connect()
 
     if not iq.check_connect():
-        print("❌ Error conectando")
+        print("❌ Error de conexión")
         send_telegram("❌ Error conectando a IQ Option")
         return None
 
     iq.change_balance("PRACTICE")
-    print("✅ Conectado correctamente")
-    send_telegram("✅ Bot conectado correctamente")
+    print("✅ Conectado")
+    send_telegram("✅ Bot conectado a IQ Option")
 
     return iq
 
@@ -67,21 +67,23 @@ def reconnect():
 def get_candles(pair):
     try:
         candles = iq.get_candles(pair, TIMEFRAME, 120, time.time())
+
         if not candles:
             return None
 
         df = pd.DataFrame(candles)
         df.rename(columns={"max": "high", "min": "low"}, inplace=True)
+
         return df
 
     except Exception as e:
-        print(f"Error candles {pair}:", e)
+        print(f"Error obteniendo velas {pair}:", e)
         return None
 
 def is_asset_open(pair):
     try:
-        open_assets = iq.get_all_open_time()
-        return open_assets["binary"][pair]["open"]
+        assets = iq.get_all_open_time()
+        return assets["binary"][pair]["open"]
     except:
         return False
 
@@ -91,7 +93,7 @@ def trade(pair, direction):
             print(f"⛔ {pair} cerrado")
             return
 
-        status, id = iq.buy(AMOUNT, pair, direction, EXPIRATION)
+        status, trade_id = iq.buy(AMOUNT, pair, direction, EXPIRATION)
 
         if status:
             msg = f"🔥 {pair} {direction.upper()} EJECUTADO ($1)"
@@ -102,7 +104,7 @@ def trade(pair, direction):
             send_telegram(f"❌ Falló trade {pair}")
 
     except Exception as e:
-        print("Trade error:", e)
+        print("Error en trade:", e)
 
 # ================= INICIO =================
 
@@ -119,24 +121,25 @@ while True:
             time.sleep(3)
             continue
 
+        # Tiempo del servidor
         server_time = iq.get_server_timestamp()
         current_candle = server_time // 60
 
         for pair in PAIRS:
 
-            # SOLO CUANDO CAMBIA VELA
+            # Ejecutar solo en nueva vela
             if pair in last_candle and last_candle[pair] == current_candle:
                 continue
 
             last_candle[pair] = current_candle
 
-            print(f"\n📊 Nueva vela: {pair}")
+            print(f"\n📊 Nueva vela detectada: {pair}")
 
-            # ================= EJECUTAR =================
+            # ================= EJECUTAR SEÑAL =================
             if pair in pending_signal:
                 direction = pending_signal[pair]
 
-                print(f"🚀 Ejecutando señal {pair} {direction}")
+                print(f"🚀 Ejecutando {pair} {direction}")
                 trade(pair, direction)
 
                 del pending_signal[pair]
@@ -153,7 +156,7 @@ while True:
             if signal:
                 pending_signal[pair] = signal
 
-                msg = f"📡 {pair} {signal.upper()} DETECTADO → SIGUIENTE VELA"
+                msg = f"📡 {pair} {signal.upper()} DETECTADO → ENTRADA SIGUIENTE VELA"
                 print(msg)
                 send_telegram(msg)
 
