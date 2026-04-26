@@ -8,7 +8,7 @@ import logging
 from iqoptionapi.stable_api import IQ_Option
 from estrategia import calculate_indicators, check_signal, score_pair
 
-# 🔇 quitar spam
+# 🔇 sin spam
 logging.getLogger().setLevel(logging.CRITICAL)
 sys.stderr = open(os.devnull, 'w')
 
@@ -24,7 +24,6 @@ RISK = 0.03
 last_candle = 0
 pending = []
 
-# ================= TELEGRAM =================
 def send(msg):
     try:
         requests.post(
@@ -36,6 +35,7 @@ def send(msg):
         pass
 
 # ================= IQ =================
+
 iq = IQ_Option(EMAIL, PASSWORD)
 iq.connect()
 
@@ -45,11 +45,11 @@ if not iq.check_connect():
 
 iq.change_balance("PRACTICE")
 
-# evitar error OTC
+# fix otc error
 iq.get_digital_underlying_list_data = lambda: {"underlying": []}
 
-print("✅ BOT ACTIVO Y OPERANDO")
-send("✅ BOT ACTIVO Y OPERANDO")
+print("✅ BOT CONTEXTO ACTIVO")
+send("✅ BOT CONTEXTO ACTIVO")
 
 # ================= FUNCIONES =================
 
@@ -89,13 +89,14 @@ while True:
         server_time = iq.get_server_timestamp()
         candle = server_time // 60
 
+        # 🔥 SOLO CUANDO CIERRA VELA
         if candle == last_candle:
             time.sleep(0.2)
             continue
 
         last_candle = candle
 
-        # 🔥 EJECUTAR pendientes (SNIPER)
+        # 🔥 ejecutar entradas pendientes
         for pair, direction in pending:
             trade(pair, direction)
 
@@ -117,19 +118,19 @@ while True:
 
             score = score_pair(df)
 
-            # 🔥 FILTRO MÁS FLEXIBLE
+            # 🔥 filtro inteligente
             if score >= 2:
                 signals.append((pair, signal, score))
 
-        # ordenar por calidad
+        # ordenar mejores
         signals = sorted(signals, key=lambda x: x[2], reverse=True)
 
-        # 🔥 máximo 2 trades por vela
+        # máximo 2 trades
         selected = signals[:2]
 
         if selected:
             pending = [(p, s) for p, s, sc in selected]
-            send(f"📡 {len(selected)} señales detectadas")
+            send(f"📡 {len(selected)} setups confirmados")
 
     except:
         time.sleep(1)
