@@ -4,14 +4,13 @@ import requests
 import pandas as pd
 import sys
 import logging
-import random
 
 from datetime import datetime, timezone
 from iqoptionapi.stable_api import IQ_Option
 from estrategia import calculate_indicators, check_signal, score_pair
-from ai_auto import register_trade, allow_trade
+from ai_auto import get_amount, register_trade, allow_trade
 
-# 🔇 silencio total
+# 🔇 silencio
 logging.getLogger().setLevel(logging.CRITICAL)
 sys.stderr = open(os.devnull, 'w')
 
@@ -22,12 +21,9 @@ CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 TIMEFRAME = 60
 EXPIRATION = 1
-AMOUNT = 1000  # 🔥 monto fijo (sin get_amount)
 
 last_candle = 0
 pending = None
-
-# ================= TELEGRAM =================
 
 def send(msg):
     try:
@@ -39,7 +35,7 @@ def send(msg):
     except:
         pass
 
-# ================= IQ OPTION =================
+# ================= IQ =================
 
 iq = IQ_Option(EMAIL, PASSWORD)
 iq.connect()
@@ -47,13 +43,12 @@ iq.connect()
 if not iq.check_connect():
     exit()
 
-iq.change_balance("PRACTICE")
+iq.change_balance("PRACTICE")  # cambia a REAL si quieres
 
-# 🔥 FIX errores OTC
 iq.get_digital_underlying_list_data = lambda: {"underlying": []}
 
-print("✅ BOT SNIPER ACTIVO")
-send("✅ BOT SNIPER ACTIVO")
+print("✅ BOT REAL ACTIVO")
+send("✅ BOT REAL ACTIVO")
 
 # ================= FUNCIONES =================
 
@@ -64,6 +59,12 @@ def reconnect():
             iq.change_balance("PRACTICE")
     except:
         pass
+
+def get_balance():
+    try:
+        return iq.get_balance()
+    except:
+        return 0
 
 def get_pairs():
     try:
@@ -83,14 +84,25 @@ def get_candles(pair):
 
 def trade(pair, direction):
     try:
-        status, _ = iq.buy(AMOUNT, pair, direction, EXPIRATION)
+        balance = get_balance()
+        amount = get_amount(balance)
+
+        status, trade_id = iq.buy(amount, pair, direction, EXPIRATION)
 
         if status:
-            send(f"🔥 {pair} {direction.upper()} (${AMOUNT})")
+            send(f"🔥 {pair} {direction.upper()} ${amount}")
 
-            # 🔥 resultado simulado
-            result = random.choice(["win", "loss"])
-            register_trade(result)
+            # 🔥 esperar resultado real
+            time.sleep(EXPIRATION * 60 + 2)
+
+            result = iq.check_win_v4(trade_id)
+
+            if result > 0:
+                send(f"✅ WIN {pair}")
+                register_trade("win")
+            else:
+                send(f"❌ LOSS {pair}")
+                register_trade("loss")
 
     except:
         pass
@@ -110,7 +122,7 @@ while True:
 
         last_candle = candle
 
-        # 🔥 EJECUCIÓN SNIPER (siguiente vela)
+        # 🔥 ejecutar sniper
         if pending:
             pair, direction = pending
             trade(pair, direction)
@@ -143,7 +155,6 @@ while True:
                 best_pair = pair
                 best_signal = signal
 
-        # 🔥 guardar señal para siguiente vela
         if best_pair and best_score >= 2:
             pending = (best_pair, best_signal)
             send(f"📡 SNIPER READY\n{best_pair} {best_signal.upper()}")
