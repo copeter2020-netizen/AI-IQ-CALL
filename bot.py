@@ -16,21 +16,24 @@ EXPIRATION = 1
 EMAIL = os.getenv("IQ_EMAIL")
 PASSWORD = os.getenv("IQ_PASSWORD")
 
-# ================= IQ =================
+# ================= CONEXIÓN =================
 
 iq = IQ_Option(EMAIL, PASSWORD)
-
-# 🔥 FIX ERROR UNDERLYING
-iq.api.digital_option = None
-iq.get_digital_underlying_list_data = lambda: {"underlying": []}
-
 iq.connect()
+
+if iq.check_connect():
+    print("✅ Conectado a IQ Option")
+else:
+    print("❌ Error conectando")
+    exit()
+
 iq.change_balance("PRACTICE")
 
 # ================= FUNCIONES =================
 
 def reconnect():
     if not iq.check_connect():
+        print("🔄 Reconectando...")
         iq.connect()
         iq.change_balance("PRACTICE")
 
@@ -40,20 +43,29 @@ def get_all_pairs():
         pairs = []
 
         for pair, data in assets["digital"].items():
-            if "OTC" in pair and data["open"]:
+            if data["open"] and "OTC" in pair:
                 pairs.append(pair)
 
         return pairs
-    except:
+
+    except Exception as e:
+        print("Error obteniendo pares:", e)
         return []
 
 def get_candles(pair):
     try:
         candles = iq.get_candles(pair, TIMEFRAME, 100, time.time())
+
+        if not candles:
+            return None
+
         df = pd.DataFrame(candles)
         df.rename(columns={"max": "high", "min": "low"}, inplace=True)
+
         return df
-    except:
+
+    except Exception as e:
+        print(f"Error velas {pair}:", e)
         return None
 
 def trade(pair, direction):
@@ -61,18 +73,20 @@ def trade(pair, direction):
         status, _ = iq.buy(AMOUNT, pair, direction, EXPIRATION)
 
         if status:
-            print(f"🔥 TRADE {pair} {direction}")
+            print(f"🔥 TRADE EJECUTADO → {pair} {direction}")
         else:
-            print(f"❌ Falló {pair}")
+            print(f"❌ Falló trade → {pair}")
 
     except Exception as e:
         print("Error trade:", e)
 
-# ================= BOT =================
+# ================= INICIO =================
 
-print("🔥 BOT SCANNER IA LIGERA ACTIVO")
+print("🔥 BOT SCANNER IA ACTIVO (OTC 1M)")
 
 last_candle = {}
+
+# ================= LOOP =================
 
 while True:
     try:
@@ -80,15 +94,21 @@ while True:
 
         pairs = get_all_pairs()
 
+        if not pairs:
+            print("⚠️ No hay pares disponibles")
+            time.sleep(2)
+            continue
+
+        server_time = iq.get_server_timestamp()
+        current_candle = server_time // 60
+
         for pair in pairs:
 
-            server_time = iq.get_server_timestamp()
-            candle_time = server_time // 60
-
-            if pair in last_candle and last_candle[pair] == candle_time:
+            # evitar repetir misma vela
+            if pair in last_candle and last_candle[pair] == current_candle:
                 continue
 
-            last_candle[pair] = candle_time
+            last_candle[pair] = current_candle
 
             df = get_candles(pair)
             if df is None:
@@ -97,14 +117,14 @@ while True:
             df = calculate_indicators(df)
             signal = check_signal(df)
 
-            # 🔥 IA DECIDE SI OPERAR
+            # IA decide si entrar
             if signal and predict():
 
-                print(f"📊 {pair} señal {signal}")
+                print(f"📊 Señal detectada → {pair} {signal}")
 
                 trade(pair, signal)
 
-                # 🔥 SOLO UNA OPERACIÓN POR CICLO
+                # 🔥 SOLO UNA ENTRADA POR CICLO
                 break
 
         time.sleep(1)
