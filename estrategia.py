@@ -1,7 +1,7 @@
 import pandas as pd
 
 def calculate_indicators(df):
-    return df  # 🔥 sin indicadores
+    return df  # sin indicadores
 
 
 def check_signal(df):
@@ -9,32 +9,22 @@ def check_signal(df):
     last = df.iloc[-2]
     prev = df.iloc[-3]
 
-    body = abs(last["close"] - last["open"])
-    wick_up = last["high"] - max(last["close"], last["open"])
-    wick_down = min(last["close"], last["open"]) - last["low"]
-
-    # ===============================
-    # 🔴 REVERSIÓN VENTA (rechazo arriba)
-    # ===============================
-    if wick_up > body * 2 and last["close"] < last["open"]:
-        return "put"
-
-    # ===============================
-    # 🔵 REVERSIÓN COMPRA (rechazo abajo)
-    # ===============================
-    if wick_down > body * 2 and last["close"] > last["open"]:
-        return "call"
-
-    # ===============================
-    # 🚀 CONTINUIDAD COMPRA (breakout)
-    # ===============================
+    # breakout
     if last["close"] > prev["high"]:
         return "call"
 
-    # ===============================
-    # 🚀 CONTINUIDAD VENTA
-    # ===============================
     if last["close"] < prev["low"]:
+        return "put"
+
+    # reversión
+    body = abs(last["close"] - last["open"])
+    wick_up = last["high"] - max(last["open"], last["close"])
+    wick_down = min(last["open"], last["close"]) - last["low"]
+
+    if wick_down > body * 2:
+        return "call"
+
+    if wick_up > body * 2:
         return "put"
 
     return None
@@ -47,14 +37,29 @@ def score_pair(df):
 
     score = 0
 
+    body = abs(last["close"] - last["open"])
+    range_candle = last["high"] - last["low"]
+
+    # 🔥 fuerza de vela
+    if body > range_candle * 0.6:
+        score += 1
+
+    # 🔥 breakout real
     if last["close"] > prev["high"]:
         score += 2
 
     if last["close"] < prev["low"]:
         score += 2
 
-    body = abs(last["close"] - last["open"])
-    if body > (last["high"] - last["low"]) * 0.6:
+    # 🔥 continuidad
+    if last["close"] > prev["close"]:
         score += 1
+
+    if last["close"] < prev["close"]:
+        score += 1
+
+    # ❌ rango (castigo)
+    if range_candle < (df["high"].iloc[-10:].max() - df["low"].iloc[-10:].min()) * 0.2:
+        score -= 1
 
     return score
