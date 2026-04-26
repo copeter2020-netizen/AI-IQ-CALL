@@ -1,27 +1,36 @@
 import json
 import os
+from datetime import datetime
 
-FILE = "stats.json"
+STATS_FILE = "stats.json"
+TRADES_FILE = "trades.json"
 
-def load():
-    if not os.path.exists(FILE):
-        return {"wins": 0, "losses": 0}
-    with open(FILE, "r") as f:
+def load(file, default):
+    if not os.path.exists(file):
+        return default
+    with open(file, "r") as f:
         return json.load(f)
 
-def allow_trade(score):
-    data = load()
-    total = data["wins"] + data["losses"]
+def save(file, data):
+    with open(file, "w") as f:
+        json.dump(data, f)
 
-    if total < 20:
-        return score >= 3
+def register_trade(pair, direction, result):
 
-    winrate = data["wins"] / total
+    stats = load(STATS_FILE, {"wins":0,"losses":0})
+    trades = load(TRADES_FILE, [])
 
-    if winrate < 0.55:
-        return score >= 4
+    if result == "win":
+        stats["wins"] += 1
+    else:
+        stats["losses"] += 1
 
-    if winrate > 0.65:
-        return score >= 3
+    trades.append({
+        "pair": pair,
+        "direction": direction,
+        "result": result,
+        "time": str(datetime.now())
+    })
 
-    return score >= 4
+    save(STATS_FILE, stats)
+    save(TRADES_FILE, trades)
