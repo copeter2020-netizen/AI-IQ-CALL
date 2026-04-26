@@ -1,7 +1,7 @@
 import json
 import os
 
-FILE = "data.json"
+FILE = "stats.json"
 
 def load():
     if not os.path.exists(FILE):
@@ -9,26 +9,19 @@ def load():
     with open(FILE, "r") as f:
         return json.load(f)
 
-def save(data):
-    with open(FILE, "w") as f:
-        json.dump(data, f)
-
-def predict():
+def allow_trade(score):
     data = load()
     total = data["wins"] + data["losses"]
 
-    if total < 10:
-        return True
+    if total < 20:
+        return score >= 3
 
     winrate = data["wins"] / total
-    return winrate >= 0.55
 
-def save_trade(result):
-    data = load()
+    if winrate < 0.55:
+        return score >= 4
 
-    if result == "win":
-        data["wins"] += 1
-    else:
-        data["losses"] += 1
+    if winrate > 0.65:
+        return score >= 3
 
-    save(data)
+    return score >= 4
