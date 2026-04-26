@@ -1,63 +1,89 @@
 import pandas as pd
 import numpy as np
 
-# ===============================
-# 🔥 CALCULAR INDICADOR TII
-# ===============================
-
 def calculate_indicators(df):
 
-    # Media
+    df['ema200'] = df['close'].ewm(span=200).mean()
+    df['ema_slope'] = df['ema200'].diff()
+
     period = 20
     df['ma'] = df['close'].rolling(period).mean()
-
-    # Diferencia vs media
     df['diff'] = df['close'] - df['ma']
 
-    # Separar positivos y negativos
-    df['pos'] = df['diff'].apply(lambda x: x if x > 0 else 0)
-    df['neg'] = df['diff'].apply(lambda x: abs(x) if x < 0 else 0)
+    df['pos'] = df['diff'].clip(lower=0)
+    df['neg'] = (-df['diff']).clip(lower=0)
 
-    # Sumas
     df['sum_pos'] = df['pos'].rolling(period).sum()
     df['sum_neg'] = df['neg'].rolling(period).sum()
 
-    # TII (0 - 100)
-    df['tii'] = 100 * (df['sum_pos'] / (df['sum_pos'] + df['sum_neg']))
+    df['tii'] = 100 * (df['sum_pos'] / (df['sum_pos'] + df['sum_neg'] + 1e-9))
+
+    df['tr'] = np.maximum(df['high'] - df['low'],
+                 np.maximum(abs(df['high'] - df['close'].shift()),
+                            abs(df['low'] - df['close'].shift())))
+    df['atr'] = df['tr'].rolling(14).mean()
 
     return df
 
 
-# ===============================
-# 🔥 GENERAR SEÑALES
-# ===============================
-
 def check_signal(df):
 
-    if len(df) < 30:
+    if len(df) < 220:
         return None
 
     last = df.iloc[-1]
     prev = df.iloc[-2]
+    prev2 = df.iloc[-3]
 
-    tii_now = last['tii']
-    tii_prev = prev['tii']
+    # volatilidad
+    if last['atr'] < df['atr'].mean():
+        return None
 
-    price_now = last['close']
-    price_prev = prev['close']
+    # fuerza vela
+    body = abs(last['close'] - last['open'])
+    rng = last['high'] - last['low']
+    if rng == 0 or body / rng < 0.55:
+        return None
 
-    # ===============================
-    # 🔥 COMPRA (CALL)
-    # Cruce de abajo hacia arriba del 20
-    # ===============================
-    if tii_prev < 20 and tii_now > 20:
+    trend_up = last['close'] > last['ema200'] and last['ema_slope'] > 0
+    trend_down = last['close'] < last['ema200'] and last['ema_slope'] < 0
+
+    tii_up = prev['tii'] < 25 and last['tii'] > 25
+    tii_down = prev['tii'] > 75 and last['tii'] < 75
+
+    breakout_buy = last['close'] > prev['high']
+    breakout_sell = last['close'] < prev['low']
+
+    if trend_up and tii_up and breakout_buy:
         return "call"
 
-    # ===============================
-    # 🔥 VENTA (PUT)
-    # Cruce de arriba hacia abajo del 80
-    # ===============================
-    if tii_prev > 80 and tii_now < 80:
+    if trend_down and tii_down and breakout_sell:
         return "put"
 
     return None
+
+
+def score_pair(df):
+
+    score = 0
+    last = df.iloc[-1]
+    prev = df.iloc[-2]
+
+    if last['close'] > last['ema200'] or last['close'] < last['ema200']:
+        score += 1
+
+    if prev['tii'] < 25 and last['tii'] > 25:
+        score += 1
+    if prev['tii'] > 75 and last['tii'] < 75:
+        score += 1
+
+    body = abs(last['close'] - last['open'])
+    rng = last['high'] - last['low']
+
+    if rng > 0 and body / rng > 0.6:
+        score += 1
+
+    if last['atr'] > df['atr'].mean():
+        score += 1
+
+    return score
