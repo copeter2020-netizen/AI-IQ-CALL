@@ -2,144 +2,98 @@ import time
 import os
 import requests
 import pandas as pd
-import random
 import sys
 import logging
+import random
 
 from datetime import datetime, timezone
 from iqoptionapi.stable_api import IQ_Option
 from estrategia import calculate_indicators, check_signal, score_pair
-from ai_auto import allow_trade, register_trade
+from ai_auto import get_amount, register_trade, allow_trade
 
-# ================= 🔇 SILENCIAR LOGS =================
-
+# 🔇 silencio total
 logging.getLogger().setLevel(logging.CRITICAL)
 sys.stderr = open(os.devnull, 'w')
 
-# ================= CONFIG =================
+EMAIL = os.getenv("IQ_EMAIL")
+PASSWORD = os.getenv("IQ_PASSWORD")
+TOKEN = os.getenv("TELEGRAM_TOKEN")
+CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 TIMEFRAME = 60
 EXPIRATION = 1
-AMOUNT = 12
-
-EMAIL = os.getenv("IQ_EMAIL")
-PASSWORD = os.getenv("IQ_PASSWORD")
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
-
-# 🔥 SOLO PARES REALES (SIN OTC)
-VALID_PAIRS = [
-    "EURUSD", "GBPUSD", "USDJPY", "AUDUSD",
-    "USDCAD", "USDCHF", "NZDUSD", "EURJPY",
-    "GBPJPY", "EURGBP"
-]
 
 last_candle = 0
+pending = None
 
-# ================= TELEGRAM =================
-
-def send_telegram(msg):
+def send(msg):
     try:
         requests.post(
-            f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
+            f"https://api.telegram.org/bot{TOKEN}/sendMessage",
             data={"chat_id": CHAT_ID, "text": msg},
             timeout=5
         )
     except:
         pass
 
-# ================= HORARIO =================
-
-def is_trading_time():
-    now = datetime.now(timezone.utc)
-    bogota_hour = (now.hour - 5) % 24
-    return 7 <= bogota_hour <= 11
-
-# ================= IQ OPTION =================
-
 iq = IQ_Option(EMAIL, PASSWORD)
 iq.connect()
-
-if not iq.check_connect():
-    exit()
-
 iq.change_balance("PRACTICE")
 
-# 🔥 FIX DIGITAL
 iq.get_digital_underlying_list_data = lambda: {"underlying": []}
-iq.subscribe_strike_list = lambda *args, **kwargs: None
-iq.unsubscribe_strike_list = lambda *args, **kwargs: None
 
-print("✅ CONECTADO")
-
-# ================= FUNCIONES =================
-
-def reconnect():
-    try:
-        if not iq.check_connect():
-            iq.connect()
-            iq.change_balance("PRACTICE")
-    except:
-        pass
+print("✅ PRICE ACTION SNIPER")
+send("✅ PRICE ACTION SNIPER")
 
 def get_pairs():
-    # 🔥 SOLO USA LISTA LIMPIA
-    return VALID_PAIRS
+    data = iq.get_all_open_time()
+    return [p for p, i in data["binary"].items() if i["open"]]
 
-def get_candles(pair):
+def candles(pair):
     try:
-        candles = iq.get_candles(pair, TIMEFRAME, 200, time.time())
-        if not candles:
-            return None
-
-        df = pd.DataFrame(candles)
+        c = iq.get_candles(pair, TIMEFRAME, 100, time.time())
+        df = pd.DataFrame(c)
         df.rename(columns={"max": "high", "min": "low"}, inplace=True)
         return df
     except:
         return None
 
 def trade(pair, direction):
-    try:
-        status, _ = iq.buy(AMOUNT, pair, direction, EXPIRATION)
+    amount = get_amount()
 
-        if status:
-            print(f"🔥 {pair} {direction.upper()}")
-            send_telegram(f"🔥 {pair} {direction.upper()}")
+    status, _ = iq.buy(amount, pair, direction, EXPIRATION)
 
-            result = random.choice(["win", "loss"])
-            register_trade(pair, direction, result)
+    if status:
+        send(f"🔥 {pair} {direction.upper()} ${amount}")
 
-    except:
-        pass
-
-# ================= LOOP =================
+        result = random.choice(["win", "loss"])
+        register_trade(result)
 
 while True:
     try:
-        reconnect()
+        t = iq.get_server_timestamp()
+        candle = t // 60
 
-        if not is_trading_time():
-            time.sleep(5)
-            continue
-
-        server_time = iq.get_server_timestamp()
-        current_candle = server_time // 60
-
-        if current_candle == last_candle:
+        if candle == last_candle:
             time.sleep(0.2)
             continue
 
-        last_candle = current_candle
+        last_candle = candle
 
-        pairs = get_pairs()
+        # ejecutar sniper
+        if pending:
+            pair, direction = pending
+            trade(pair, direction)
+            pending = None
+            continue
 
-        best_pair = None
+        best = None
         best_signal = None
         best_score = 0
 
-        for pair in pairs:
+        for pair in get_pairs():
 
-            df = get_candles(pair)
+            df = candles(pair)
             if df is None:
                 continue
 
@@ -155,16 +109,13 @@ while True:
                 continue
 
             if score > best_score:
-                best_score = score
-                best_pair = pair
+                best = pair
                 best_signal = signal
+                best_score = score
 
-        if best_pair and best_score >= 3:
-            print(f"📡 {best_pair} {best_signal.upper()}")
-            send_telegram(f"📡 {best_pair} {best_signal.upper()}")
-            trade(best_pair, best_signal)
-
-        time.sleep(0.5)
+        if best:
+            pending = (best, best_signal)
+            send(f"📡 SNIPER\n{best} {best_signal.upper()}")
 
     except:
         time.sleep(1)
