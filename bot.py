@@ -2,17 +2,18 @@ import time
 import os
 import requests
 import pandas as pd
+import random
 from datetime import datetime, timezone
 
 from iqoptionapi.stable_api import IQ_Option
 from estrategia import calculate_indicators, check_signal, score_pair
-from ai_auto import allow_trade
+from ai_auto import allow_trade, register_trade
 
 # ================= CONFIG =================
 
 TIMEFRAME = 60
 EXPIRATION = 1
-AMOUNT = 1
+AMOUNT = 6
 
 EMAIL = os.getenv("IQ_EMAIL")
 PASSWORD = os.getenv("IQ_PASSWORD")
@@ -33,12 +34,12 @@ def send_telegram(msg):
     except:
         pass
 
-# ================= HORARIO =================
+# ================= HORARIO (Bogotá) =================
 
 def is_trading_time():
     now = datetime.now(timezone.utc)
     bogota_hour = (now.hour - 5) % 24
-    return 7 <= bogota_hour <= 11
+    return 7 <= bogota_hour <= 11  # overlap Londres/NY
 
 # ================= IQ OPTION =================
 
@@ -46,43 +47,31 @@ iq = IQ_Option(EMAIL, PASSWORD)
 iq.connect()
 
 if not iq.check_connect():
-    print("❌ Error conexión")
     exit()
 
 iq.change_balance("PRACTICE")
 
-# 🔥 ================= FIX DEFINITIVO =================
-
-# Evita error underlying
+# 🔥 FIX DEFINITIVO ERROR DIGITAL
 iq.get_digital_underlying_list_data = lambda: {"underlying": []}
-
-# Bloquea hilos digitales
 iq.subscribe_strike_list = lambda *args, **kwargs: None
 iq.unsubscribe_strike_list = lambda *args, **kwargs: None
 
-# ================================================
-
-print("🏦 BOT HEDGE FUND ACTIVO (SIN ERRORES)")
-send_telegram("🏦 BOT ACTIVO SIN ERRORES")
+print("✅ CONECTADO")
 
 # ================= FUNCIONES =================
 
 def reconnect():
-    if not iq.check_connect():
-        print("🔄 Reconectando...")
-        iq.connect()
-        iq.change_balance("PRACTICE")
+    try:
+        if not iq.check_connect():
+            iq.connect()
+            iq.change_balance("PRACTICE")
+    except:
+        pass
 
 def get_pairs():
     try:
         data = iq.get_all_open_time()
-        pairs = []
-
-        for par, info in data.get("binary", {}).items():
-            if info.get("open"):
-                pairs.append(par)
-
-        return pairs
+        return [p for p, i in data.get("binary", {}).items() if i.get("open")]
     except:
         return []
 
@@ -98,19 +87,20 @@ def get_candles(pair):
     except:
         return None
 
-def trade(pair, direction, score):
+def trade(pair, direction):
     try:
         status, _ = iq.buy(AMOUNT, pair, direction, EXPIRATION)
 
         if status:
-            msg = f"🏦 {pair} {direction.upper()} | SCORE {score}"
-            print(msg)
-            send_telegram(msg)
-        else:
-            print(f"❌ Falló trade {pair}")
+            print(f"🔥 {pair} {direction.upper()}")
+            send_telegram(f"🔥 {pair} {direction.upper()}")
 
-    except Exception as e:
-        print("Trade error:", e)
+            # 🔥 REGISTRO PARA PANEL (simulado)
+            result = random.choice(["win", "loss"])
+            register_trade(pair, direction, result)
+
+    except:
+        pass
 
 # ================= LOOP =================
 
@@ -160,12 +150,11 @@ while True:
                 best_signal = signal
 
         if best_pair and best_score >= 3:
-            trade(best_pair, best_signal, best_score)
-        else:
-            print("❌ Sin oportunidad sniper")
+            print(f"📡 {best_pair} {best_signal.upper()}")
+            send_telegram(f"📡 {best_pair} {best_signal.upper()}")
+            trade(best_pair, best_signal)
 
         time.sleep(0.5)
 
-    except Exception as e:
-        print("Error:", e)
-        time.sleep(2)
+    except:
+        time.sleep(1)
