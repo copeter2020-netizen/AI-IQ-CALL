@@ -8,6 +8,7 @@ import logging
 from iqoptionapi.stable_api import IQ_Option
 from estrategia import calculate_indicators, check_signal, score_pair
 
+# 🔇 quitar spam
 logging.getLogger().setLevel(logging.CRITICAL)
 sys.stderr = open(os.devnull, 'w')
 
@@ -21,8 +22,9 @@ EXPIRATION = 1
 RISK = 0.03
 
 last_candle = 0
-pending_trades = []
+pending = []
 
+# ================= TELEGRAM =================
 def send(msg):
     try:
         requests.post(
@@ -33,13 +35,23 @@ def send(msg):
     except:
         pass
 
+# ================= IQ =================
 iq = IQ_Option(EMAIL, PASSWORD)
 iq.connect()
+
+if not iq.check_connect():
+    print("❌ Error conexión")
+    exit()
+
 iq.change_balance("PRACTICE")
 
+# evitar error OTC
 iq.get_digital_underlying_list_data = lambda: {"underlying": []}
 
-print("✅ FILTRO INTELIGENTE ACTIVO")
+print("✅ BOT ACTIVO Y OPERANDO")
+send("✅ BOT ACTIVO Y OPERANDO")
+
+# ================= FUNCIONES =================
 
 def get_balance():
     return iq.get_balance()
@@ -48,8 +60,11 @@ def get_amount():
     return round(get_balance() * RISK, 2)
 
 def get_pairs():
-    data = iq.get_all_open_time()
-    return [p for p, i in data["binary"].items() if i["open"]]
+    try:
+        data = iq.get_all_open_time()
+        return [p for p, i in data["binary"].items() if i["open"]]
+    except:
+        return []
 
 def get_candles(pair):
     try:
@@ -67,6 +82,8 @@ def trade(pair, direction):
     if status:
         send(f"🔥 {pair} {direction.upper()} ${amount}")
 
+# ================= LOOP =================
+
 while True:
     try:
         server_time = iq.get_server_timestamp()
@@ -78,11 +95,11 @@ while True:
 
         last_candle = candle
 
-        # 🔥 ejecutar pendientes
-        for pair, direction in pending_trades:
+        # 🔥 EJECUTAR pendientes (SNIPER)
+        for pair, direction in pending:
             trade(pair, direction)
 
-        pending_trades.clear()
+        pending.clear()
 
         signals = []
 
@@ -100,20 +117,19 @@ while True:
 
             score = score_pair(df)
 
-            # 🔥 FILTRO INTELIGENTE
-            if score >= 3:
+            # 🔥 FILTRO MÁS FLEXIBLE
+            if score >= 2:
                 signals.append((pair, signal, score))
 
-        # ordenar por mejor score
+        # ordenar por calidad
         signals = sorted(signals, key=lambda x: x[2], reverse=True)
 
-        # tomar solo las mejores 2
-        top_signals = signals[:2]
+        # 🔥 máximo 2 trades por vela
+        selected = signals[:2]
 
-        if top_signals:
-            pending_trades = [(p, s) for p, s, sc in top_signals]
-
-            send(f"📡 {len(top_signals)} señales TOP detectadas")
+        if selected:
+            pending = [(p, s) for p, s, sc in selected]
+            send(f"📡 {len(selected)} señales detectadas")
 
     except:
         time.sleep(1)
