@@ -39,7 +39,7 @@ iq.change_balance("PRACTICE")
 
 iq.get_digital_underlying_list_data = lambda: {"underlying": []}
 
-print("✅ BOT ACTIVO")
+print("✅ FILTRO INTELIGENTE ACTIVO")
 
 def get_balance():
     return iq.get_balance()
@@ -78,13 +78,12 @@ while True:
 
         last_candle = candle
 
-        # 🔥 ejecutar todas las pendientes
+        # 🔥 ejecutar pendientes
         for pair, direction in pending_trades:
             trade(pair, direction)
 
         pending_trades.clear()
 
-        # 🔍 detectar señales
         signals = []
 
         for pair in get_pairs():
@@ -101,13 +100,20 @@ while True:
 
             score = score_pair(df)
 
-            if score >= 1:  # 🔥 más flexible
-                signals.append((pair, signal))
+            # 🔥 FILTRO INTELIGENTE
+            if score >= 3:
+                signals.append((pair, signal, score))
 
-        # guardar TODAS para siguiente vela
-        if signals:
-            pending_trades = signals
-            send(f"📡 {len(signals)} señales detectadas")
+        # ordenar por mejor score
+        signals = sorted(signals, key=lambda x: x[2], reverse=True)
+
+        # tomar solo las mejores 2
+        top_signals = signals[:2]
+
+        if top_signals:
+            pending_trades = [(p, s) for p, s, sc in top_signals]
+
+            send(f"📡 {len(top_signals)} señales TOP detectadas")
 
     except:
         time.sleep(1)
