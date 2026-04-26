@@ -11,7 +11,7 @@ from estrategia import calculate_indicators, check_signal
 
 TIMEFRAME = 60
 EXPIRATION = 1
-AMOUNT = 1
+AMOUNT = 3
 
 EMAIL = os.getenv("IQ_EMAIL")
 PASSWORD = os.getenv("IQ_PASSWORD")
