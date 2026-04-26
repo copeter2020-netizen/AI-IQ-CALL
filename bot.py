@@ -1,115 +1,114 @@
 import time
 import os
 import pandas as pd
-import requests
+from datetime import datetime
 
 from iqoptionapi.stable_api import IQ_Option
 from estrategia import calculate_indicators, check_signal
-from ai_auto import load, predict, save_trade, auto_retrain
+from ai_auto import predict
 
-# CONFIG
-EMAIL = os.getenv("IQ_EMAIL")
-PASSWORD = os.getenv("IQ_PASSWORD")
-TOKEN = os.getenv("TELEGRAM_TOKEN")
-CHAT = os.getenv("TELEGRAM_CHAT_ID")
+# ================= CONFIG =================
 
 AMOUNT = 1
+TIMEFRAME = 60
 EXPIRATION = 1
 
-DAILY_STOP = -10   # 💥 límite diario
-MAX_LOSS_STREAK = 3
+EMAIL = os.getenv("IQ_EMAIL")
+PASSWORD = os.getenv("IQ_PASSWORD")
 
-profit = 0
-loss_streak = 0
+# ================= IQ =================
 
-def send(msg):
+iq = IQ_Option(EMAIL, PASSWORD)
+
+# 🔥 FIX ERROR UNDERLYING
+iq.api.digital_option = None
+iq.get_digital_underlying_list_data = lambda: {"underlying": []}
+
+iq.connect()
+iq.change_balance("PRACTICE")
+
+# ================= FUNCIONES =================
+
+def reconnect():
+    if not iq.check_connect():
+        iq.connect()
+        iq.change_balance("PRACTICE")
+
+def get_all_pairs():
     try:
-        requests.post(f"https://api.telegram.org/bot{TOKEN}/sendMessage",
-                      data={"chat_id": CHAT, "text": msg})
+        assets = iq.get_all_open_time()
+        pairs = []
+
+        for pair, data in assets["digital"].items():
+            if "OTC" in pair and data["open"]:
+                pairs.append(pair)
+
+        return pairs
     except:
-        pass
+        return []
 
-def connect():
-    iq = IQ_Option(EMAIL, PASSWORD)
-    iq.connect()
-    iq.change_balance("PRACTICE")
-    return iq
-
-iq = connect()
-model = load()
-
-def get_pairs():
-    data = iq.get_all_open_time()
-    return [p for p in data["binary"] if "OTC" in p and data["binary"][p]["open"]]
-
-def get_df(pair):
-    candles = iq.get_candles(pair, 60, 120, time.time())
-    df = pd.DataFrame(candles)
-    df.rename(columns={"max":"high","min":"low"}, inplace=True)
-    return df
-
-def wait_open():
-    while iq.get_server_timestamp() % 60 != 0:
-        time.sleep(0.01)
+def get_candles(pair):
+    try:
+        candles = iq.get_candles(pair, TIMEFRAME, 100, time.time())
+        df = pd.DataFrame(candles)
+        df.rename(columns={"max": "high", "min": "low"}, inplace=True)
+        return df
+    except:
+        return None
 
 def trade(pair, direction):
-    global profit, loss_streak, model
+    try:
+        status, _ = iq.buy(AMOUNT, pair, direction, EXPIRATION)
 
-    status, _ = iq.buy(AMOUNT, pair, direction, EXPIRATION)
+        if status:
+            print(f"🔥 TRADE {pair} {direction}")
+        else:
+            print(f"❌ Falló {pair}")
 
-    if not status:
-        return
+    except Exception as e:
+        print("Error trade:", e)
 
-    time.sleep(65)  # esperar resultado
+# ================= BOT =================
 
-    result = iq.check_win_v4(_)
+print("🔥 BOT SCANNER IA LIGERA ACTIVO")
 
-    win = 1 if result > 0 else 0
-
-    profit += result
-
-    if win:
-        loss_streak = 0
-    else:
-        loss_streak += 1
-
-    save_trade(df, win)
-    model = auto_retrain(model)
-
-    send(f"{pair} {direction} → {'WIN' if win else 'LOSS'} | Profit: {profit}")
+last_candle = {}
 
 while True:
     try:
-        if profit <= DAILY_STOP or loss_streak >= MAX_LOSS_STREAK:
-            send("🛑 STOP alcanzado")
-            break
+        reconnect()
 
-        pairs = get_pairs()
-
-        best = None
+        pairs = get_all_pairs()
 
         for pair in pairs:
-            df = get_df(pair)
-            df = calculate_indicators(df)
 
-            signal = check_signal(df)
-            if not signal:
+            server_time = iq.get_server_timestamp()
+            candle_time = server_time // 60
+
+            if pair in last_candle and last_candle[pair] == candle_time:
                 continue
 
-            prob = predict(model, df)
+            last_candle[pair] = candle_time
 
-            if prob > 0.65:
-                best = (pair, signal, prob)
+            df = get_candles(pair)
+            if df is None:
+                continue
 
-        if best:
-            pair, signal, prob = best
-            send(f"📡 {pair} {signal} prob={prob:.2f}")
+            df = calculate_indicators(df)
+            signal = check_signal(df)
 
-            wait_open()
-            trade(pair, signal)
+            # 🔥 IA DECIDE SI OPERAR
+            if signal and predict():
+
+                print(f"📊 {pair} señal {signal}")
+
+                trade(pair, signal)
+
+                # 🔥 SOLO UNA OPERACIÓN POR CICLO
+                break
 
         time.sleep(1)
 
     except Exception as e:
-        print("Error:", e)
+        print("Error general:", e)
         time.sleep(2)
