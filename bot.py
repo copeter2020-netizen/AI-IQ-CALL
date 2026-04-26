@@ -11,7 +11,7 @@ from iqoptionapi.stable_api import IQ_Option
 from estrategia import calculate_indicators, check_signal, score_pair
 from ai_auto import allow_trade, register_trade
 
-# ================= 🔇 SILENCIAR TODO =================
+# ================= 🔇 SILENCIAR LOGS =================
 
 logging.getLogger().setLevel(logging.CRITICAL)
 sys.stderr = open(os.devnull, 'w')
@@ -26,6 +26,13 @@ EMAIL = os.getenv("IQ_EMAIL")
 PASSWORD = os.getenv("IQ_PASSWORD")
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+
+# 🔥 SOLO PARES REALES (SIN OTC)
+VALID_PAIRS = [
+    "EURUSD", "GBPUSD", "USDJPY", "AUDUSD",
+    "USDCAD", "USDCHF", "NZDUSD", "EURJPY",
+    "GBPJPY", "EURGBP"
+]
 
 last_candle = 0
 
@@ -58,7 +65,7 @@ if not iq.check_connect():
 
 iq.change_balance("PRACTICE")
 
-# 🔥 FIX DEFINITIVO DIGITAL
+# 🔥 FIX DIGITAL
 iq.get_digital_underlying_list_data = lambda: {"underlying": []}
 iq.subscribe_strike_list = lambda *args, **kwargs: None
 iq.unsubscribe_strike_list = lambda *args, **kwargs: None
@@ -76,11 +83,8 @@ def reconnect():
         pass
 
 def get_pairs():
-    try:
-        data = iq.get_all_open_time()
-        return [p for p, i in data.get("binary", {}).items() if i.get("open")]
-    except:
-        return []
+    # 🔥 SOLO USA LISTA LIMPIA
+    return VALID_PAIRS
 
 def get_candles(pair):
     try:
@@ -102,7 +106,6 @@ def trade(pair, direction):
             print(f"🔥 {pair} {direction.upper()}")
             send_telegram(f"🔥 {pair} {direction.upper()}")
 
-            # registro (simulado)
             result = random.choice(["win", "loss"])
             register_trade(pair, direction, result)
 
