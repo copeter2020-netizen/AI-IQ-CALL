@@ -5,14 +5,16 @@ import pandas as pd
 import sys
 import logging
 
-from datetime import datetime, timezone
+from datetime import datetime
 from iqoptionapi.stable_api import IQ_Option
-from estrategia import calculate_indicators, check_signal, score_pair
-from ai_auto import get_amount, register_trade, allow_trade
 
-# 🔇 silencio
+from estrategia import calculate_indicators, check_signal, score_pair
+
+# 🔇 quitar spam
 logging.getLogger().setLevel(logging.CRITICAL)
 sys.stderr = open(os.devnull, 'w')
+
+# ================= CONFIG =================
 
 EMAIL = os.getenv("IQ_EMAIL")
 PASSWORD = os.getenv("IQ_PASSWORD")
@@ -21,9 +23,12 @@ CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 TIMEFRAME = 60
 EXPIRATION = 1
+RISK_PERCENT = 3  # 3%
 
 last_candle = 0
 pending = None
+
+# ================= TELEGRAM =================
 
 def send(msg):
     try:
@@ -35,36 +40,35 @@ def send(msg):
     except:
         pass
 
-# ================= IQ =================
+# ================= IQ OPTION =================
 
 iq = IQ_Option(EMAIL, PASSWORD)
 iq.connect()
 
 if not iq.check_connect():
+    print("❌ Error conexión")
     exit()
 
-iq.change_balance("PRACTICE")  # cambia a REAL si quieres
+# 👉 CAMBIA A REAL SI QUIERES DINERO REAL
+iq.change_balance("PRACTICE")
 
+# evitar errores OTC
 iq.get_digital_underlying_list_data = lambda: {"underlying": []}
 
-print("✅ BOT REAL ACTIVO")
-send("✅ BOT REAL ACTIVO")
+print("✅ BOT OPERATIVO")
+send("✅ BOT OPERATIVO")
 
 # ================= FUNCIONES =================
-
-def reconnect():
-    try:
-        if not iq.check_connect():
-            iq.connect()
-            iq.change_balance("PRACTICE")
-    except:
-        pass
 
 def get_balance():
     try:
         return iq.get_balance()
     except:
         return 0
+
+def get_amount():
+    balance = get_balance()
+    return round(balance * RISK_PERCENT, 2)
 
 def get_pairs():
     try:
@@ -83,36 +87,27 @@ def get_candles(pair):
         return None
 
 def trade(pair, direction):
-    try:
-        balance = get_balance()
-        amount = get_amount(balance)
+    amount = get_amount()
 
-        status, trade_id = iq.buy(amount, pair, direction, EXPIRATION)
+    status, trade_id = iq.buy(amount, pair, direction, EXPIRATION)
 
-        if status:
-            send(f"🔥 {pair} {direction.upper()} ${amount}")
+    if status:
+        send(f"🔥 TRADE\n{pair} {direction.upper()} ${amount}")
 
-            # 🔥 esperar resultado real
-            time.sleep(EXPIRATION * 60 + 2)
+        # esperar resultado real
+        time.sleep(EXPIRATION * 60 + 2)
 
-            result = iq.check_win_v4(trade_id)
+        result = iq.check_win_v4(trade_id)
 
-            if result > 0:
-                send(f"✅ WIN {pair}")
-                register_trade("win")
-            else:
-                send(f"❌ LOSS {pair}")
-                register_trade("loss")
-
-    except:
-        pass
+        if result > 0:
+            send(f"✅ WIN {pair}")
+        else:
+            send(f"❌ LOSS {pair}")
 
 # ================= LOOP =================
 
 while True:
     try:
-        reconnect()
-
         server_time = iq.get_server_timestamp()
         candle = server_time // 60
 
@@ -122,7 +117,7 @@ while True:
 
         last_candle = candle
 
-        # 🔥 ejecutar sniper
+        # 🔥 EJECUTAR ENTRADA (SIGUIENTE VELA)
         if pending:
             pair, direction = pending
             trade(pair, direction)
@@ -147,17 +142,15 @@ while True:
 
             score = score_pair(df)
 
-            if not allow_trade(score):
-                continue
-
             if score > best_score:
                 best_score = score
                 best_pair = pair
                 best_signal = signal
 
+        # 🔥 guardar señal (SNIPER)
         if best_pair and best_score >= 2:
             pending = (best_pair, best_signal)
-            send(f"📡 SNIPER READY\n{best_pair} {best_signal.upper()}")
+            send(f"📡 SEÑAL\n{best_pair} {best_signal.upper()}")
 
-    except:
+    except Exception as e:
         time.sleep(1)
