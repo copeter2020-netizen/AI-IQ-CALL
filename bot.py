@@ -5,16 +5,11 @@ import pandas as pd
 import sys
 import logging
 
-from datetime import datetime
 from iqoptionapi.stable_api import IQ_Option
-
 from estrategia import calculate_indicators, check_signal, score_pair
 
-# 🔇 quitar spam
 logging.getLogger().setLevel(logging.CRITICAL)
 sys.stderr = open(os.devnull, 'w')
-
-# ================= CONFIG =================
 
 EMAIL = os.getenv("IQ_EMAIL")
 PASSWORD = os.getenv("IQ_PASSWORD")
@@ -23,12 +18,10 @@ CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 TIMEFRAME = 60
 EXPIRATION = 1
-RISK_PERCENT = 3  # 3%
+RISK = 0.03
 
 last_candle = 0
-pending = None
-
-# ================= TELEGRAM =================
+pending_trades = []
 
 def send(msg):
     try:
@@ -40,47 +33,28 @@ def send(msg):
     except:
         pass
 
-# ================= IQ OPTION =================
-
 iq = IQ_Option(EMAIL, PASSWORD)
 iq.connect()
-
-if not iq.check_connect():
-    print("❌ Error conexión")
-    exit()
-
-# 👉 CAMBIA A REAL SI QUIERES DINERO REAL
 iq.change_balance("PRACTICE")
 
-# evitar errores OTC
 iq.get_digital_underlying_list_data = lambda: {"underlying": []}
 
-print("✅ BOT OPERATIVO")
-send("✅ BOT OPERATIVO")
-
-# ================= FUNCIONES =================
+print("✅ BOT ACTIVO")
 
 def get_balance():
-    try:
-        return iq.get_balance()
-    except:
-        return 0
+    return iq.get_balance()
 
 def get_amount():
-    balance = get_balance()
-    return round(balance * RISK_PERCENT, 2)
+    return round(get_balance() * RISK, 2)
 
 def get_pairs():
-    try:
-        data = iq.get_all_open_time()
-        return [p for p, i in data["binary"].items() if i["open"]]
-    except:
-        return []
+    data = iq.get_all_open_time()
+    return [p for p, i in data["binary"].items() if i["open"]]
 
 def get_candles(pair):
     try:
-        candles = iq.get_candles(pair, TIMEFRAME, 100, time.time())
-        df = pd.DataFrame(candles)
+        c = iq.get_candles(pair, TIMEFRAME, 100, time.time())
+        df = pd.DataFrame(c)
         df.rename(columns={"max": "high", "min": "low"}, inplace=True)
         return df
     except:
@@ -88,23 +62,10 @@ def get_candles(pair):
 
 def trade(pair, direction):
     amount = get_amount()
-
-    status, trade_id = iq.buy(amount, pair, direction, EXPIRATION)
+    status, _ = iq.buy(amount, pair, direction, EXPIRATION)
 
     if status:
-        send(f"🔥 TRADE\n{pair} {direction.upper()} ${amount}")
-
-        # esperar resultado real
-        time.sleep(EXPIRATION * 60 + 2)
-
-        result = iq.check_win_v4(trade_id)
-
-        if result > 0:
-            send(f"✅ WIN {pair}")
-        else:
-            send(f"❌ LOSS {pair}")
-
-# ================= LOOP =================
+        send(f"🔥 {pair} {direction.upper()} ${amount}")
 
 while True:
     try:
@@ -117,16 +78,14 @@ while True:
 
         last_candle = candle
 
-        # 🔥 EJECUTAR ENTRADA (SIGUIENTE VELA)
-        if pending:
-            pair, direction = pending
+        # 🔥 ejecutar todas las pendientes
+        for pair, direction in pending_trades:
             trade(pair, direction)
-            pending = None
-            continue
 
-        best_pair = None
-        best_signal = None
-        best_score = 0
+        pending_trades.clear()
+
+        # 🔍 detectar señales
+        signals = []
 
         for pair in get_pairs():
 
@@ -142,15 +101,13 @@ while True:
 
             score = score_pair(df)
 
-            if score > best_score:
-                best_score = score
-                best_pair = pair
-                best_signal = signal
+            if score >= 1:  # 🔥 más flexible
+                signals.append((pair, signal))
 
-        # 🔥 guardar señal (SNIPER)
-        if best_pair and best_score >= 2:
-            pending = (best_pair, best_signal)
-            send(f"📡 SEÑAL\n{best_pair} {best_signal.upper()}")
+        # guardar TODAS para siguiente vela
+        if signals:
+            pending_trades = signals
+            send(f"📡 {len(signals)} señales detectadas")
 
-    except Exception as e:
+    except:
         time.sleep(1)
