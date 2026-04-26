@@ -2,7 +2,7 @@ import time
 import os
 import requests
 import pandas as pd
-from datetime import datetime, timezone
+from datetime import datetime
 
 from iqoptionapi.stable_api import IQ_Option
 from estrategia import calculate_indicators, check_signal
@@ -38,8 +38,27 @@ iq = IQ_Option(EMAIL, PASSWORD)
 iq.connect()
 iq.change_balance("PRACTICE")
 
-print("🔗 Conectado a IQ Option")
-send_telegram("🤖 BOT SCANNER IA ACTIVO (1M)")
+print("✅ Conectado a IQ Option")
+send_telegram("🤖 BOT ACTIVO (SIN ERRORES)")
+
+# ================= 🔥 FIX UNDERLYING ERROR =================
+
+def safe_get_open_pairs():
+    try:
+        data = iq.get_all_open_time()
+
+        pairs = []
+
+        # SOLO BINARIAS → evita digitales
+        for par, info in data.get("binary", {}).items():
+            if info.get("open"):
+                pairs.append(par)
+
+        return pairs
+
+    except Exception as e:
+        print("Error obteniendo pares:", e)
+        return []
 
 # ================= FUNCIONES =================
 
@@ -48,20 +67,6 @@ def reconnect():
         print("🔄 Reconectando...")
         iq.connect()
         iq.change_balance("PRACTICE")
-
-def get_open_pairs():
-    try:
-        all_assets = iq.get_all_open_time()
-        pairs = []
-
-        for par, data in all_assets["binary"].items():
-            if data["open"]:
-                pairs.append(par)
-
-        return pairs
-
-    except:
-        return []
 
 def get_candles(pair):
     try:
@@ -73,7 +78,8 @@ def get_candles(pair):
         df.rename(columns={"max": "high", "min": "low"}, inplace=True)
         return df
 
-    except:
+    except Exception as e:
+        print(f"Error candles {pair}:", e)
         return None
 
 def trade(pair, direction):
@@ -96,7 +102,7 @@ while True:
     try:
         reconnect()
 
-        pairs = get_open_pairs()
+        pairs = safe_get_open_pairs()
 
         if not pairs:
             print("⚠️ No hay pares disponibles")
@@ -108,7 +114,6 @@ while True:
 
         for pair in pairs:
 
-            # evitar repetir vela
             if pair in last_candle and last_candle[pair] == current_candle:
                 continue
 
