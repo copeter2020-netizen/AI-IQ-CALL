@@ -1,42 +1,27 @@
 import json
 import os
 
-DATA_FILE = "trades.json"
-
-# ================= LOAD =================
+FILE = "data.json"
 
 def load():
-    if not os.path.exists(DATA_FILE):
+    if not os.path.exists(FILE):
         return {"wins": 0, "losses": 0}
-    
-    with open(DATA_FILE, "r") as f:
+    with open(FILE, "r") as f:
         return json.load(f)
 
-# ================= SAVE =================
-
 def save(data):
-    with open(DATA_FILE, "w") as f:
+    with open(FILE, "w") as f:
         json.dump(data, f)
-
-# ================= PREDICT =================
 
 def predict():
     data = load()
-
     total = data["wins"] + data["losses"]
 
     if total < 10:
-        return True  # 🔥 operar siempre al inicio
+        return True
 
     winrate = data["wins"] / total
-
-    # 🔥 FILTRO INTELIGENTE
-    if winrate >= 0.55:
-        return True
-    else:
-        return False
-
-# ================= SAVE TRADE =================
+    return winrate >= 0.55
 
 def save_trade(result):
     data = load()
