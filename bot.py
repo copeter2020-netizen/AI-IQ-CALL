@@ -3,11 +3,18 @@ import os
 import requests
 import pandas as pd
 import random
-from datetime import datetime, timezone
+import sys
+import logging
 
+from datetime import datetime, timezone
 from iqoptionapi.stable_api import IQ_Option
 from estrategia import calculate_indicators, check_signal, score_pair
 from ai_auto import allow_trade, register_trade
+
+# ================= 🔇 SILENCIAR TODO =================
+
+logging.getLogger().setLevel(logging.CRITICAL)
+sys.stderr = open(os.devnull, 'w')
 
 # ================= CONFIG =================
 
@@ -34,12 +41,12 @@ def send_telegram(msg):
     except:
         pass
 
-# ================= HORARIO (Bogotá) =================
+# ================= HORARIO =================
 
 def is_trading_time():
     now = datetime.now(timezone.utc)
     bogota_hour = (now.hour - 5) % 24
-    return 7 <= bogota_hour <= 11  # overlap Londres/NY
+    return 7 <= bogota_hour <= 11
 
 # ================= IQ OPTION =================
 
@@ -51,7 +58,7 @@ if not iq.check_connect():
 
 iq.change_balance("PRACTICE")
 
-# 🔥 FIX DEFINITIVO ERROR DIGITAL
+# 🔥 FIX DEFINITIVO DIGITAL
 iq.get_digital_underlying_list_data = lambda: {"underlying": []}
 iq.subscribe_strike_list = lambda *args, **kwargs: None
 iq.unsubscribe_strike_list = lambda *args, **kwargs: None
@@ -95,7 +102,7 @@ def trade(pair, direction):
             print(f"🔥 {pair} {direction.upper()}")
             send_telegram(f"🔥 {pair} {direction.upper()}")
 
-            # 🔥 Registro (simulado)
+            # registro (simulado)
             result = random.choice(["win", "loss"])
             register_trade(pair, direction, result)
 
@@ -141,7 +148,6 @@ while True:
 
             score = score_pair(df)
 
-            # 🧠 filtro IA
             if not allow_trade(score):
                 continue
 
