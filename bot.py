@@ -1,198 +1,115 @@
 import time
 import os
-import requests
 import pandas as pd
-import threading
+import requests
 
 from iqoptionapi.stable_api import IQ_Option
 from estrategia import calculate_indicators, check_signal
+from ai_auto import load, predict, save_trade, auto_retrain
 
-# ================= CONFIG =================
-
-TIMEFRAME = 60
-EXPIRATION = 1
-AMOUNT = 3
-
+# CONFIG
 EMAIL = os.getenv("IQ_EMAIL")
 PASSWORD = os.getenv("IQ_PASSWORD")
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+TOKEN = os.getenv("TELEGRAM_TOKEN")
+CHAT = os.getenv("TELEGRAM_CHAT_ID")
 
-last_candle = {}
-pending_signal = {}
+AMOUNT = 1
+EXPIRATION = 1
 
-# ================= FIX THREAD ERROR =================
+DAILY_STOP = -10   # 💥 límite diario
+MAX_LOSS_STREAK = 3
 
-def ignore_thread_error(args):
-    if "underlying" in str(args.exc_value):
-        return
-    print("Thread error:", args)
+profit = 0
+loss_streak = 0
 
-threading.excepthook = ignore_thread_error
-
-# ================= TELEGRAM =================
-
-def send_telegram(msg):
+def send(msg):
     try:
-        requests.post(
-            f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
-            data={"chat_id": CHAT_ID, "text": msg},
-            timeout=5
-        )
+        requests.post(f"https://api.telegram.org/bot{TOKEN}/sendMessage",
+                      data={"chat_id": CHAT, "text": msg})
     except:
         pass
 
-# ================= CONEXIÓN =================
-
-def connect_iq():
+def connect():
     iq = IQ_Option(EMAIL, PASSWORD)
-
-    print("🔌 Conectando...")
     iq.connect()
-
-    if not iq.check_connect():
-        print("❌ Error conexión")
-        return None
-
     iq.change_balance("PRACTICE")
-    print("✅ Conectado")
-
     return iq
 
-iq = connect_iq()
+iq = connect()
+model = load()
 
-# ================= FIX UNDERLYING =================
+def get_pairs():
+    data = iq.get_all_open_time()
+    return [p for p in data["binary"] if "OTC" in p and data["binary"][p]["open"]]
 
-def safe_get_underlying():
-    try:
-        data = iq.get_digital_underlying_list_data()
-        if not data or "underlying" not in data:
-            return {"underlying": []}
-        return data
-    except:
-        return {"underlying": []}
+def get_df(pair):
+    candles = iq.get_candles(pair, 60, 120, time.time())
+    df = pd.DataFrame(candles)
+    df.rename(columns={"max":"high","min":"low"}, inplace=True)
+    return df
 
-if iq:
-    iq.get_digital_underlying_list_data = safe_get_underlying
-
-# ================= FUNCIONES =================
-
-def reconnect():
-    global iq
-    if iq is None or not iq.check_connect():
-        print("♻️ Reconectando...")
-        iq = connect_iq()
-
-        if iq:
-            iq.get_digital_underlying_list_data = safe_get_underlying
-
-def get_all_otc_pairs():
-    try:
-        data = iq.get_all_open_time()
-        pairs = []
-
-        for pair in data["binary"]:
-            if "OTC" in pair and data["binary"][pair]["open"]:
-                pairs.append(pair)
-
-        return pairs
-
-    except:
-        return []
-
-def get_candles(pair):
-    try:
-        candles = iq.get_candles(pair, TIMEFRAME, 120, time.time())
-        if not candles:
-            return None
-
-        df = pd.DataFrame(candles)
-        df.rename(columns={"max": "high", "min": "low"}, inplace=True)
-        return df
-
-    except:
-        return None
-
-# 🔥 INVERSIÓN DE SEÑAL
-def invert_signal(signal):
-    if signal == "call":
-        return "put"
-    if signal == "put":
-        return "call"
-    return None
+def wait_open():
+    while iq.get_server_timestamp() % 60 != 0:
+        time.sleep(0.01)
 
 def trade(pair, direction):
-    try:
-        status, _ = iq.buy(AMOUNT, pair, direction, EXPIRATION)
+    global profit, loss_streak, model
 
-        if status:
-            msg = f"🔥 {pair} {direction.upper()} EJECUTADO ($1)"
-            print(msg)
-            send_telegram(msg)
-        else:
-            print(f"❌ Falló trade {pair}")
+    status, _ = iq.buy(AMOUNT, pair, direction, EXPIRATION)
 
-    except Exception as e:
-        print("Trade error:", e)
+    if not status:
+        return
 
-# ================= INICIO =================
+    time.sleep(65)  # esperar resultado
 
-print("🔥 BOT OTC 1M INVERTIDO ACTIVO")
-send_telegram("🔥 BOT OTC 1M INVERTIDO ACTIVO")
+    result = iq.check_win_v4(_)
 
-# ================= LOOP =================
+    win = 1 if result > 0 else 0
+
+    profit += result
+
+    if win:
+        loss_streak = 0
+    else:
+        loss_streak += 1
+
+    save_trade(df, win)
+    model = auto_retrain(model)
+
+    send(f"{pair} {direction} → {'WIN' if win else 'LOSS'} | Profit: {profit}")
 
 while True:
     try:
-        reconnect()
+        if profit <= DAILY_STOP or loss_streak >= MAX_LOSS_STREAK:
+            send("🛑 STOP alcanzado")
+            break
 
-        if iq is None:
-            time.sleep(3)
-            continue
+        pairs = get_pairs()
 
-        pairs = get_all_otc_pairs()
-
-        if not pairs:
-            time.sleep(5)
-            continue
-
-        server_time = iq.get_server_timestamp()
-        current_candle = server_time // 60
+        best = None
 
         for pair in pairs:
-
-            if pair in last_candle and last_candle[pair] == current_candle:
-                continue
-
-            last_candle[pair] = current_candle
-
-            # ================= EJECUTAR =================
-            if pair in pending_signal:
-                direction = pending_signal[pair]
-
-                print(f"🚀 Ejecutando {pair} {direction}")
-                trade(pair, direction)
-
-                del pending_signal[pair]
-                continue
-
-            # ================= ANALIZAR =================
-            df = get_candles(pair)
-            if df is None or len(df) < 50:
-                continue
-
+            df = get_df(pair)
             df = calculate_indicators(df)
+
             signal = check_signal(df)
+            if not signal:
+                continue
 
-            if signal:
-                inverted = invert_signal(signal)
+            prob = predict(model, df)
 
-                if inverted:
-                    pending_signal[pair] = inverted
-                    send_telegram(f"📡 {pair} {inverted.upper()} (INVERTIDO) → SIGUIENTE VELA")
+            if prob > 0.65:
+                best = (pair, signal, prob)
 
-        time.sleep(0.5)
+        if best:
+            pair, signal, prob = best
+            send(f"📡 {pair} {signal} prob={prob:.2f}")
+
+            wait_open()
+            trade(pair, signal)
+
+        time.sleep(1)
 
     except Exception as e:
-        print("Error general:", e)
+        print("Error:", e)
         time.sleep(2)
