@@ -1,115 +1,49 @@
+import json
 import os
-import numpy as np
-import pandas as pd
-import pickle
-from sklearn.ensemble import RandomForestClassifier
 
-MODEL_PATH = "model.pkl"
-DATASET_PATH = "dataset.csv"
+DATA_FILE = "trades.json"
 
-MIN_TRAIN = 30
-RETRAIN_EVERY = 20
+# ================= LOAD =================
 
-trade_count = 0
-
-# ================= FEATURES =================
-def extract_features(df):
-    c = df.iloc[-2]
-    p = df.iloc[-3]
-
-    return [
-        c["close"] - c["ema"],
-        c["tii"],
-        abs(c["close"] - c["open"]),
-        1 if c["close"] > c["open"] else 0,
-        p["tii"]
-    ]
-
-# ================= DATASET =================
-def save_trade(df, result):
-    try:
-        row = extract_features(df) + [result]
-        cols = ["f1", "f2", "f3", "f4", "f5", "label"]
-
-        if not os.path.exists(DATASET_PATH):
-            pd.DataFrame([row], columns=cols).to_csv(DATASET_PATH, index=False)
-        else:
-            pd.DataFrame([row]).to_csv(DATASET_PATH, mode="a", header=False, index=False)
-
-    except Exception as e:
-        print("Error guardando dataset:", e)
-
-# ================= MODELO =================
-def train():
-    try:
-        if not os.path.exists(DATASET_PATH):
-            print("❌ No hay dataset")
-            return None
-
-        df = pd.read_csv(DATASET_PATH)
-
-        if len(df) < MIN_TRAIN:
-            print(f"⚠️ Muy pocos datos: {len(df)}")
-            return None
-
-        X = df[["f1", "f2", "f3", "f4", "f5"]]
-        y = df["label"]
-
-        model = RandomForestClassifier(
-            n_estimators=100,
-            max_depth=5,
-            random_state=42
-        )
-
-        model.fit(X, y)
-
-        with open(MODEL_PATH, "wb") as f:
-            pickle.dump(model, f)
-
-        print("🤖 Modelo entrenado")
-        return model
-
-    except Exception as e:
-        print("Error entrenando modelo:", e)
-        return None
-
-# ================= CARGAR =================
 def load():
-    try:
-        if not os.path.exists(MODEL_PATH):
-            print("⚠️ Modelo no encontrado")
-            return None
+    if not os.path.exists(DATA_FILE):
+        return {"wins": 0, "losses": 0}
+    
+    with open(DATA_FILE, "r") as f:
+        return json.load(f)
 
-        with open(MODEL_PATH, "rb") as f:
-            return pickle.load(f)
+# ================= SAVE =================
 
-    except Exception as e:
-        print("Error cargando modelo:", e)
-        return None
+def save(data):
+    with open(DATA_FILE, "w") as f:
+        json.dump(data, f)
 
-# ================= PREDICCIÓN =================
-def predict(model, df):
-    try:
-        if model is None:
-            return 1.0  # deja pasar todo si no hay modelo
+# ================= PREDICT =================
 
-        X = np.array(extract_features(df)).reshape(1, -1)
-        prob = model.predict_proba(X)[0][1]
+def predict():
+    data = load()
 
-        return prob
+    total = data["wins"] + data["losses"]
 
-    except Exception as e:
-        print("Error predicción:", e)
-        return 1.0
+    if total < 10:
+        return True  # 🔥 operar siempre al inicio
 
-# ================= AUTO-RETRAIN =================
-def auto_retrain(model):
-    global trade_count
+    winrate = data["wins"] / total
 
-    trade_count += 1
+    # 🔥 FILTRO INTELIGENTE
+    if winrate >= 0.55:
+        return True
+    else:
+        return False
 
-    if trade_count % RETRAIN_EVERY == 0:
-        print("🔄 Reentrenando modelo...")
-        return train()
+# ================= SAVE TRADE =================
 
-    return model
+def save_trade(result):
+    data = load()
+
+    if result == "win":
+        data["wins"] += 1
+    else:
+        data["losses"] += 1
+
+    save(data)
