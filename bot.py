@@ -9,9 +9,10 @@ from estrategia import calculate_indicators, check_signal, score_pair
 from ai_auto import allow_trade
 
 # ================= CONFIG =================
+
 TIMEFRAME = 60
 EXPIRATION = 1
-AMOUNT = 5
+AMOUNT = 1
 
 EMAIL = os.getenv("IQ_EMAIL")
 PASSWORD = os.getenv("IQ_PASSWORD")
@@ -21,6 +22,7 @@ CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 last_candle = 0
 
 # ================= TELEGRAM =================
+
 def send_telegram(msg):
     try:
         requests.post(
@@ -31,13 +33,15 @@ def send_telegram(msg):
     except:
         pass
 
-# ================= HORARIO (Bogotá) =================
+# ================= HORARIO =================
+
 def is_trading_time():
     now = datetime.now(timezone.utc)
     bogota_hour = (now.hour - 5) % 24
-    return 7 <= bogota_hour <= 11  # overlap fuerte
+    return 7 <= bogota_hour <= 11
 
 # ================= IQ OPTION =================
+
 iq = IQ_Option(EMAIL, PASSWORD)
 iq.connect()
 
@@ -47,12 +51,19 @@ if not iq.check_connect():
 
 iq.change_balance("PRACTICE")
 
-# 🔥 evitar error digital
+# 🔥 ================= FIX DEFINITIVO =================
+
+# Evita error underlying
+iq.get_digital_underlying_list_data = lambda: {"underlying": []}
+
+# Bloquea hilos digitales
 iq.subscribe_strike_list = lambda *args, **kwargs: None
 iq.unsubscribe_strike_list = lambda *args, **kwargs: None
 
-print("🏦 BOT HEDGE FUND ACTIVO")
-send_telegram("🏦 BOT HEDGE FUND ACTIVO")
+# ================================================
+
+print("🏦 BOT HEDGE FUND ACTIVO (SIN ERRORES)")
+send_telegram("🏦 BOT ACTIVO SIN ERRORES")
 
 # ================= FUNCIONES =================
 
@@ -108,7 +119,6 @@ while True:
         reconnect()
 
         if not is_trading_time():
-            print("⏰ Fuera de horario")
             time.sleep(5)
             continue
 
@@ -141,7 +151,6 @@ while True:
 
             score = score_pair(df)
 
-            # IA decide si vale la pena
             if not allow_trade(score):
                 continue
 
@@ -153,7 +162,7 @@ while True:
         if best_pair and best_score >= 3:
             trade(best_pair, best_signal, best_score)
         else:
-            print("❌ Sin oportunidad institucional")
+            print("❌ Sin oportunidad sniper")
 
         time.sleep(0.5)
 
