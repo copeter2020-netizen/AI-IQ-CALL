@@ -13,7 +13,7 @@ from ai_auto import allow_trade, register_trade
 
 TIMEFRAME = 60
 EXPIRATION = 1
-AMOUNT = 6
+AMOUNT = 12
 
 EMAIL = os.getenv("IQ_EMAIL")
 PASSWORD = os.getenv("IQ_PASSWORD")
@@ -95,7 +95,7 @@ def trade(pair, direction):
             print(f"🔥 {pair} {direction.upper()}")
             send_telegram(f"🔥 {pair} {direction.upper()}")
 
-            # 🔥 REGISTRO PARA PANEL (simulado)
+            # 🔥 Registro (simulado)
             result = random.choice(["win", "loss"])
             register_trade(pair, direction, result)
 
@@ -141,6 +141,7 @@ while True:
 
             score = score_pair(df)
 
+            # 🧠 filtro IA
             if not allow_trade(score):
                 continue
 
