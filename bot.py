@@ -7,15 +7,9 @@ import logging
 from iqoptionapi.stable_api import IQ_Option
 from estrategia import calculate_indicators, check_signal, score_pair
 
-# =========================
-# SILENCIO TOTAL (RAILWAY)
-# =========================
 logging.getLogger().setLevel(logging.CRITICAL)
 sys.stderr = open(os.devnull, 'w')
 
-# =========================
-# CONFIG
-# =========================
 EMAIL = os.getenv("IQ_EMAIL")
 PASSWORD = os.getenv("IQ_PASSWORD")
 TOKEN = os.getenv("TELEGRAM_TOKEN")
@@ -23,7 +17,7 @@ CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 TIMEFRAME = 60
 EXPIRATION = 1
-AMOUNT = 10  # fijo como pediste
+AMOUNT = 100
 
 PAIRS = [
     "EURUSD-OTC",
@@ -31,17 +25,13 @@ PAIRS = [
     "GBPUSD-OTC",
     "USDCHF-OTC",
     "EURJPY-OTC",
-    "USDHKD-OTC",
     "AUDCAD-OTC"
 ]
 
-last_candle = None
-pending_trade = None
+pending = None
 
 
-# =========================
-# TELEGRAM
-# =========================
+# ================= TELEGRAM =================
 def send(msg):
     try:
         requests.post(
@@ -53,9 +43,7 @@ def send(msg):
         pass
 
 
-# =========================
-# CONEXION
-# =========================
+# ================= CONEXION =================
 iq = IQ_Option(EMAIL, PASSWORD)
 iq.connect()
 
@@ -64,81 +52,62 @@ if not iq.check_connect():
 
 iq.change_balance("PRACTICE")
 
-# 🔥 FIX ERROR UNDERLYING (clave)
+# FIX IQ ERROR
 iq.get_digital_underlying_list_data = lambda: {"underlying": []}
 
-print("🔥 SNIPER ACTIVO")
-send("🔥 SNIPER ACTIVO")
+print("🔥 SNIPER OPERATIVO")
+send("🔥 SNIPER OPERATIVO")
 
 
-# =========================
-# FUNCIONES
-# =========================
+# ================= FUNCIONES =================
 def get_candles(pair):
     try:
-        return iq.get_candles(pair, TIMEFRAME, 20, time.time())
+        return iq.get_candles(pair, TIMEFRAME, 50, time.time())
     except:
         return None
 
 
-def is_market_open(pair):
+def is_open(pair):
     try:
-        data = iq.get_all_open_time()
-        return data["digital"][pair]["open"]
+        return iq.get_all_open_time()["digital"][pair]["open"]
     except:
         return False
 
 
-def execute_trade(pair, direction):
+def trade(pair, direction):
     try:
         status, _ = iq.buy(AMOUNT, pair, direction, EXPIRATION)
         if status:
-            msg = f"🚀 {pair} {direction.upper()} ${AMOUNT}"
-            print(msg)
-            send(msg)
+            send(f"🚀 {pair} {direction.upper()} ${AMOUNT}")
     except:
         pass
 
 
+def wait_close():
+    # esperar cierre REAL de vela (segundo 59)
+    while int(time.time()) % 60 != 59:
+        time.sleep(0.01)
+
+
 def wait_open():
-    # sincronización exacta con vela
     while int(time.time()) % 60 != 0:
         time.sleep(0.01)
 
 
-# =========================
-# LOOP PRINCIPAL
-# =========================
+# ================= LOOP =================
 while True:
     try:
-        current_candle = int(time.time() // 60)
 
-        # evitar repetir vela
-        if current_candle == last_candle:
-            time.sleep(0.2)
-            continue
+        # 🔥 1. ESPERAR CIERRE DE VELA
+        wait_close()
 
-        last_candle = current_candle
-
-        # =========================
-        # EJECUTAR TRADE PENDIENTE
-        # =========================
-        if pending_trade:
-            wait_open()
-            execute_trade(pending_trade[0], pending_trade[1])
-            pending_trade = None
-            continue
-
-        best_pair = None
-        best_signal = None
+        best = None
         best_score = 0
 
-        # =========================
-        # SCAN MERCADO
-        # =========================
+        # 🔥 2. ANALIZAR JUSTO AL CIERRE
         for pair in PAIRS:
 
-            if not is_market_open(pair):
+            if not is_open(pair):
                 continue
 
             candles = get_candles(pair)
@@ -146,27 +115,29 @@ while True:
                 continue
 
             data = calculate_indicators(candles)
-
             signal = check_signal(data)
+
             if not signal:
                 continue
 
             score = score_pair(data)
 
-            # 🔥 filtro más estricto (clave del winrate)
+            # 🔥 MENOS ESTRICTO PERO INTELIGENTE
             if score > best_score:
                 best_score = score
-                best_pair = pair
-                best_signal = signal
+                best = (pair, signal)
 
-        # =========================
-        # GENERAR SEÑAL
-        # =========================
-        if best_pair and best_score >= 4:
-            pending_trade = (best_pair, best_signal)
-            msg = f"📡 SNIPER {best_pair} {best_signal.upper()} | score {best_score}"
-            print(msg)
-            send(msg)
+        # 🔥 3. SI HAY SEÑAL → EJECUTAR SIGUIENTE VELA
+        if best and best_score >= 2:
+            send(f"📡 {best[0]} {best[1].upper()} | score {best_score}")
+
+            wait_open()  # entrada exacta
+
+            trade(best[0], best[1])
+
+        else:
+            # opcional: ver que sí está analizando
+            print("…sin señal")
 
     except:
         time.sleep(1)
