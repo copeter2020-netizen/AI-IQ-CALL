@@ -8,7 +8,6 @@ import logging
 from iqoptionapi.stable_api import IQ_Option
 from estrategia import calculate_indicators, check_signal, score_pair
 
-# 🔇 eliminar spam
 logging.getLogger().setLevel(logging.CRITICAL)
 sys.stderr = open(os.devnull, 'w')
 
@@ -19,9 +18,8 @@ CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 TIMEFRAME = 60
 EXPIRATION = 1
-AMOUNT = 10  # 🔥 fijo 10 USD
+AMOUNT = 12
 
-# 🎯 SOLO ESTOS PARES
 PAIRS = [
     "EURUSD-OTC",
     "EURGBP-OTC",
@@ -32,7 +30,8 @@ PAIRS = [
 ]
 
 last_candle = 0
-pending = []
+pending = None
+loss_streak = 0
 
 def send(msg):
     try:
@@ -44,24 +43,14 @@ def send(msg):
     except:
         pass
 
-# ================= IQ =================
-
 iq = IQ_Option(EMAIL, PASSWORD)
 iq.connect()
+iq.change_balance("PRACTICE")
 
-if not iq.check_connect():
-    print("❌ Error conexión")
-    exit()
-
-iq.change_balance("PRACTICE")  # 👉 cambia a REAL si quieres
-
-# fix errores OTC
 iq.get_digital_underlying_list_data = lambda: {"underlying": []}
 
-print("✅ BOT OTC ACTIVO (6 PARES)")
-send("✅ BOT OTC ACTIVO (6 PARES)")
-
-# ================= FUNCIONES =================
+print("🔥 BOT PRO ACTIVO")
+send("🔥 BOT PRO ACTIVO")
 
 def get_candles(pair):
     try:
@@ -73,32 +62,50 @@ def get_candles(pair):
         return None
 
 def trade(pair, direction):
-    status, _ = iq.buy(AMOUNT, pair, direction, EXPIRATION)
+    global loss_streak
+
+    status, trade_id = iq.buy(AMOUNT, pair, direction, EXPIRATION)
 
     if status:
         send(f"🔥 {pair} {direction.upper()} $10")
 
-# ================= LOOP =================
+        time.sleep(EXPIRATION * 60 + 2)
+
+        result = iq.check_win_v4(trade_id)
+
+        if result > 0:
+            loss_streak = 0
+            send("✅ WIN")
+        else:
+            loss_streak += 1
+            send("❌ LOSS")
 
 while True:
     try:
         server_time = iq.get_server_timestamp()
         candle = server_time // 60
 
-        # 🔥 SOLO AL CIERRE
         if candle == last_candle:
             time.sleep(0.2)
             continue
 
         last_candle = candle
 
-        # 🔥 ejecutar pendientes
-        for pair, direction in pending:
-            trade(pair, direction)
+        # PROTECCIÓN
+        if loss_streak >= 2:
+            send("⛔ Pausa por racha")
+            time.sleep(120)
+            loss_streak = 0
+            continue
 
-        pending.clear()
+        # ejecutar sniper
+        if pending:
+            trade(pending[0], pending[1])
+            pending = None
+            continue
 
-        signals = []
+        best = None
+        best_score = 0
 
         for pair in PAIRS:
 
@@ -114,19 +121,13 @@ while True:
 
             score = score_pair(df)
 
-            # 🔥 filtro equilibrado
-            if score >= 2:
-                signals.append((pair, signal, score))
+            if score > best_score:
+                best_score = score
+                best = (pair, signal)
 
-        # ordenar mejores
-        signals = sorted(signals, key=lambda x: x[2], reverse=True)
-
-        # máximo 2 entradas por vela
-        selected = signals[:2]
-
-        if selected:
-            pending = [(p, s) for p, s, sc in selected]
-            send(f"📡 {len(selected)} setups listos")
+        if best and best_score >= 3:
+            pending = best
+            send(f"📡 {best[0]} {best[1].upper()}")
 
     except:
         time.sleep(1)
