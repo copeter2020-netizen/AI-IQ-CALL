@@ -3,15 +3,14 @@ import pandas as pd
 def calculate_indicators(df):
     return df
 
-def is_indecision_candle(candle):
-    body = abs(candle["close"] - candle["open"])
-    total = candle["high"] - candle["low"]
+def is_indecision(c):
+    body = abs(c["close"] - c["open"])
+    total = c["high"] - c["low"]
 
     if total == 0:
         return True
 
-    # doji o vela débil
-    return body < total * 0.2
+    return body < total * 0.2  # doji o débil
 
 
 def check_signal(df):
@@ -20,15 +19,12 @@ def check_signal(df):
     prev = df.iloc[-3]
 
     # ❌ evitar indecisión
-    if is_indecision_candle(last):
+    if is_indecision(last):
         return None
 
     body = abs(last["close"] - last["open"])
-    direction = "bull" if last["close"] > last["open"] else "bear"
 
-    # ===============================
-    # 🔍 CONTEXTO (últimas 5 velas)
-    # ===============================
+    # contexto (últimas velas)
     recent = df.iloc[-7:-2]
 
     bullish = sum(1 for i in range(len(recent)) if recent.iloc[i]["close"] > recent.iloc[i]["open"])
@@ -37,23 +33,21 @@ def check_signal(df):
     # ===============================
     # 🚀 CONTINUIDAD
     # ===============================
-    if direction == "bull" and bullish >= 3:
+    if last["close"] > last["open"] and bullish >= 3:
         return "call"
 
-    if direction == "bear" and bearish >= 3:
+    if last["close"] < last["open"] and bearish >= 3:
         return "put"
 
     # ===============================
-    # 🔁 REVERSIÓN (agotamiento)
+    # 🔁 REVERSIÓN
     # ===============================
     wick_up = last["high"] - max(last["open"], last["close"])
     wick_down = min(last["open"], last["close"]) - last["low"]
 
-    # rechazo abajo → compra
     if wick_down > body * 1.5 and bearish >= 3:
         return "call"
 
-    # rechazo arriba → venta
     if wick_up > body * 1.5 and bullish >= 3:
         return "put"
 
@@ -73,17 +67,17 @@ def score_pair(df):
 
     score = 0
 
-    # 🔥 fuerza de vela
+    # fuerza de vela
     if body > total * 0.5:
         score += 2
 
-    # 🔥 cierre fuerte
+    # continuidad
     if last["close"] > prev["close"]:
         score += 1
     if last["close"] < prev["close"]:
         score += 1
 
-    # 🔥 volatilidad suficiente
+    # volatilidad
     if total > (df["high"].iloc[-10:].max() - df["low"].iloc[-10:].min()) * 0.1:
         score += 1
 
