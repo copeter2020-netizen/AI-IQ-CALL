@@ -10,45 +10,52 @@ def is_indecision(c):
     if total == 0:
         return True
 
-    return body < total * 0.2  # doji o débil
+    return body < total * 0.25
+
+
+def trend(df):
+    data = df.iloc[-10:-2]
+
+    up = sum(1 for i in range(len(data)) if data.iloc[i]["close"] > data.iloc[i]["open"])
+    down = sum(1 for i in range(len(data)) if data.iloc[i]["close"] < data.iloc[i]["open"])
+
+    if up > down:
+        return "bull"
+    elif down > up:
+        return "bear"
+    return "range"
 
 
 def check_signal(df):
 
-    last = df.iloc[-2]   # vela cerrada
+    last = df.iloc[-2]
     prev = df.iloc[-3]
 
-    # ❌ evitar indecisión
     if is_indecision(last):
         return None
 
+    t = trend(df)
+
     body = abs(last["close"] - last["open"])
+    total = last["high"] - last["low"]
 
-    # contexto (últimas velas)
-    recent = df.iloc[-7:-2]
+    # CONTINUIDAD
+    if t == "bull":
+        if last["close"] > prev["high"] and body > total * 0.5:
+            return "call"
 
-    bullish = sum(1 for i in range(len(recent)) if recent.iloc[i]["close"] > recent.iloc[i]["open"])
-    bearish = sum(1 for i in range(len(recent)) if recent.iloc[i]["close"] < recent.iloc[i]["open"])
+    if t == "bear":
+        if last["close"] < prev["low"] and body > total * 0.5:
+            return "put"
 
-    # ===============================
-    # 🚀 CONTINUIDAD
-    # ===============================
-    if last["close"] > last["open"] and bullish >= 3:
-        return "call"
-
-    if last["close"] < last["open"] and bearish >= 3:
-        return "put"
-
-    # ===============================
-    # 🔁 REVERSIÓN
-    # ===============================
+    # REVERSIÓN
     wick_up = last["high"] - max(last["open"], last["close"])
     wick_down = min(last["open"], last["close"]) - last["low"]
 
-    if wick_down > body * 1.5 and bearish >= 3:
+    if t == "bear" and wick_down > body * 1.5:
         return "call"
 
-    if wick_up > body * 1.5 and bullish >= 3:
+    if t == "bull" and wick_up > body * 1.5:
         return "put"
 
     return None
@@ -57,28 +64,20 @@ def check_signal(df):
 def score_pair(df):
 
     last = df.iloc[-2]
-    prev = df.iloc[-3]
-
-    body = abs(last["close"] - last["open"])
     total = last["high"] - last["low"]
+    body = abs(last["close"] - last["open"])
 
     if total == 0:
         return 0
 
     score = 0
 
-    # fuerza de vela
     if body > total * 0.5:
         score += 2
 
-    # continuidad
-    if last["close"] > prev["close"]:
+    if last["close"] > last["open"]:
         score += 1
-    if last["close"] < prev["close"]:
-        score += 1
-
-    # volatilidad
-    if total > (df["high"].iloc[-10:].max() - df["low"].iloc[-10:].min()) * 0.1:
+    else:
         score += 1
 
     return score
