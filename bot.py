@@ -18,7 +18,7 @@ CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 TIMEFRAME = 60
 EXPIRATION = 1
-AMOUNT = 12
+AMOUNT = 11
 
 PAIRS = [
     "EURUSD-OTC",
@@ -31,7 +31,6 @@ PAIRS = [
 
 last_candle = 0
 pending = None
-loss_streak = 0
 
 def send(msg):
     try:
@@ -45,12 +44,16 @@ def send(msg):
 
 iq = IQ_Option(EMAIL, PASSWORD)
 iq.connect()
+
+if not iq.check_connect():
+    exit()
+
 iq.change_balance("PRACTICE")
 
 iq.get_digital_underlying_list_data = lambda: {"underlying": []}
 
-print("🔥 BOT PRO ACTIVO")
-send("🔥 BOT PRO ACTIVO")
+print("🔥 SNIPER ACTIVO")
+send("🔥 SNIPER ACTIVO")
 
 def get_candles(pair):
     try:
@@ -62,23 +65,19 @@ def get_candles(pair):
         return None
 
 def trade(pair, direction):
-    global loss_streak
-
-    status, trade_id = iq.buy(AMOUNT, pair, direction, EXPIRATION)
-
+    status, _ = iq.buy(AMOUNT, pair, direction, EXPIRATION)
     if status:
         send(f"🔥 {pair} {direction.upper()} $10")
 
-        time.sleep(EXPIRATION * 60 + 2)
+def wait_next_open():
+    # ⏱️ espera apertura exacta de vela
+    while True:
+        sec = int(time.time()) % 60
+        if sec == 0:
+            break
+        time.sleep(0.01)
 
-        result = iq.check_win_v4(trade_id)
-
-        if result > 0:
-            loss_streak = 0
-            send("✅ WIN")
-        else:
-            loss_streak += 1
-            send("❌ LOSS")
+# ================= LOOP =================
 
 while True:
     try:
@@ -86,20 +85,14 @@ while True:
         candle = server_time // 60
 
         if candle == last_candle:
-            time.sleep(0.2)
+            time.sleep(0.1)
             continue
 
         last_candle = candle
 
-        # PROTECCIÓN
-        if loss_streak >= 2:
-            send("⛔ Pausa por racha")
-            time.sleep(120)
-            loss_streak = 0
-            continue
-
-        # ejecutar sniper
+        # 🔥 ejecutar EXACTO en apertura
         if pending:
+            wait_next_open()
             trade(pending[0], pending[1])
             pending = None
             continue
@@ -125,9 +118,9 @@ while True:
                 best_score = score
                 best = (pair, signal)
 
-        if best and best_score >= 3:
+        if best and best_score >= 2:
             pending = best
-            send(f"📡 {best[0]} {best[1].upper()}")
+            send(f"📡 SNIPER {best[0]} {best[1].upper()}")
 
     except:
         time.sleep(1)
