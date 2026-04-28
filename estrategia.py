@@ -80,17 +80,17 @@ def score_pair(data):
         fuerza = body / rango
 
         if fuerza > 0.7:
-            score += 2
+            score += 3
         elif fuerza > 0.6:
-            score += 1
+            score += 2
 
     # =========================
     # CONTINUIDAD ESTRUCTURA
     # =========================
     if last["close"] > prev["close"]:
-        score += 1
+        score += 2
 
     if last["close"] < prev["close"]:
-        score += 1
+        score += 2
 
     return score
