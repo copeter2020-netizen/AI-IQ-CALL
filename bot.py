@@ -6,9 +6,10 @@ import sys
 import logging
 
 from iqoptionapi.stable_api import IQ_Option
-from estrategia import calculate_indicators, check_signal, score_pair
+from estrategia import check_signal
 
-# 🔇 eliminar spam logs
+# ================= CONFIG =================
+
 logging.getLogger().setLevel(logging.CRITICAL)
 sys.stderr = open(os.devnull, 'w')
 
@@ -19,7 +20,7 @@ CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 TIMEFRAME = 60
 EXPIRATION = 1
-AMOUNT = 10
+AMOUNT = 12
 
 PAIRS = [
     "EURUSD-OTC",
@@ -31,8 +32,10 @@ PAIRS = [
 ]
 
 last_candle = 0
+pending = None
 
 # ================= TELEGRAM =================
+
 def send(msg):
     try:
         requests.post(
@@ -43,95 +46,105 @@ def send(msg):
     except:
         pass
 
-# ================= IQ OPTION =================
+# ================= CONEXIÓN =================
+
 iq = IQ_Option(EMAIL, PASSWORD)
 iq.connect()
 
 if not iq.check_connect():
-    print("❌ Error conectando")
     exit()
 
 iq.change_balance("PRACTICE")
 
-# ❌ FIX error 'underlying'
+# evitar error digital
 iq.get_digital_underlying_list_data = lambda: {"underlying": []}
 
-print("🔥 BOT ACTIVO")
-send("🔥 BOT ACTIVO")
+print("🔥 BOT SNIPER PRO ACTIVO")
+send("🔥 BOT SNIPER PRO ACTIVO")
 
-# ================= DATOS =================
+# ================= DATA =================
+
 def get_candles(pair):
     try:
-        candles = iq.get_candles(pair, TIMEFRAME, 100, time.time())
+        candles = iq.get_candles(pair, TIMEFRAME, 50, time.time())
         df = pd.DataFrame(candles)
-        df.rename(columns={"max": "high", "min": "low"}, inplace=True)
+
+        # FIX ERROR 'max'
+        df.rename(columns={
+            "max": "high",
+            "min": "low"
+        }, inplace=True)
+
         return df
+
     except:
         return None
 
 # ================= TRADE =================
-def trade(pair, direction):
-    try:
-        status, _ = iq.buy(AMOUNT, pair, direction, EXPIRATION)
-        if status:
-            print(f"🔥 {pair} {direction.upper()}")
-            send(f"🔥 {pair} {direction.upper()} ${AMOUNT}")
-    except:
-        pass
 
-# ================= LOOP PRINCIPAL =================
+def trade(pair, direction):
+    status, _ = iq.buy(AMOUNT, pair, direction, EXPIRATION)
+
+    if status:
+        msg = f"🔥 {pair} → {direction.upper()} (${AMOUNT})"
+        print(msg)
+        send(msg)
+
+# ================= TIMER SNIPER =================
+
+def wait_next_open():
+    while True:
+        if int(time.time()) % 60 == 0:
+            break
+        time.sleep(0.01)
+
+# ================= LOOP =================
+
 while True:
     try:
         server_time = iq.get_server_timestamp()
         current_candle = server_time // 60
 
-        # ⏱️ esperar nueva vela
         if current_candle == last_candle:
             time.sleep(0.2)
             continue
 
         last_candle = current_candle
 
+        # ================= EJECUCIÓN SNIPER =================
+        if pending:
+            wait_next_open()
+            trade(pending[0], pending[1])
+            pending = None
+            continue
+
+        # ================= ANÁLISIS =================
+
         best_pair = None
         best_signal = None
-        best_score = -1
+        best_score = 0
 
-        # 🔍 analizar pares
         for pair in PAIRS:
 
             df = get_candles(pair)
-            if df is None or len(df) < 5:
+            if df is None or len(df) < 20:
                 continue
 
-            data = calculate_indicators(df.to_dict("records"))
+            signal, score = check_signal(df)
 
-            signal = check_signal(data)
-            if signal is None:
-                continue
-
-            score = score_pair(data)
-
-            # 🔥 siempre elegir el mejor (aunque score bajo)
-            if score > best_score:
+            if signal and score > best_score:
                 best_score = score
                 best_pair = pair
                 best_signal = signal
 
-        # ================= EJECUCIÓN =================
-        if best_pair and best_signal:
+        # ================= FILTRO FLEXIBLE (CLAVE) =================
 
-            print(f"📡 {best_pair} {best_signal.upper()} (score {best_score})")
-            send(f"📡 {best_pair} {best_signal.upper()}")
+        if best_pair and best_score >= 1:  # 🔥 MÁS ENTRADAS SIN BAJAR CALIDAD
+            pending = (best_pair, best_signal)
 
-            # ⏱️ entrar justo al inicio de vela
-            time.sleep(0.3)
+            msg = f"📡 {best_pair} → {best_signal.upper()} | score: {best_score}"
+            print(msg)
+            send(msg)
 
-            trade(best_pair, best_signal)
-
-        else:
-            print("…sin señal")
-
-    except Exception as e:
-        # ❌ evitar spam pero mostrar fallo crítico
-        print("Error loop:", e)
+    except:
         time.sleep(1)
