@@ -1,83 +1,96 @@
-def calculate_indicators(df):
-    # NO usamos indicadores → solo estructura
-    return df
+# estrategia.py
+
+# =========================================
+# NO usamos indicadores clásicos
+# Solo acción del precio (price action)
+# =========================================
+
+def calculate_indicators(data):
+    # Se devuelve la data tal cual (compatibilidad con bot)
+    return data
 
 
-def is_doji(candle):
-    body = abs(candle["close"] - candle["open"])
-    rango = candle["high"] - candle["low"]
-    return body < (rango * 0.2)
+# =========================================
+# DETECCIÓN DE SEÑAL (CONTINUIDAD)
+# =========================================
+def check_signal(data):
 
+    # seguridad
+    if len(data) < 3:
+        return None
 
-def fuerza_candle(candle):
-    body = abs(candle["close"] - candle["open"])
-    rango = candle["high"] - candle["low"]
+    last = data[-1]
+    prev = data[-2]
+
+    open_ = last["open"]
+    close = last["close"]
+    high = last["high"]
+    low = last["low"]
+
+    # =========================
+    # CALCULO FUERZA DE VELA
+    # =========================
+    body = abs(close - open_)
+    rango = high - low
 
     if rango == 0:
-        return 0
-
-    return body / rango
-
-
-def tendencia(df):
-    # últimos 5 cierres
-    closes = df["close"].values[-6:]
-
-    alcista = all(closes[i] > closes[i-1] for i in range(1, len(closes)))
-    bajista = all(closes[i] < closes[i-1] for i in range(1, len(closes)))
-
-    if alcista:
-        return "call"
-    elif bajista:
-        return "put"
-    else:
         return None
 
+    fuerza = body / rango
 
-def check_signal(df):
-    last = df.iloc[-1]
-    prev = df.iloc[-2]
-
-    # ❌ FILTROS DUROS
-    if is_doji(last):
+    # ❌ evitar indecisión / doji
+    if fuerza < 0.55:
         return None
 
-    if fuerza_candle(last) < 0.6:
-        return None
-
-    trend = tendencia(df)
-
-    if trend is None:
-        return None
-
-    # ✔ CONTINUIDAD REAL
-    if trend == "call" and last["close"] > prev["close"]:
+    # =========================
+    # CONTINUIDAD ALCISTA
+    # =========================
+    if close > open_ and close > prev["close"]:
         return "call"
 
-    if trend == "put" and last["close"] < prev["close"]:
+    # =========================
+    # CONTINUIDAD BAJISTA
+    # =========================
+    if close < open_ and close < prev["close"]:
         return "put"
 
     return None
 
 
-def score_pair(df):
-    last = df.iloc[-1]
+# =========================================
+# SCORE (PRIORIZA MEJOR PAR)
+# =========================================
+def score_pair(data):
+
+    if len(data) < 4:
+        return 0
+
+    last = data[-1]
+    prev = data[-2]
 
     score = 0
 
-    # fuerza
-    if fuerza_candle(last) > 0.7:
-        score += 2
-    elif fuerza_candle(last) > 0.6:
+    # =========================
+    # FUERZA DE VELA
+    # =========================
+    body = abs(last["close"] - last["open"])
+    rango = last["high"] - last["low"]
+
+    if rango > 0:
+        fuerza = body / rango
+
+        if fuerza > 0.7:
+            score += 2
+        elif fuerza > 0.6:
+            score += 1
+
+    # =========================
+    # CONTINUIDAD ESTRUCTURA
+    # =========================
+    if last["close"] > prev["close"]:
         score += 1
 
-    # continuidad fuerte
-    closes = df["close"].values[-4:]
-
-    if closes[-1] > closes[-2] > closes[-3]:
-        score += 1
-
-    if closes[-1] < closes[-2] < closes[-3]:
+    if last["close"] < prev["close"]:
         score += 1
 
     return score
