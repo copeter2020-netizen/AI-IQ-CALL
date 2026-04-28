@@ -17,7 +17,7 @@ CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 TIMEFRAME = 60
 EXPIRATION = 1
-AMOUNT = 12
+AMOUNT = 175
 
 PAIRS = [
     "EURUSD-OTC",
@@ -51,8 +51,8 @@ iq.change_balance("PRACTICE")
 # FIX ERROR IQ
 iq.get_digital_underlying_list_data = lambda: {"underlying": []}
 
-print("🔥 BOT ACTIVO")
-send("🔥 BOT ACTIVO")
+print("🔥 PRICE ACTION BOT ACTIVO")
+send("🔥 PRICE ACTION BOT ACTIVO")
 
 # ================= FUNCIONES =================
 def get_candles(pair):
@@ -61,11 +61,13 @@ def get_candles(pair):
     except:
         return None
 
+
 def is_open(pair):
     try:
         return iq.get_all_open_time()["digital"][pair]["open"]
     except:
         return False
+
 
 def trade(pair, direction):
     try:
@@ -77,6 +79,7 @@ def trade(pair, direction):
     except:
         pass
 
+
 # ================= LOOP =================
 last_candle = None
 
@@ -85,7 +88,6 @@ while True:
         server_time = int(iq.get_server_timestamp())
         candle_time = server_time // 60
 
-        # detectar NUEVA vela real
         if candle_time != last_candle:
 
             last_candle = candle_time
@@ -94,7 +96,7 @@ while True:
             best_signal = None
             best_score = 0
 
-            print("🔍 Analizando...")
+            print("🔍 Analizando estructura...")
 
             for pair in PAIRS:
 
@@ -118,20 +120,20 @@ while True:
                     best_pair = pair
                     best_signal = signal
 
-            # ✅ MENOS ESTRICTO
             if best_pair and best_score >= 2:
+
                 msg = f"📡 {best_pair} {best_signal.upper()} | score {best_score}"
                 print(msg)
                 send(msg)
 
-                # esperar apertura EXACTA siguiente vela
+                # ⏱ esperar inicio de nueva vela
                 while int(iq.get_server_timestamp()) % 60 != 0:
                     time.sleep(0.01)
 
                 trade(best_pair, best_signal)
 
             else:
-                print("…sin señal válida")
+                print("…sin estructura válida")
 
         time.sleep(0.2)
 
