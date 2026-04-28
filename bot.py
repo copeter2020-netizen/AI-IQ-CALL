@@ -7,15 +7,9 @@ import logging
 from iqoptionapi.stable_api import IQ_Option
 from estrategia import calculate_indicators, check_signal, score_pair
 
-# =========================
-# SILENCIO (RAILWAY)
-# =========================
 logging.getLogger().setLevel(logging.CRITICAL)
 sys.stderr = open(os.devnull, 'w')
 
-# =========================
-# CONFIG
-# =========================
 EMAIL = os.getenv("IQ_EMAIL")
 PASSWORD = os.getenv("IQ_PASSWORD")
 TOKEN = os.getenv("TELEGRAM_TOKEN")
@@ -23,7 +17,7 @@ CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 TIMEFRAME = 60
 EXPIRATION = 1
-AMOUNT = 13
+AMOUNT = 12
 
 PAIRS = [
     "EURUSD-OTC",
@@ -34,14 +28,8 @@ PAIRS = [
     "AUDCAD-OTC"
 ]
 
-pending = None
-
-# =========================
-# TELEGRAM
-# =========================
+# ================= TELEGRAM =================
 def send(msg):
-    if not TOKEN or not CHAT_ID:
-        return
     try:
         requests.post(
             f"https://api.telegram.org/bot{TOKEN}/sendMessage",
@@ -51,9 +39,7 @@ def send(msg):
     except:
         pass
 
-# =========================
-# CONEXION
-# =========================
+# ================= CONEXION =================
 iq = IQ_Option(EMAIL, PASSWORD)
 iq.connect()
 
@@ -62,21 +48,18 @@ if not iq.check_connect():
 
 iq.change_balance("PRACTICE")
 
-# FIX ERROR IQ OPTION
+# FIX ERROR IQ
 iq.get_digital_underlying_list_data = lambda: {"underlying": []}
 
-print("🔥 BOT SNIPER ACTIVO")
-send("🔥 BOT SNIPER ACTIVO")
+print("🔥 BOT ACTIVO")
+send("🔥 BOT ACTIVO")
 
-# =========================
-# FUNCIONES
-# =========================
+# ================= FUNCIONES =================
 def get_candles(pair):
     try:
-        return iq.get_candles(pair, TIMEFRAME, 50, time.time())
+        return iq.get_candles(pair, TIMEFRAME, 50, iq.get_server_timestamp())
     except:
         return None
-
 
 def is_open(pair):
     try:
@@ -84,8 +67,7 @@ def is_open(pair):
     except:
         return False
 
-
-def execute_trade(pair, direction):
+def trade(pair, direction):
     try:
         status, _ = iq.buy(AMOUNT, pair, direction, EXPIRATION)
         if status:
@@ -95,66 +77,63 @@ def execute_trade(pair, direction):
     except:
         pass
 
+# ================= LOOP =================
+last_candle = None
 
-def wait_close():
-    # esperar cierre real (segundo 59)
-    while int(time.time()) % 60 != 59:
-        time.sleep(0.01)
-
-
-def wait_open():
-    # esperar apertura real (segundo 0)
-    while int(time.time()) % 60 != 0:
-        time.sleep(0.01)
-
-
-# =========================
-# LOOP PRINCIPAL
-# =========================
 while True:
     try:
+        server_time = int(iq.get_server_timestamp())
+        candle_time = server_time // 60
 
-        # 🔥 ESPERAR CIERRE DE VELA
-        wait_close()
+        # detectar NUEVA vela real
+        if candle_time != last_candle:
 
-        best_pair = None
-        best_signal = None
-        best_score = 0
+            last_candle = candle_time
 
-        # 🔍 ANALISIS
-        for pair in PAIRS:
+            best_pair = None
+            best_signal = None
+            best_score = 0
 
-            if not is_open(pair):
-                continue
+            print("🔍 Analizando...")
 
-            candles = get_candles(pair)
-            if not candles:
-                continue
+            for pair in PAIRS:
 
-            data = calculate_indicators(candles)
+                if not is_open(pair):
+                    continue
 
-            signal = check_signal(data)
-            if not signal:
-                continue
+                candles = get_candles(pair)
+                if not candles:
+                    continue
 
-            score = score_pair(data)
+                data = calculate_indicators(candles)
 
-            if score > best_score:
-                best_score = score
-                best_pair = pair
-                best_signal = signal
+                signal = check_signal(data)
+                if not signal:
+                    continue
 
-        # 🎯 EJECUCION SNIPER
-        if best_pair and best_score >= 2:
-            msg = f"📡 {best_pair} {best_signal.upper()} | score {best_score}"
-            print(msg)
-            send(msg)
+                score = score_pair(data)
 
-            wait_open()
-            execute_trade(best_pair, best_signal)
+                if score > best_score:
+                    best_score = score
+                    best_pair = pair
+                    best_signal = signal
 
-        else:
-            print("…sin señal")
+            # ✅ MENOS ESTRICTO
+            if best_pair and best_score >= 2:
+                msg = f"📡 {best_pair} {best_signal.upper()} | score {best_score}"
+                print(msg)
+                send(msg)
+
+                # esperar apertura EXACTA siguiente vela
+                while int(iq.get_server_timestamp()) % 60 != 0:
+                    time.sleep(0.01)
+
+                trade(best_pair, best_signal)
+
+            else:
+                print("…sin señal válida")
+
+        time.sleep(0.2)
 
     except:
         time.sleep(1)
