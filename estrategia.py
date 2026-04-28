@@ -28,7 +28,7 @@ def calculate_indicators(candles):
 
 
 # =========================
-# SEÑAL FLEXIBLE (OPERA MÁS)
+# ULTRA SEÑAL (MUCHAS ENTRADAS)
 # =========================
 def check_signal(data):
 
@@ -36,27 +36,44 @@ def check_signal(data):
     prev = data[-2]
     prev2 = data[-3]
 
-    # ❌ eliminar solo doji extremo
-    if last["body"] < last["range"] * 0.1:
+    body_ratio = last["body"] / last["range"]
+
+    # ❌ SOLO eliminar doji extremo
+    if body_ratio < 0.08:
         return None
 
     # =========================
-    # CONTINUIDAD SIMPLE
+    # 1. CONTINUIDAD FUERTE
     # =========================
     if last["direction"] == prev["direction"]:
         return last["direction"]
 
     # =========================
-    # REVERSIÓN SIMPLE
+    # 2. CONTINUIDAD SUAVE
+    # =========================
+    if prev["direction"] == prev2["direction"]:
+        return prev["direction"]
+
+    # =========================
+    # 3. MICRO REVERSIÓN
     # =========================
     if prev["direction"] != prev2["direction"]:
         return last["direction"]
+
+    # =========================
+    # 4. RUPTURA SIMPLE
+    # =========================
+    if last["close"] > prev["high"]:
+        return "call"
+
+    if last["close"] < prev["low"]:
+        return "put"
 
     return None
 
 
 # =========================
-# SCORE SUAVE
+# SCORE SUAVE (NO BLOQUEA)
 # =========================
 def score_pair(data):
 
@@ -66,16 +83,13 @@ def score_pair(data):
 
     score = 0
 
-    # continuidad
     if last["direction"] == prev["direction"]:
         score += 1
 
-    # reversión
-    if prev["direction"] != prev2["direction"]:
+    if prev["direction"] == prev2["direction"]:
         score += 1
 
-    # movimiento real
-    if last["range"] > prev["range"] * 0.8:
+    if last["range"] > prev["range"] * 0.7:
         score += 1
 
     return score
