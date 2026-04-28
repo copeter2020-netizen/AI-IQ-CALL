@@ -1,74 +1,96 @@
 # estrategia.py
 
-def calculate_indicators(candles):
-    data = []
+# =========================================
+# NO usamos indicadores clásicos
+# Solo acción del precio (price action)
+# =========================================
 
-    for c in candles:
-        o = c["open"]
-        cl = c["close"]
-        h = c["max"]
-        l = c["min"]
-
-        body = abs(cl - o)
-        range_ = h - l if h - l != 0 else 1e-6
-
-        direction = "call" if cl > o else "put"
-
-        data.append({
-            "open": o,
-            "close": cl,
-            "high": h,
-            "low": l,
-            "body": body,
-            "range": range_,
-            "direction": direction
-        })
-
+def calculate_indicators(data):
+    # Se devuelve la data tal cual (compatibilidad con bot)
     return data
 
 
+# =========================================
+# DETECCIÓN DE SEÑAL (CONTINUIDAD)
+# =========================================
 def check_signal(data):
+
+    # seguridad
+    if len(data) < 3:
+        return None
 
     last = data[-1]
     prev = data[-2]
-    prev2 = data[-3]
 
-    body_ratio = last["body"] / last["range"]
+    open_ = last["open"]
+    close = last["close"]
+    high = last["high"]
+    low = last["low"]
 
-    # ❌ evitar solo velas MUERTAS
-    if body_ratio < 0.05:
+    # =========================
+    # CALCULO FUERZA DE VELA
+    # =========================
+    body = abs(close - open_)
+    rango = high - low
+
+    if rango == 0:
         return None
 
-    # ✅ continuidad fuerte
-    if last["direction"] == prev["direction"]:
-        return last["direction"]
+    fuerza = body / rango
 
-    # ✅ continuidad media
-    if prev["direction"] == prev2["direction"]:
-        return prev["direction"]
+    # ❌ evitar indecisión / doji
+    if fuerza < 0.55:
+        return None
 
-    # ✅ ruptura simple
-    if last["close"] > prev["high"]:
+    # =========================
+    # CONTINUIDAD ALCISTA
+    # =========================
+    if close > open_ and close > prev["close"]:
         return "call"
 
-    if last["close"] < prev["low"]:
+    # =========================
+    # CONTINUIDAD BAJISTA
+    # =========================
+    if close < open_ and close < prev["close"]:
         return "put"
 
-    # 🔥 FALLBACK → SIEMPRE DECIDE
-    return last["direction"]
+    return None
 
 
+# =========================================
+# SCORE (PRIORIZA MEJOR PAR)
+# =========================================
 def score_pair(data):
+
+    if len(data) < 4:
+        return 0
 
     last = data[-1]
     prev = data[-2]
 
     score = 0
 
-    if last["direction"] == prev["direction"]:
+    # =========================
+    # FUERZA DE VELA
+    # =========================
+    body = abs(last["close"] - last["open"])
+    rango = last["high"] - last["low"]
+
+    if rango > 0:
+        fuerza = body / rango
+
+        if fuerza > 0.7:
+            score += 2
+        elif fuerza > 0.6:
+            score += 1
+
+    # =========================
+    # CONTINUIDAD ESTRUCTURA
+    # =========================
+    if last["close"] > prev["close"]:
         score += 1
 
-    if last["range"] > prev["range"] * 0.5:
+    if last["close"] < prev["close"]:
         score += 1
 
     return score
