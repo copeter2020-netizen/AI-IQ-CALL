@@ -1,22 +1,24 @@
+# estrategia.py
+
 def calculate_indicators(candles):
     data = []
 
     for c in candles:
-        open_ = c["open"]
-        close = c["close"]
-        high = c["max"]
-        low = c["min"]
+        o = c["open"]
+        c_ = c["close"]
+        h = c["max"]
+        l = c["min"]
 
-        body = abs(close - open_)
-        range_ = high - low if high - low != 0 else 1e-6
+        body = abs(c_ - o)
+        range_ = h - l if h - l != 0 else 1e-6
 
-        direction = "call" if close > open_ else "put"
+        direction = "call" if c_ > o else "put"
 
         data.append({
-            "open": open_,
-            "close": close,
-            "high": high,
-            "low": low,
+            "open": o,
+            "close": c_,
+            "high": h,
+            "low": l,
             "body": body,
             "range": range_,
             "direction": direction
@@ -26,7 +28,7 @@ def calculate_indicators(candles):
 
 
 # =========================
-# FILTRO INTELIGENTE FLEXIBLE
+# ANALISIS PRICE ACTION
 # =========================
 def check_signal(data):
 
@@ -34,47 +36,45 @@ def check_signal(data):
     prev = data[-2]
     prev2 = data[-3]
 
-    # ❌ SOLO eliminar doji real
-    if last["body"] < last["range"] * 0.15:
+    body_ratio = last["body"] / last["range"]
+
+    # ❌ evitar indecisión
+    if body_ratio < 0.2:
         return None
 
     # =========================
-    # 🔥 CONTINUIDAD FUERTE
+    # 🔥 CONTINUIDAD
     # =========================
     if last["direction"] == prev["direction"]:
 
-        # continuación clásica
-        if last["direction"] == "call" and last["close"] > prev["close"]:
-            return "call"
+        # impulso real
+        if body_ratio > 0.5:
 
-        if last["direction"] == "put" and last["close"] < prev["close"]:
-            return "put"
+            if last["direction"] == "call" and last["close"] > prev["close"]:
+                return "call"
 
-    # =========================
-    # ⚡ CONTINUIDAD SUAVE (NUEVO)
-    # =========================
-    if prev["direction"] == prev2["direction"]:
-
-        if prev["direction"] == "call" and last["close"] > prev["open"]:
-            return "call"
-
-        if prev["direction"] == "put" and last["close"] < prev["open"]:
-            return "put"
+            if last["direction"] == "put" and last["close"] < prev["close"]:
+                return "put"
 
     # =========================
-    # 🚀 MICRO RUPTURA (NUEVO)
+    # ⚡ REVERSIÓN (rechazo fuerte)
     # =========================
-    if last["direction"] == "call" and last["close"] > prev["high"]:
-        return "call"
+    upper_wick = last["high"] - max(last["open"], last["close"])
+    lower_wick = min(last["open"], last["close"]) - last["low"]
 
-    if last["direction"] == "put" and last["close"] < prev["low"]:
+    # rechazo arriba → PUT
+    if upper_wick > last["body"] * 1.5:
         return "put"
+
+    # rechazo abajo → CALL
+    if lower_wick > last["body"] * 1.5:
+        return "call"
 
     return None
 
 
 # =========================
-# SCORE MEJORADO
+# SCORE DE CALIDAD
 # =========================
 def score_pair(data):
 
@@ -84,20 +84,20 @@ def score_pair(data):
 
     score = 0
 
+    # fuerza
+    if last["body"] > prev["body"]:
+        score += 1
+
     # continuidad
     if last["direction"] == prev["direction"]:
         score += 1
 
     # tendencia (3 velas)
     if last["direction"] == prev["direction"] == prev2["direction"]:
-        score += 2
-
-    # expansión real
-    if last["range"] > prev["range"]:
         score += 1
 
-    # ruptura
-    if last["close"] > prev["high"] or last["close"] < prev["low"]:
+    # expansión
+    if last["range"] > prev["range"]:
         score += 1
 
     return score
