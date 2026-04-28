@@ -1,3 +1,5 @@
+# bot.py
+
 import time
 import os
 import requests
@@ -7,9 +9,15 @@ import logging
 from iqoptionapi.stable_api import IQ_Option
 from estrategia import calculate_indicators, check_signal, score_pair
 
+# =========================
+# SILENCIO (RAILWAY)
+# =========================
 logging.getLogger().setLevel(logging.CRITICAL)
 sys.stderr = open(os.devnull, 'w')
 
+# =========================
+# CONFIG
+# =========================
 EMAIL = os.getenv("IQ_EMAIL")
 PASSWORD = os.getenv("IQ_PASSWORD")
 TOKEN = os.getenv("TELEGRAM_TOKEN")
@@ -17,33 +25,40 @@ CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 TIMEFRAME = 60
 EXPIRATION = 1
-AMOUNT = 175
+AMOUNT = 1
 
 PAIRS = [
     "EURUSD-OTC",
     "EURGBP-OTC",
     "GBPUSD-OTC",
     "USDCHF-OTC",
-    "EURJPY-OTC",
+    "EURJPY-OTC", 
+    "EURCHF-OTC", 
     "AUDCAD-OTC"
 ]
 
-# ================= TELEGRAM =================
+# =========================
+# TELEGRAM
+# =========================
 def send(msg):
     try:
-        requests.post(
-            f"https://api.telegram.org/bot{TOKEN}/sendMessage",
-            data={"chat_id": CHAT_ID, "text": msg},
-            timeout=5
-        )
+        if TOKEN and CHAT_ID:
+            requests.post(
+                f"https://api.telegram.org/bot{TOKEN}/sendMessage",
+                data={"chat_id": CHAT_ID, "text": msg},
+                timeout=5
+            )
     except:
         pass
 
-# ================= CONEXION =================
+# =========================
+# CONEXION
+# =========================
 iq = IQ_Option(EMAIL, PASSWORD)
 iq.connect()
 
 if not iq.check_connect():
+    print("❌ Error conexión")
     exit()
 
 iq.change_balance("PRACTICE")
@@ -51,10 +66,12 @@ iq.change_balance("PRACTICE")
 # FIX ERROR IQ
 iq.get_digital_underlying_list_data = lambda: {"underlying": []}
 
-print("🔥 PRICE ACTION BOT ACTIVO")
-send("🔥 PRICE ACTION BOT ACTIVO")
+print("🔥 BOT ACTIVO")
+send("🔥 BOT ACTIVO")
 
-# ================= FUNCIONES =================
+# =========================
+# FUNCIONES
+# =========================
 def get_candles(pair):
     try:
         return iq.get_candles(pair, TIMEFRAME, 50, iq.get_server_timestamp())
@@ -80,7 +97,9 @@ def trade(pair, direction):
         pass
 
 
-# ================= LOOP =================
+# =========================
+# LOOP PRINCIPAL
+# =========================
 last_candle = None
 
 while True:
@@ -88,6 +107,7 @@ while True:
         server_time = int(iq.get_server_timestamp())
         candle_time = server_time // 60
 
+        # detectar nueva vela REAL
         if candle_time != last_candle:
 
             last_candle = candle_time
@@ -96,7 +116,7 @@ while True:
             best_signal = None
             best_score = 0
 
-            print("🔍 Analizando estructura...")
+            print("🔍 Analizando...")
 
             for pair in PAIRS:
 
@@ -120,20 +140,21 @@ while True:
                     best_pair = pair
                     best_signal = signal
 
-            if best_pair and best_score >= 2:
+            # 🔥 MENOS ESTRICTO → MÁS ENTRADAS
+            if best_pair and best_score >= 1:
 
                 msg = f"📡 {best_pair} {best_signal.upper()} | score {best_score}"
                 print(msg)
                 send(msg)
 
-                # ⏱ esperar inicio de nueva vela
+                # esperar apertura exacta
                 while int(iq.get_server_timestamp()) % 60 != 0:
                     time.sleep(0.01)
 
                 trade(best_pair, best_signal)
 
             else:
-                print("…sin estructura válida")
+                print("…sin señal")
 
         time.sleep(0.2)
 
