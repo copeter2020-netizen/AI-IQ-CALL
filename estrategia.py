@@ -27,9 +27,6 @@ def calculate_indicators(candles):
     return data
 
 
-# =========================
-# ULTRA SEÑAL (MUCHAS ENTRADAS)
-# =========================
 def check_signal(data):
 
     last = data[-1]
@@ -38,58 +35,40 @@ def check_signal(data):
 
     body_ratio = last["body"] / last["range"]
 
-    # ❌ SOLO eliminar doji extremo
-    if body_ratio < 0.08:
+    # ❌ evitar solo velas MUERTAS
+    if body_ratio < 0.05:
         return None
 
-    # =========================
-    # 1. CONTINUIDAD FUERTE
-    # =========================
+    # ✅ continuidad fuerte
     if last["direction"] == prev["direction"]:
         return last["direction"]
 
-    # =========================
-    # 2. CONTINUIDAD SUAVE
-    # =========================
+    # ✅ continuidad media
     if prev["direction"] == prev2["direction"]:
         return prev["direction"]
 
-    # =========================
-    # 3. MICRO REVERSIÓN
-    # =========================
-    if prev["direction"] != prev2["direction"]:
-        return last["direction"]
-
-    # =========================
-    # 4. RUPTURA SIMPLE
-    # =========================
+    # ✅ ruptura simple
     if last["close"] > prev["high"]:
         return "call"
 
     if last["close"] < prev["low"]:
         return "put"
 
-    return None
+    # 🔥 FALLBACK → SIEMPRE DECIDE
+    return last["direction"]
 
 
-# =========================
-# SCORE SUAVE (NO BLOQUEA)
-# =========================
 def score_pair(data):
 
     last = data[-1]
     prev = data[-2]
-    prev2 = data[-3]
 
     score = 0
 
     if last["direction"] == prev["direction"]:
         score += 1
 
-    if prev["direction"] == prev2["direction"]:
-        score += 1
-
-    if last["range"] > prev["range"] * 0.7:
+    if last["range"] > prev["range"] * 0.5:
         score += 1
 
     return score
