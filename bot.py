@@ -7,9 +7,15 @@ import logging
 from iqoptionapi.stable_api import IQ_Option
 from estrategia import calculate_indicators, check_signal, score_pair
 
+# =========================
+# SILENCIO (RAILWAY)
+# =========================
 logging.getLogger().setLevel(logging.CRITICAL)
 sys.stderr = open(os.devnull, 'w')
 
+# =========================
+# CONFIG
+# =========================
 EMAIL = os.getenv("IQ_EMAIL")
 PASSWORD = os.getenv("IQ_PASSWORD")
 TOKEN = os.getenv("TELEGRAM_TOKEN")
@@ -17,7 +23,7 @@ CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 TIMEFRAME = 60
 EXPIRATION = 1
-AMOUNT = 100
+AMOUNT = 13
 
 PAIRS = [
     "EURUSD-OTC",
@@ -30,9 +36,12 @@ PAIRS = [
 
 pending = None
 
-
-# ================= TELEGRAM =================
+# =========================
+# TELEGRAM
+# =========================
 def send(msg):
+    if not TOKEN or not CHAT_ID:
+        return
     try:
         requests.post(
             f"https://api.telegram.org/bot{TOKEN}/sendMessage",
@@ -42,8 +51,9 @@ def send(msg):
     except:
         pass
 
-
-# ================= CONEXION =================
+# =========================
+# CONEXION
+# =========================
 iq = IQ_Option(EMAIL, PASSWORD)
 iq.connect()
 
@@ -52,14 +62,15 @@ if not iq.check_connect():
 
 iq.change_balance("PRACTICE")
 
-# FIX IQ ERROR
+# FIX ERROR IQ OPTION
 iq.get_digital_underlying_list_data = lambda: {"underlying": []}
 
-print("🔥 SNIPER OPERATIVO")
-send("🔥 SNIPER OPERATIVO")
+print("🔥 BOT SNIPER ACTIVO")
+send("🔥 BOT SNIPER ACTIVO")
 
-
-# ================= FUNCIONES =================
+# =========================
+# FUNCIONES
+# =========================
 def get_candles(pair):
     try:
         return iq.get_candles(pair, TIMEFRAME, 50, time.time())
@@ -74,37 +85,43 @@ def is_open(pair):
         return False
 
 
-def trade(pair, direction):
+def execute_trade(pair, direction):
     try:
         status, _ = iq.buy(AMOUNT, pair, direction, EXPIRATION)
         if status:
-            send(f"🚀 {pair} {direction.upper()} ${AMOUNT}")
+            msg = f"🚀 {pair} {direction.upper()} ${AMOUNT}"
+            print(msg)
+            send(msg)
     except:
         pass
 
 
 def wait_close():
-    # esperar cierre REAL de vela (segundo 59)
+    # esperar cierre real (segundo 59)
     while int(time.time()) % 60 != 59:
         time.sleep(0.01)
 
 
 def wait_open():
+    # esperar apertura real (segundo 0)
     while int(time.time()) % 60 != 0:
         time.sleep(0.01)
 
 
-# ================= LOOP =================
+# =========================
+# LOOP PRINCIPAL
+# =========================
 while True:
     try:
 
-        # 🔥 1. ESPERAR CIERRE DE VELA
+        # 🔥 ESPERAR CIERRE DE VELA
         wait_close()
 
-        best = None
+        best_pair = None
+        best_signal = None
         best_score = 0
 
-        # 🔥 2. ANALIZAR JUSTO AL CIERRE
+        # 🔍 ANALISIS
         for pair in PAIRS:
 
             if not is_open(pair):
@@ -115,28 +132,28 @@ while True:
                 continue
 
             data = calculate_indicators(candles)
-            signal = check_signal(data)
 
+            signal = check_signal(data)
             if not signal:
                 continue
 
             score = score_pair(data)
 
-            # 🔥 MENOS ESTRICTO PERO INTELIGENTE
             if score > best_score:
                 best_score = score
-                best = (pair, signal)
+                best_pair = pair
+                best_signal = signal
 
-        # 🔥 3. SI HAY SEÑAL → EJECUTAR SIGUIENTE VELA
-        if best and best_score >= 2:
-            send(f"📡 {best[0]} {best[1].upper()} | score {best_score}")
+        # 🎯 EJECUCION SNIPER
+        if best_pair and best_score >= 2:
+            msg = f"📡 {best_pair} {best_signal.upper()} | score {best_score}"
+            print(msg)
+            send(msg)
 
-            wait_open()  # entrada exacta
-
-            trade(best[0], best[1])
+            wait_open()
+            execute_trade(best_pair, best_signal)
 
         else:
-            # opcional: ver que sí está analizando
             print("…sin señal")
 
     except:
