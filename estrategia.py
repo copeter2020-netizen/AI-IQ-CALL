@@ -1,5 +1,4 @@
 def calculate_indicators(candles):
-    # Convertimos a estructura simple
     data = []
 
     for c in candles:
@@ -9,7 +8,8 @@ def calculate_indicators(candles):
         low = c["min"]
 
         body = abs(close - open_)
-        wick = (high - low) - body
+        range_ = high - low if high - low != 0 else 1e-6
+
         direction = "call" if close > open_ else "put"
 
         data.append({
@@ -18,7 +18,7 @@ def calculate_indicators(candles):
             "high": high,
             "low": low,
             "body": body,
-            "wick": wick,
+            "range": range_,
             "direction": direction
         })
 
@@ -26,55 +26,35 @@ def calculate_indicators(candles):
 
 
 # =========================
-# FILTRO PRINCIPAL
+# SEÑAL FLEXIBLE (CLAVE)
 # =========================
 def check_signal(data):
 
     last = data[-1]
     prev = data[-2]
-    prev2 = data[-3]
 
-    # =========================
-    # ❌ FILTROS DE BASURA
-    # =========================
-
-    # DOJI (sin cuerpo)
-    if last["body"] < (last["high"] - last["low"]) * 0.3:
-        return None
-
-    # WICK dominante (indecisión)
-    if last["wick"] > last["body"] * 1.2:
-        return None
-
-    # RANGO MUERTO (muy poco movimiento)
-    if last["body"] < prev["body"] * 0.6:
+    # ❌ SOLO eliminar doji real (muy pequeño)
+    if last["body"] < last["range"] * 0.15:
         return None
 
     # =========================
-    # 🔥 CONTINUIDAD REAL
+    # CONTINUIDAD SIMPLE
     # =========================
+    if last["direction"] == prev["direction"]:
 
-    # CALL fuerte
-    if (
-        last["direction"] == "call"
-        and prev["direction"] == "call"
-        and last["close"] > prev["close"]
-    ):
-        return "call"
+        # CALL
+        if last["direction"] == "call" and last["close"] > prev["close"]:
+            return "call"
 
-    # PUT fuerte
-    if (
-        last["direction"] == "put"
-        and prev["direction"] == "put"
-        and last["close"] < prev["close"]
-    ):
-        return "put"
+        # PUT
+        if last["direction"] == "put" and last["close"] < prev["close"]:
+            return "put"
 
     return None
 
 
 # =========================
-# SCORE INTELIGENTE
+# SCORE MÁS INTELIGENTE
 # =========================
 def score_pair(data):
 
@@ -84,23 +64,16 @@ def score_pair(data):
     prev = data[-2]
     prev2 = data[-3]
 
-    # Fuerza del cuerpo
-    if last["body"] > prev["body"]:
-        score += 1
-
-    # Continuidad
+    # continuidad
     if last["direction"] == prev["direction"]:
         score += 1
 
-    # Momentum (3 velas)
-    if (
-        last["direction"] == prev["direction"] ==
-        prev2["direction"]
-    ):
-        score += 1
+    # 3 velas misma dirección (tendencia)
+    if last["direction"] == prev["direction"] == prev2["direction"]:
+        score += 2
 
-    # Expansión real
-    if (last["high"] - last["low"]) > (prev["high"] - prev["low"]):
+    # expansión (movimiento real)
+    if last["range"] > prev["range"]:
         score += 1
 
     return score
