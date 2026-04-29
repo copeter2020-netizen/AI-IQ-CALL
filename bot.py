@@ -19,7 +19,7 @@ CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 TIMEFRAME = 60
 EXPIRATION = 1
-AMOUNT = 22
+AMOUNT = 28
 
 PAIRS = [
     "EURUSD-OTC",
@@ -94,7 +94,7 @@ while True:
 
         best_pair = None
         best_signal = None
-        best_score = -3
+        best_score = -5
 
         # 🔍 analizar pares
         for pair in PAIRS:
