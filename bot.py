@@ -94,7 +94,7 @@ while True:
 
         best_pair = None
         best_signal = None
-        best_score = -2
+        best_score = -3
 
         # 🔍 analizar pares
         for pair in PAIRS:
