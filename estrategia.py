@@ -1,96 +1,142 @@
-# estrategia.py
+# ===============================
+# PRICE ACTION PRO (ALTA PROBABILIDAD)
+# ===============================
 
-# =========================================
-# NO usamos indicadores clásicos
-# Solo acción del precio (price action)
-# =========================================
-
-def calculate_indicators(data):
-    # Se devuelve la data tal cual (compatibilidad con bot)
-    return data
+def body(c):
+    return abs(c["close"] - c["open"])
 
 
-# =========================================
-# DETECCIÓN DE SEÑAL (CONTINUIDAD)
-# =========================================
-def check_signal(data):
+def rango(c):
+    return c["high"] - c["low"]
 
-    # seguridad
-    if len(data) < 3:
-        return None
 
-    last = data[-1]
-    prev = data[-2]
+def fuerza(c):
+    r = rango(c)
+    if r == 0:
+        return 0
+    return body(c) / r
 
-    open_ = last["open"]
-    close = last["close"]
-    high = last["high"]
-    low = last["low"]
 
-    # =========================
-    # CALCULO FUERZA DE VELA
-    # =========================
-    body = abs(close - open_)
-    rango = high - low
+def is_doji(c):
+    return fuerza(c) < 0.3
 
-    if rango == 0:
-        return None
 
-    fuerza = body / rango
+# ===============================
+# TENDENCIA REAL
+# ===============================
 
-    # ❌ evitar indecisión / doji
-    if fuerza < 0.55:
-        return None
+def tendencia(df):
+    closes = df["close"].values[-6:]
 
-    # =========================
-    # CONTINUIDAD ALCISTA
-    # =========================
-    if close > open_ and close > prev["close"]:
+    up = all(closes[i] > closes[i-1] for i in range(1, len(closes)))
+    down = all(closes[i] < closes[i-1] for i in range(1, len(closes)))
+
+    if up:
         return "call"
-
-    # =========================
-    # CONTINUIDAD BAJISTA
-    # =========================
-    if close < open_ and close < prev["close"]:
+    if down:
         return "put"
 
     return None
 
 
-# =========================================
-# SCORE (PRIORIZA MEJOR PAR)
-# =========================================
-def score_pair(data):
+# ===============================
+# RUPTURA REAL (BREAK)
+# ===============================
 
-    if len(data) < 5:
-        return 0
+def ruptura(df):
+    last = df.iloc[-1]
+    prev_high = df["high"].iloc[-5:-1].max()
+    prev_low = df["low"].iloc[-5:-1].min()
 
-    last = data[-1]
-    prev = data[-2]
+    if last["close"] > prev_high:
+        return "call"
+
+    if last["close"] < prev_low:
+        return "put"
+
+    return None
+
+
+# ===============================
+# SCORE INTELIGENTE
+# ===============================
+
+def score_pair(df):
+
+    last = df.iloc[-1]
+    prev = df.iloc[-2]
 
     score = 0
 
-    # =========================
-    # FUERZA DE VELA
-    # =========================
-    body = abs(last["close"] - last["open"])
-    rango = last["high"] - last["low"]
+    f = fuerza(last)
 
-    if rango > 0:
-        fuerza = body / rango
+    # 🔥 FUERZA DE VELA
+    if f > 0.75:
+        score += 2
+    elif f > 0.65:
+        score += 1
 
-        if fuerza > 0.7:
-            score += 5
-        elif fuerza > 0.6:
-            score += 3
-
-    # =========================
-    # CONTINUIDAD ESTRUCTURA
-    # =========================
+    # 🔥 CONTINUIDAD
     if last["close"] > prev["close"]:
-        score += 3
+        score += 1
+    elif last["close"] < prev["close"]:
+        score += 1
 
-    if last["close"] < prev["close"]:
-        score += 3
+    # 🔥 TENDENCIA
+    t = tendencia(df)
+    if t:
+        score += 1
+
+    # 🔥 RUPTURA
+    r = ruptura(df)
+    if r:
+        score += 1
 
     return score
+
+
+# ===============================
+# SEÑAL FINAL (SNIPER)
+# ===============================
+
+def check_signal(df):
+
+    if len(df) < 10:
+        return None, 0
+
+    last = df.iloc[-1]
+
+    # ❌ evitar basura
+    if is_doji(last):
+        return None, 0
+
+    f = fuerza(last)
+
+    if f < 0.6:
+        return None, 0
+
+    t = tendencia(df)
+    r = ruptura(df)
+
+    # ❌ sin contexto claro
+    if not t:
+        return None, 0
+
+    # ===============================
+    # CONTINUIDAD + CONFIRMACIÓN
+    # ===============================
+
+    if t == "call" and last["close"] > last["open"]:
+        score = score_pair(df)
+
+        # 🔥 SOLO ALTA PROBABILIDAD
+        if score >= 3:
+            return "call", score
+
+    if t == "put" and last["close"] < last["open"]:
+        score = score_pair(df)
+
+        if score >= 3:
+            return "put", score
+
+    return None, 0
