@@ -62,7 +62,7 @@ def check_signal(data):
 # =========================================
 def score_pair(data):
 
-    if len(data) < 4:
+    if len(data) < 5:
         return 0
 
     last = data[-1]
@@ -80,17 +80,17 @@ def score_pair(data):
         fuerza = body / rango
 
         if fuerza > 0.7:
-            score += 3
+            score += 5
         elif fuerza > 0.6:
-            score += 2
+            score += 3
 
     # =========================
     # CONTINUIDAD ESTRUCTURA
     # =========================
     if last["close"] > prev["close"]:
-        score += 2
+        score += 3
 
     if last["close"] < prev["close"]:
-        score += 2
+        score += 3
 
     return score
