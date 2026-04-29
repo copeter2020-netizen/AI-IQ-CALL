@@ -1,5 +1,5 @@
 # ===============================
-# PRICE ACTION PRO (ALTA PROBABILIDAD)
+# PRICE ACTION PRO SNIPER
 # ===============================
 
 def body(c):
@@ -22,7 +22,7 @@ def is_doji(c):
 
 
 # ===============================
-# TENDENCIA REAL
+# TENDENCIA
 # ===============================
 
 def tendencia(df):
@@ -40,7 +40,7 @@ def tendencia(df):
 
 
 # ===============================
-# RUPTURA REAL (BREAK)
+# RUPTURA
 # ===============================
 
 def ruptura(df):
@@ -58,11 +58,10 @@ def ruptura(df):
 
 
 # ===============================
-# SCORE INTELIGENTE
+# SCORE
 # ===============================
 
 def score_pair(df):
-
     last = df.iloc[-1]
     prev = df.iloc[-2]
 
@@ -70,33 +69,30 @@ def score_pair(df):
 
     f = fuerza(last)
 
-    # 🔥 FUERZA DE VELA
     if f > 0.75:
         score += 2
     elif f > 0.65:
         score += 1
 
-    # 🔥 CONTINUIDAD
+    # continuidad
     if last["close"] > prev["close"]:
         score += 1
     elif last["close"] < prev["close"]:
         score += 1
 
-    # 🔥 TENDENCIA
-    t = tendencia(df)
-    if t:
+    # tendencia
+    if tendencia(df):
         score += 1
 
-    # 🔥 RUPTURA
-    r = ruptura(df)
-    if r:
+    # ruptura
+    if ruptura(df):
         score += 1
 
     return score
 
 
 # ===============================
-# SEÑAL FINAL (SNIPER)
+# SEÑAL FINAL
 # ===============================
 
 def check_signal(df):
@@ -106,7 +102,6 @@ def check_signal(df):
 
     last = df.iloc[-1]
 
-    # ❌ evitar basura
     if is_doji(last):
         return None, 0
 
@@ -116,27 +111,20 @@ def check_signal(df):
         return None, 0
 
     t = tendencia(df)
-    r = ruptura(df)
 
-    # ❌ sin contexto claro
     if not t:
         return None, 0
 
-    # ===============================
-    # CONTINUIDAD + CONFIRMACIÓN
-    # ===============================
+    score = score_pair(df)
+
+    # 🔥 SOLO ALTA PROBABILIDAD
+    if score < 3:
+        return None, score
 
     if t == "call" and last["close"] > last["open"]:
-        score = score_pair(df)
-
-        # 🔥 SOLO ALTA PROBABILIDAD
-        if score >= 3:
-            return "call", score
+        return "call", score
 
     if t == "put" and last["close"] < last["open"]:
-        score = score_pair(df)
+        return "put", score
 
-        if score >= 3:
-            return "put", score
-
-    return None, 0
+    return None, score
