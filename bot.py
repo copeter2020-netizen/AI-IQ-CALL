@@ -6,7 +6,7 @@ import sys
 import logging
 
 from iqoptionapi.stable_api import IQ_Option
-from estrategia import check_signal, score_pair
+from estrategia import check_signal
 
 # ================= CONFIG =================
 
@@ -20,22 +20,22 @@ CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 TIMEFRAME = 60
 EXPIRATION = 2
-AMOUNT = 350
+AMOUNT = 2
+
+INVERT_SIGNAL = True  # 🔥 CAMBIA A False SI NO QUIERES INVERTIR
 
 PAIRS = [
     "EURUSD-OTC",
     "EURGBP-OTC",
     "GBPUSD-OTC",
     "USDCHF-OTC",
-    "USDZAR-OTC",
     "EURJPY-OTC",
     "AUDCAD-OTC"
 ]
 
 last_candle = 0
 pending = None
-bot_active = True  # 🔥 estado del bot
-
+bot_active = True
 last_update_id = None
 
 # ================= TELEGRAM =================
@@ -79,7 +79,7 @@ def check_commands():
     except:
         pass
 
-# ================= IQ =================
+# ================= IQ OPTION =================
 
 iq = IQ_Option(EMAIL, PASSWORD)
 iq.connect()
@@ -117,14 +117,17 @@ def trade(pair, direction):
         status, _ = iq.buy(AMOUNT, pair, direction, EXPIRATION)
 
         if status:
-            msg = f"🔥 {pair} {direction.upper()} ${AMOUNT}"
+            msg = f"🔥 OPERACIÓN: {pair} {direction.upper()} ${AMOUNT}"
             print(msg)
             send(msg)
 
     except:
         pass
 
-# ================= ESPERA APERTURA =================
+# ================= UTIL =================
+
+def invert(direction):
+    return "put" if direction == "call" else "call"
 
 def wait_open():
     while True:
@@ -137,7 +140,7 @@ def wait_open():
 
 while True:
     try:
-        check_commands()  # 🔥 escucha telegram SIEMPRE
+        check_commands()
 
         if not bot_active:
             time.sleep(1)
@@ -146,17 +149,22 @@ while True:
         server_time = iq.get_server_timestamp()
         current_candle = server_time // 60
 
-        # esperar nueva vela
         if current_candle == last_candle:
             time.sleep(0.1)
             continue
 
         last_candle = current_candle
 
-        # ================= EJECUTAR EN APERTURA =================
+        # ================= EJECUTAR =================
         if pending:
             wait_open()
-            trade(pending[0], pending[1])
+
+            pair, direction = pending
+
+            if INVERT_SIGNAL:
+                direction = invert(direction)
+
+            trade(pair, direction)
             pending = None
             continue
 
@@ -164,7 +172,7 @@ while True:
         best_signal = None
         best_score = 0
 
-        # analizar pares
+        # ================= ANALISIS =================
         for pair in PAIRS:
 
             df = get_candles(pair)
@@ -181,12 +189,12 @@ while True:
                 best_pair = pair
                 best_signal = signal
 
-        # ================= FILTRO =================
+        # ================= ENVÍO DE SEÑAL =================
         if best_pair and best_score >= 3:
 
             pending = (best_pair, best_signal)
 
-            msg = f"📡 {best_pair} {best_signal.upper()} | score {best_score}"
+            msg = f"📡 SEÑAL: {best_pair} {best_signal.upper()} | score {best_score}"
             print(msg)
             send(msg)
 
