@@ -20,7 +20,7 @@ CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 TIMEFRAME = 60
 EXPIRATION = 2
-AMOUNT = 3500
+AMOUNT = 1090
 
 PAIRS = [
     "EURUSD-OTC",
@@ -182,7 +182,7 @@ while True:
                 best_signal = signal
 
         # ================= FILTRO =================
-        if best_pair and best_score >= 3:
+        if best_pair and best_score >= 7:
 
             pending = (best_pair, best_signal)
 
