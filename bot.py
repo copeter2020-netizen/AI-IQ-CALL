@@ -6,7 +6,7 @@ import sys
 import logging
 
 from iqoptionapi.stable_api import IQ_Option
-from estrategia import check_signal
+from estrategia import check_signal, score_pair
 
 # ================= CONFIG =================
 
@@ -16,16 +16,11 @@ sys.stderr = open(os.devnull, 'w')
 EMAIL = os.getenv("IQ_EMAIL")
 PASSWORD = os.getenv("IQ_PASSWORD")
 TOKEN = os.getenv("TELEGRAM_TOKEN")
-
-# 🔥 IMPORTANTE: TU CHAT PRIVADO (NUMÉRICO)
-CHAT_ID = str(os.getenv("TELEGRAM_CHAT_ID"))
+CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 TIMEFRAME = 60
 EXPIRATION = 2
 AMOUNT = 3500
-
-# 🔁 INVERTIR PRIMERA SEÑAL
-INVERT_SIGNAL = True
 
 PAIRS = [
     "EURUSD-OTC",
@@ -39,27 +34,21 @@ PAIRS = [
 
 last_candle = 0
 pending = None
-bot_active = True
+bot_active = True  # 🔥 estado del bot
+
 last_update_id = None
 
 # ================= TELEGRAM =================
 
 def send(msg):
     try:
-        r = requests.post(
+        requests.post(
             f"https://api.telegram.org/bot{TOKEN}/sendMessage",
-            data={
-                "chat_id": CHAT_ID,
-                "text": msg
-            },
+            data={"chat_id": CHAT_ID, "text": msg},
             timeout=5
         )
-
-        if r.status_code != 200:
-            print("❌ Error Telegram:", r.text)
-
-    except Exception as e:
-        print("❌ Telegram fallo:", e)
+    except:
+        pass
 
 
 def check_commands():
@@ -75,12 +64,6 @@ def check_commands():
             last_update_id = result["update_id"] + 1
 
             if "message" not in result:
-                continue
-
-            chat_id = str(result["message"]["chat"]["id"])
-
-            # 🔥 SOLO TU CHAT
-            if chat_id != CHAT_ID:
                 continue
 
             text = result["message"].get("text", "")
@@ -127,11 +110,6 @@ def get_candles(pair):
     except:
         return None
 
-# ================= UTIL =================
-
-def invert(direction):
-    return "put" if direction == "call" else "call"
-
 # ================= TRADE =================
 
 def trade(pair, direction):
@@ -139,14 +117,14 @@ def trade(pair, direction):
         status, _ = iq.buy(AMOUNT, pair, direction, EXPIRATION)
 
         if status:
-            msg = f"🔥 TRADE: {pair} {direction.upper()} ${AMOUNT}"
+            msg = f"🔥 {pair} {direction.upper()} ${AMOUNT}"
             print(msg)
             send(msg)
 
-    except Exception as e:
-        print("Error trade:", e)
+    except:
+        pass
 
-# ================= ESPERA =================
+# ================= ESPERA APERTURA =================
 
 def wait_open():
     while True:
@@ -159,7 +137,7 @@ def wait_open():
 
 while True:
     try:
-        check_commands()
+        check_commands()  # 🔥 escucha telegram SIEMPRE
 
         if not bot_active:
             time.sleep(1)
@@ -168,23 +146,17 @@ while True:
         server_time = iq.get_server_timestamp()
         current_candle = server_time // 60
 
+        # esperar nueva vela
         if current_candle == last_candle:
             time.sleep(0.1)
             continue
 
         last_candle = current_candle
 
-        # ================= EJECUTAR =================
+        # ================= EJECUTAR EN APERTURA =================
         if pending:
             wait_open()
-
-            pair, direction = pending
-
-            # 🔁 INVERTIR SI ESTÁ ACTIVADO
-            if INVERT_SIGNAL:
-                direction = invert(direction)
-
-            trade(pair, direction)
+            trade(pending[0], pending[1])
             pending = None
             continue
 
@@ -192,7 +164,7 @@ while True:
         best_signal = None
         best_score = 0
 
-        # ================= ANALISIS =================
+        # analizar pares
         for pair in PAIRS:
 
             df = get_candles(pair)
@@ -209,12 +181,12 @@ while True:
                 best_pair = pair
                 best_signal = signal
 
-        # ================= SEÑAL =================
+        # ================= FILTRO =================
         if best_pair and best_score >= 3:
 
             pending = (best_pair, best_signal)
 
-            msg = f"📡 SEÑAL: {best_pair} {best_signal.upper()} | score {best_score}"
+            msg = f"📡 {best_pair} {best_signal.upper()} | score {best_score}"
             print(msg)
             send(msg)
 
