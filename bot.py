@@ -17,12 +17,12 @@ EMAIL = os.getenv("IQ_EMAIL")
 PASSWORD = os.getenv("IQ_PASSWORD")
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 
-# 🔥 PON AQUÍ TU CHAT PRIVADO (NO GRUPO)
-CHAT_ID = int(os.getenv("TELEGRAM_CHAT_ID"))
+# 🔥 PON TU CHAT_ID MANUAL SI FALLA
+CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 TIMEFRAME = 60
 EXPIRATION = 2
-AMOUNT = 2000
+AMOUNT = 3500
 
 PAIRS = [
     "EURUSD-OTC",
@@ -43,16 +43,22 @@ last_update_id = None
 
 def send(msg):
     try:
-        requests.post(
-            f"https://api.telegram.org/bot{TOKEN}/sendMessage",
-            data={
-                "chat_id": CHAT_ID,
-                "text": msg
-            },
-            timeout=5
-        )
-    except:
-        pass
+        url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
+        data = {
+            "chat_id": CHAT_ID,
+            "text": msg
+        }
+
+        r = requests.post(url, data=data, timeout=5)
+
+        # 🔥 DEBUG
+        if r.status_code != 200:
+            print("❌ Error Telegram:", r.text)
+        else:
+            print("✅ Enviado a Telegram")
+
+    except Exception as e:
+        print("❌ FALLO TELEGRAM:", e)
 
 
 def check_commands():
@@ -70,10 +76,10 @@ def check_commands():
             if "message" not in result:
                 continue
 
-            chat_id = result["message"]["chat"]["id"]
+            chat_id = str(result["message"]["chat"]["id"])
 
-            # 🔥 SOLO RESPONDE A TI (NO GRUPOS)
-            if chat_id != CHAT_ID:
+            # 🔥 SOLO TU CHAT
+            if chat_id != str(CHAT_ID):
                 continue
 
             text = result["message"].get("text", "")
@@ -86,8 +92,8 @@ def check_commands():
                 bot_active = True
                 send("✅ BOT ACTIVADO")
 
-    except:
-        pass
+    except Exception as e:
+        print("Error comandos:", e)
 
 # ================= IQ =================
 
@@ -131,10 +137,10 @@ def trade(pair, direction):
             print(msg)
             send(msg)
 
-    except:
-        pass
+    except Exception as e:
+        print("Error trade:", e)
 
-# ================= ESPERA APERTURA =================
+# ================= ESPERA =================
 
 def wait_open():
     while True:
@@ -162,7 +168,7 @@ while True:
 
         last_candle = current_candle
 
-        # 🔥 ejecutar sniper
+        # ejecutar
         if pending:
             wait_open()
             trade(pending[0], pending[1])
@@ -189,12 +195,11 @@ while True:
                 best_pair = pair
                 best_signal = signal
 
-        # 🔥 señal privada (NO grupo)
         if best_pair and best_score >= 3:
 
             pending = (best_pair, best_signal)
 
-            msg = f"📡 SEÑAL PRIVADA: {best_pair} {best_signal.upper()} | score {best_score}"
+            msg = f"📡 SEÑAL: {best_pair} {best_signal.upper()} | score {best_score}"
             print(msg)
             send(msg)
 
