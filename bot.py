@@ -16,19 +16,20 @@ sys.stderr = open(os.devnull, 'w')
 EMAIL = os.getenv("IQ_EMAIL")
 PASSWORD = os.getenv("IQ_PASSWORD")
 TOKEN = os.getenv("TELEGRAM_TOKEN")
-CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+
+# 🔥 PON AQUÍ TU CHAT PRIVADO (NO GRUPO)
+CHAT_ID = int(os.getenv("TELEGRAM_CHAT_ID"))
 
 TIMEFRAME = 60
 EXPIRATION = 2
-AMOUNT = 2
-
-INVERT_SIGNAL = True  # 🔥 CAMBIA A False SI NO QUIERES INVERTIR
+AMOUNT = 2000
 
 PAIRS = [
     "EURUSD-OTC",
     "EURGBP-OTC",
     "GBPUSD-OTC",
     "USDCHF-OTC",
+    "USDZAR-OTC",
     "EURJPY-OTC",
     "AUDCAD-OTC"
 ]
@@ -44,7 +45,10 @@ def send(msg):
     try:
         requests.post(
             f"https://api.telegram.org/bot{TOKEN}/sendMessage",
-            data={"chat_id": CHAT_ID, "text": msg},
+            data={
+                "chat_id": CHAT_ID,
+                "text": msg
+            },
             timeout=5
         )
     except:
@@ -66,6 +70,12 @@ def check_commands():
             if "message" not in result:
                 continue
 
+            chat_id = result["message"]["chat"]["id"]
+
+            # 🔥 SOLO RESPONDE A TI (NO GRUPOS)
+            if chat_id != CHAT_ID:
+                continue
+
             text = result["message"].get("text", "")
 
             if text == "/stop":
@@ -79,7 +89,7 @@ def check_commands():
     except:
         pass
 
-# ================= IQ OPTION =================
+# ================= IQ =================
 
 iq = IQ_Option(EMAIL, PASSWORD)
 iq.connect()
@@ -117,17 +127,14 @@ def trade(pair, direction):
         status, _ = iq.buy(AMOUNT, pair, direction, EXPIRATION)
 
         if status:
-            msg = f"🔥 OPERACIÓN: {pair} {direction.upper()} ${AMOUNT}"
+            msg = f"🔥 TRADE: {pair} {direction.upper()} ${AMOUNT}"
             print(msg)
             send(msg)
 
     except:
         pass
 
-# ================= UTIL =================
-
-def invert(direction):
-    return "put" if direction == "call" else "call"
+# ================= ESPERA APERTURA =================
 
 def wait_open():
     while True:
@@ -155,16 +162,10 @@ while True:
 
         last_candle = current_candle
 
-        # ================= EJECUTAR =================
+        # 🔥 ejecutar sniper
         if pending:
             wait_open()
-
-            pair, direction = pending
-
-            if INVERT_SIGNAL:
-                direction = invert(direction)
-
-            trade(pair, direction)
+            trade(pending[0], pending[1])
             pending = None
             continue
 
@@ -172,7 +173,6 @@ while True:
         best_signal = None
         best_score = 0
 
-        # ================= ANALISIS =================
         for pair in PAIRS:
 
             df = get_candles(pair)
@@ -189,12 +189,12 @@ while True:
                 best_pair = pair
                 best_signal = signal
 
-        # ================= ENVÍO DE SEÑAL =================
+        # 🔥 señal privada (NO grupo)
         if best_pair and best_score >= 3:
 
             pending = (best_pair, best_signal)
 
-            msg = f"📡 SEÑAL: {best_pair} {best_signal.upper()} | score {best_score}"
+            msg = f"📡 SEÑAL PRIVADA: {best_pair} {best_signal.upper()} | score {best_score}"
             print(msg)
             send(msg)
 
