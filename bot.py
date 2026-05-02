@@ -20,7 +20,7 @@ CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 TIMEFRAME = 60
 EXPIRATION = 1
-AMOUNT = 5000
+AMOUNT = 500
 
 PAIRS = [
     "EURUSD-OTC",
@@ -89,8 +89,8 @@ if not iq.check_connect():
 
 iq.change_balance("PRACTICE")
 
-print("🔥 BOT ACTIVO")
-send("🔥 BOT ACTIVO")
+print("🔥 BOT ACTIVO (INVERTIDO)")
+send("🔥 BOT ACTIVO (INVERTIDO)")
 
 # ================= INDICADORES =================
 
@@ -107,23 +107,22 @@ def add_indicators(df):
 
     return df
 
-# ================= SCORE AVANZADO =================
+# ================= SCORE (ADAPTADO A INVERSIÓN) =================
 
 def calculate_score(df, signal):
     score = 0
-
     last = df.iloc[-1]
 
-    # tendencia EMA
-    if signal == "call" and last["ema20"] > last["ema50"]:
+    # 🔥 OJO: lógica invertida
+    if signal == "call" and last["ema20"] < last["ema50"]:
         score += 2
-    elif signal == "put" and last["ema20"] < last["ema50"]:
+    elif signal == "put" and last["ema20"] > last["ema50"]:
         score += 2
 
-    # RSI
-    if signal == "call" and last["rsi"] < 30:
+    # RSI invertido
+    if signal == "call" and last["rsi"] > 70:
         score += 2
-    elif signal == "put" and last["rsi"] > 70:
+    elif signal == "put" and last["rsi"] < 30:
         score += 2
 
     # fuerza de vela
@@ -134,6 +133,15 @@ def calculate_score(df, signal):
         score += 1
 
     return score
+
+# ================= INVERTIR SEÑAL =================
+
+def invert_signal(signal):
+    if signal == "call":
+        return "put"
+    elif signal == "put":
+        return "call"
+    return None
 
 # ================= DATOS =================
 
@@ -218,14 +226,17 @@ while True:
             if not signal:
                 continue
 
-            score = base_score + calculate_score(df, signal)
+            # 🔥 invertir aquí
+            inverted = invert_signal(signal)
+
+            score = base_score + calculate_score(df, inverted)
 
             if score > best_score:
                 best_score = score
                 best_pair = pair
-                best_signal = signal
+                best_signal = inverted
 
-        # 🔥 FILTRO MÁS ESTRICTO
+        # filtro
         if best_pair and best_score >= 4:
 
             pending = (best_pair, best_signal)
