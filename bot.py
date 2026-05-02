@@ -20,7 +20,7 @@ CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 TIMEFRAME = 60
 EXPIRATION = 1
-AMOUNT = 500
+AMOUNT = 2500
 
 PAIRS = [
     "EURUSD-OTC",
@@ -32,8 +32,6 @@ PAIRS = [
     "AUDCAD-OTC"
 ]
 
-last_candle = 0
-pending = None
 bot_active = True
 last_update_id = None
 
@@ -89,8 +87,8 @@ if not iq.check_connect():
 
 iq.change_balance("PRACTICE")
 
-print("🔥 BOT ACTIVO (INVERTIDO)")
-send("🔥 BOT ACTIVO (INVERTIDO)")
+print("🔥 BOT ACTIVO (ENTRADA INMEDIATA)")
+send("🔥 BOT ACTIVO (ENTRADA INMEDIATA)")
 
 # ================= INDICADORES =================
 
@@ -105,43 +103,42 @@ def add_indicators(df):
     rs = gain / loss
     df["rsi"] = 100 - (100 / (1 + rs))
 
+    # rango promedio (detectar lateral)
+    df["range"] = df["high"] - df["low"]
+    df["avg_range"] = df["range"].rolling(10).mean()
+
     return df
 
-# ================= SCORE (ADAPTADO A INVERSIÓN) =================
+# ================= FILTRO PRO =================
 
 def calculate_score(df, signal):
     score = 0
     last = df.iloc[-1]
 
-    # 🔥 OJO: lógica invertida
-    if signal == "call" and last["ema20"] < last["ema50"]:
+    # tendencia fuerte
+    if signal == "call" and last["ema20"] > last["ema50"]:
         score += 2
-    elif signal == "put" and last["ema20"] > last["ema50"]:
-        score += 2
-
-    # RSI invertido
-    if signal == "call" and last["rsi"] > 70:
-        score += 2
-    elif signal == "put" and last["rsi"] < 30:
+    elif signal == "put" and last["ema20"] < last["ema50"]:
         score += 2
 
-    # fuerza de vela
+    # RSI extremo
+    if signal == "call" and last["rsi"] < 30:
+        score += 2
+    elif signal == "put" and last["rsi"] > 70:
+        score += 2
+
+    # vela fuerte
     body = abs(last["close"] - last["open"])
     candle_range = last["high"] - last["low"]
 
-    if candle_range > 0 and (body / candle_range) > 0.6:
+    if candle_range > 0 and (body / candle_range) > 0.65:
+        score += 2
+
+    # evitar lateral (clave)
+    if last["range"] > last["avg_range"]:
         score += 1
 
     return score
-
-# ================= INVERTIR SEÑAL =================
-
-def invert_signal(signal):
-    if signal == "call":
-        return "put"
-    elif signal == "put":
-        return "call"
-    return None
 
 # ================= DATOS =================
 
@@ -163,26 +160,17 @@ def get_candles(pair):
 
 # ================= TRADE =================
 
-def trade(pair, direction):
+def trade(pair, direction, score):
     try:
         status, _ = iq.buy(AMOUNT, pair, direction, EXPIRATION)
 
         if status:
-            msg = f"🔥 {pair} {direction.upper()} ${AMOUNT}"
+            msg = f"🔥 {pair} {direction.upper()} | score {score}"
             print(msg)
             send(msg)
 
     except:
         pass
-
-# ================= ESPERA =================
-
-def wait_open():
-    while True:
-        if int(iq.get_server_timestamp()) % 60 == 0:
-            time.sleep(0.05)
-            return
-        time.sleep(0.002)
 
 # ================= LOOP =================
 
@@ -194,27 +182,11 @@ while True:
             time.sleep(1)
             continue
 
-        server_time = iq.get_server_timestamp()
-        current_candle = server_time // 60
-
-        if current_candle == last_candle:
-            time.sleep(0.1)
-            continue
-
-        last_candle = current_candle
-
-        # ejecutar entrada pendiente
-        if pending:
-            wait_open()
-            trade(pending[0], pending[1])
-            pending = None
-            continue
-
         best_pair = None
         best_signal = None
         best_score = 0
 
-        # analizar pares
+        # analizar TODO en tiempo real
         for pair in PAIRS:
 
             df = get_candles(pair)
@@ -226,27 +198,25 @@ while True:
             if not signal:
                 continue
 
-            # 🔥 invertir aquí
-            inverted = invert_signal(signal)
-
-            score = base_score + calculate_score(df, inverted)
+            score = base_score + calculate_score(df, signal)
 
             if score > best_score:
                 best_score = score
                 best_pair = pair
-                best_signal = inverted
+                best_signal = signal
 
-        # filtro
-        if best_pair and best_score >= 4:
+        # 🔥 ENTRADA INMEDIATA (SIN ESPERAR)
+        if best_pair and best_score >= 5:
 
-            pending = (best_pair, best_signal)
+            trade(best_pair, best_signal, best_score)
 
-            msg = f"📡 {best_pair} {best_signal.upper()} | score {best_score}"
-            print(msg)
-            send(msg)
+            # pequeña pausa para no sobreoperar
+            time.sleep(10)
 
         else:
             print("…sin señal")
+
+        time.sleep(1)
 
     except Exception as e:
         print("Error loop:", e)
