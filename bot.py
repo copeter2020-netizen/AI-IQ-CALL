@@ -6,7 +6,7 @@ import sys
 import logging
 
 from iqoptionapi.stable_api import IQ_Option
-from estrategia import check_signal, score_pair
+from estrategia import check_signal
 
 # ================= CONFIG =================
 
@@ -34,8 +34,7 @@ PAIRS = [
 
 last_candle = 0
 pending = None
-bot_active = True  # 🔥 estado del bot
-
+bot_active = True
 last_update_id = None
 
 # ================= TELEGRAM =================
@@ -89,10 +88,52 @@ if not iq.check_connect():
     exit()
 
 iq.change_balance("PRACTICE")
-iq.get_digital_underlying_list_data = lambda: {"underlying": []}
 
 print("🔥 BOT ACTIVO")
 send("🔥 BOT ACTIVO")
+
+# ================= INDICADORES =================
+
+def add_indicators(df):
+    df["ema20"] = df["close"].ewm(span=20).mean()
+    df["ema50"] = df["close"].ewm(span=50).mean()
+
+    delta = df["close"].diff()
+    gain = (delta.where(delta > 0, 0)).rolling(14).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
+
+    rs = gain / loss
+    df["rsi"] = 100 - (100 / (1 + rs))
+
+    return df
+
+# ================= SCORE AVANZADO =================
+
+def calculate_score(df, signal):
+    score = 0
+
+    last = df.iloc[-1]
+
+    # tendencia EMA
+    if signal == "call" and last["ema20"] > last["ema50"]:
+        score += 2
+    elif signal == "put" and last["ema20"] < last["ema50"]:
+        score += 2
+
+    # RSI
+    if signal == "call" and last["rsi"] < 30:
+        score += 2
+    elif signal == "put" and last["rsi"] > 70:
+        score += 2
+
+    # fuerza de vela
+    body = abs(last["close"] - last["open"])
+    candle_range = last["high"] - last["low"]
+
+    if candle_range > 0 and (body / candle_range) > 0.6:
+        score += 1
+
+    return score
 
 # ================= DATOS =================
 
@@ -105,6 +146,8 @@ def get_candles(pair):
             "max": "high",
             "min": "low"
         }, inplace=True)
+
+        df = add_indicators(df)
 
         return df
     except:
@@ -124,7 +167,7 @@ def trade(pair, direction):
     except:
         pass
 
-# ================= ESPERA APERTURA =================
+# ================= ESPERA =================
 
 def wait_open():
     while True:
@@ -137,7 +180,7 @@ def wait_open():
 
 while True:
     try:
-        check_commands()  # 🔥 escucha telegram SIEMPRE
+        check_commands()
 
         if not bot_active:
             time.sleep(1)
@@ -146,14 +189,13 @@ while True:
         server_time = iq.get_server_timestamp()
         current_candle = server_time // 60
 
-        # esperar nueva vela
         if current_candle == last_candle:
             time.sleep(0.1)
             continue
 
         last_candle = current_candle
 
-        # ================= EJECUTAR EN APERTURA =================
+        # ejecutar entrada pendiente
         if pending:
             wait_open()
             trade(pending[0], pending[1])
@@ -168,21 +210,23 @@ while True:
         for pair in PAIRS:
 
             df = get_candles(pair)
-            if df is None or len(df) < 10:
+            if df is None or len(df) < 50:
                 continue
 
-            signal, score = check_signal(df)
+            signal, base_score = check_signal(df)
 
             if not signal:
                 continue
+
+            score = base_score + calculate_score(df, signal)
 
             if score > best_score:
                 best_score = score
                 best_pair = pair
                 best_signal = signal
 
-        # ================= FILTRO =================
-        if best_pair and best_score >= 1:
+        # 🔥 FILTRO MÁS ESTRICTO
+        if best_pair and best_score >= 4:
 
             pending = (best_pair, best_signal)
 
