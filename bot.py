@@ -182,7 +182,7 @@ while True:
                 best_signal = signal
 
         # ================= FILTRO =================
-        if best_pair and best_score >= 2:
+        if best_pair and best_score >= 1:
 
             pending = (best_pair, best_signal)
 
