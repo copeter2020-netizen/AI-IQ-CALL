@@ -6,62 +6,41 @@ def add_indicators(df):
     df["ema20"] = df["close"].ewm(span=20).mean()
     df["ema50"] = df["close"].ewm(span=50).mean()
 
+    # ATR
     df["tr"] = np.maximum(df["high"] - df["low"],
                 np.maximum(abs(df["high"] - df["close"].shift()),
                            abs(df["low"] - df["close"].shift())))
     df["atr"] = df["tr"].rolling(14).mean()
 
-    # CCI
-    tp = (df["high"] + df["low"] + df["close"]) / 3
-    sma = tp.rolling(20).mean()
-    mad = (tp - sma).abs().rolling(20).mean()
-    df["cci"] = (tp - sma) / (0.015 * mad)
-
     return df
 
-# ================= SOPORTE FUERTE =================
+# ================= FILTROS =================
 
-def strong_support_resistance(df):
-    if len(df) < 40:
+def strong_sr_zone(df):
+    if len(df) < 60:
         return True
 
-    last = df.iloc[-1]
+    high = df["high"].rolling(50).max().iloc[-2]
+    low = df["low"].rolling(50).min().iloc[-2]
+    price = df["close"].iloc[-1]
     atr = df["atr"].iloc[-1]
 
-    high_zone = df["high"].rolling(30).max().iloc[-2]
-    low_zone = df["low"].rolling(30).min().iloc[-2]
+    return abs(price - high) < atr or abs(price - low) < atr
 
-    if abs(last["close"] - high_zone) < atr:
-        return True
-
-    if abs(last["close"] - low_zone) < atr:
-        return True
-
-    return False
-
-# ================= SOBREEXTENSION =================
 
 def is_overextended(df):
-    if len(df) < 10:
-        return True
-
-    last = df.iloc[-1]
-    move = abs(last["close"] - df["close"].iloc[-5])
+    move = abs(df["close"].iloc[-1] - df["close"].iloc[-7])
     atr = df["atr"].iloc[-1]
 
-    return move > atr * 2
+    return move > atr * 2.5
 
-# ================= VELAS CONSECUTIVAS =================
 
-def too_many_same_candles(df):
+def too_many_candles(df):
     last3 = df.iloc[-3:]
-
     bulls = all(c["close"] > c["open"] for _, c in last3.iterrows())
     bears = all(c["close"] < c["open"] for _, c in last3.iterrows())
-
     return bulls or bears
 
-# ================= RECHAZO =================
 
 def has_rejection(df):
     last = df.iloc[-1]
@@ -72,13 +51,11 @@ def has_rejection(df):
 
     if upper > body * 1.5:
         return "down"
-
     if lower > body * 1.5:
         return "up"
 
     return None
 
-# ================= FAKE BREAKOUT =================
 
 def is_fake_breakout(df):
     last = df.iloc[-1]
@@ -92,38 +69,24 @@ def is_fake_breakout(df):
 
     return False
 
-# ================= FILTRO CCI =================
-
-def cci_filter(df, direction):
-    cci = df["cci"].iloc[-1]
-
-    if direction == "call" and cci > 100:
-        return False
-
-    if direction == "put" and cci < -100:
-        return False
-
-    return True
-
-# ================= SEÑAL PRO =================
+# ================= SEÑAL =================
 
 def pro_signal(df_m1, df_m5):
 
-    if len(df_m1) < 50 or len(df_m5) < 50:
+    if len(df_m1) < 60 or len(df_m5) < 60:
         return None
 
     last = df_m1.iloc[-1]
     prev = df_m1.iloc[-2]
-    prev2 = df_m1.iloc[-3]
 
-    # 🔥 FILTROS DUROS
-    if strong_support_resistance(df_m1):
+    # ❌ filtros duros
+    if strong_sr_zone(df_m1):
         return None
 
     if is_overextended(df_m1):
         return None
 
-    if too_many_same_candles(df_m1):
+    if too_many_candles(df_m1):
         return None
 
     if is_fake_breakout(df_m1):
@@ -131,7 +94,7 @@ def pro_signal(df_m1, df_m5):
 
     rejection = has_rejection(df_m1)
 
-    # 🔥 TENDENCIA M5
+    # 🔥 tendencia M5
     ema20 = df_m5["ema20"].iloc[-1]
     ema50 = df_m5["ema50"].iloc[-1]
 
@@ -141,11 +104,11 @@ def pro_signal(df_m1, df_m5):
     trend_up = ema20 > ema50
     trend_down = ema20 < ema50
 
-    # 🔥 ATR
+    # 🔥 evitar lateral
     if df_m1["atr"].iloc[-1] < df_m1["atr"].mean():
         return None
 
-    # 🔥 FUERZA
+    # 🔥 fuerza
     body = abs(last["close"] - last["open"])
     range_ = last["high"] - last["low"]
 
@@ -155,19 +118,20 @@ def pro_signal(df_m1, df_m5):
     if (body / range_) < 0.7:
         return None
 
-    # ❌ evitar entrada tarde
-    if (prev["close"] > prev2["close"] and last["close"] > prev["close"]) or \
-       (prev["close"] < prev2["close"] and last["close"] < prev["close"]):
-        return None
-
     # ================= CALL =================
-    if trend_up and last["close"] > prev["high"] and rejection != "down":
-        if cci_filter(df_m1, "call"):
-            return "call"
+    if (
+        trend_up and
+        last["close"] > prev["high"] and
+        rejection != "down"
+    ):
+        return "call"
 
     # ================= PUT =================
-    if trend_down and last["close"] < prev["low"] and rejection != "up":
-        if cci_filter(df_m1, "put"):
-            return "put"
+    if (
+        trend_down and
+        last["close"] < prev["low"] and
+        rejection != "up"
+    ):
+        return "put"
 
     return None
