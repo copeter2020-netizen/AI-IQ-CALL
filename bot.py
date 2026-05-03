@@ -20,7 +20,7 @@ CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 TIMEFRAME = 60
 EXPIRATION = 1
-AMOUNT = 20000
+AMOUNT = 12000
 
 PAIRS = [
     "EURUSD-OTC",
@@ -35,8 +35,7 @@ PAIRS = [
 trade_open = False
 last_trade_time = 0
 last_trade_candle = None
-bot_active = True  # 🔥 control principal
-
+bot_active = True
 last_update_id = None
 
 # ================= TELEGRAM =================
@@ -91,8 +90,8 @@ if not iq.check_connect():
 
 iq.change_balance("PRACTICE")
 
-print("🔥 BOT PRO MAX ACTIVO")
-send("🔥 BOT PRO MAX ACTIVO")
+print("🔥 BOT FINAL ACTIVO")
+send("🔥 BOT FINAL ACTIVO")
 
 # ================= DATOS =================
 
@@ -109,7 +108,7 @@ def get_candles(pair, tf):
 
 def wait_candle_close():
     while True:
-        check_commands()  # 🔥 SIEMPRE escucha comandos
+        check_commands()
 
         if not bot_active:
             time.sleep(1)
@@ -145,13 +144,13 @@ def trade(pair, direction):
 
 while True:
     try:
-        check_commands()  # 🔥 SIEMPRE activo
+        check_commands()
 
         if not bot_active:
             time.sleep(1)
             continue
 
-        # esperar cierre de operación
+        # esperar cierre operación
         if trade_open:
             if time.time() - last_trade_time > 65:
                 trade_open = False
@@ -159,7 +158,7 @@ while True:
                 time.sleep(1)
                 continue
 
-        # esperar cierre de vela
+        # esperar cierre vela
         wait_candle_close()
 
         server_time = int(iq.get_server_timestamp())
