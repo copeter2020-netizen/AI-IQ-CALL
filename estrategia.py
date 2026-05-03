@@ -1,130 +1,67 @@
-# ===============================
-# PRICE ACTION PRO SNIPER
-# ===============================
+import numpy as np
 
-def body(c):
-    return abs(c["close"] - c["open"])
+# ================= INDICADORES =================
 
+def add_indicators(df):
+    df["ema20"] = df["close"].ewm(span=20).mean()
+    df["ema50"] = df["close"].ewm(span=50).mean()
 
-def rango(c):
-    return c["high"] - c["low"]
+    # ATR
+    df["tr"] = np.maximum(df["high"] - df["low"],
+                np.maximum(abs(df["high"] - df["close"].shift()),
+                           abs(df["low"] - df["close"].shift())))
+    df["atr"] = df["tr"].rolling(14).mean()
 
+    return df
 
-def fuerza(c):
-    r = rango(c)
-    if r == 0:
-        return 0
-    return body(c) / r
+# ================= FILTRO PRO =================
 
+def high_quality_entry(df_m1, df_m5):
 
-def is_doji(c):
-    return fuerza(c) < 0.3
+    last = df_m1.iloc[-1]
+    prev = df_m1.iloc[-2]
+    prev2 = df_m1.iloc[-3]
 
+    # ================= TENDENCIA M5 =================
+    ema20 = df_m5["ema20"].iloc[-1]
+    ema50 = df_m5["ema50"].iloc[-1]
 
-# ===============================
-# TENDENCIA
-# ===============================
+    # evitar mercado plano
+    if abs(ema20 - ema50) < 0.00005:
+        return None
 
-def tendencia(df):
-    closes = df["close"].values[-6:]
+    trend_up = ema20 > ema50
+    trend_down = ema20 < ema50
 
-    up = all(closes[i] > closes[i-1] for i in range(1, len(closes)))
-    down = all(closes[i] < closes[i-1] for i in range(1, len(closes)))
+    # ================= ANTI LATERAL =================
+    if df_m1["atr"].iloc[-1] < df_m1["atr"].mean():
+        return None
 
-    if up:
+    # ================= VELA FUERTE =================
+    body = abs(last["close"] - last["open"])
+    range_ = last["high"] - last["low"]
+
+    if range_ == 0:
+        return None
+
+    strength = body / range_
+
+    if strength < 0.75:
+        return None
+
+    # ================= EVITAR ENTRADA TARDE =================
+    if (prev["close"] > prev2["close"] and last["close"] > prev["close"]) or \
+       (prev["close"] < prev2["close"] and last["close"] < prev["close"]):
+        return None
+
+    # ================= RUPTURA REAL =================
+    breakout_up = last["close"] > prev["high"]
+    breakout_down = last["close"] < prev["low"]
+
+    if trend_up and breakout_up:
         return "call"
-    if down:
+
+    if trend_down and breakout_down:
         return "put"
 
     return None
-
-
-# ===============================
-# RUPTURA
-# ===============================
-
-def ruptura(df):
-    last = df.iloc[-1]
-    prev_high = df["high"].iloc[-5:-1].max()
-    prev_low = df["low"].iloc[-5:-1].min()
-
-    if last["close"] > prev_high:
-        return "call"
-
-    if last["close"] < prev_low:
-        return "put"
-
-    return None
-
-
-# ===============================
-# SCORE
-# ===============================
-
-def score_pair(df):
-    last = df.iloc[-1]
-    prev = df.iloc[-2]
-
-    score = 0
-
-    f = fuerza(last)
-
-    if f > 0.75:
-        score += 2
-    elif f > 0.65:
-        score += 1
-
-    # continuidad
-    if last["close"] > prev["close"]:
-        score += 1
-    elif last["close"] < prev["close"]:
-        score += 1
-
-    # tendencia
-    if tendencia(df):
-        score += 1
-
-    # ruptura
-    if ruptura(df):
-        score += 1
-
-    return score
-
-
-# ===============================
-# SEÑAL FINAL
-# ===============================
-
-def check_signal(df):
-
-    if len(df) < 10:
-        return None, 0
-
-    last = df.iloc[-1]
-
-    if is_doji(last):
-        return None, 0
-
-    f = fuerza(last)
-
-    if f < 0.6:
-        return None, 0
-
-    t = tendencia(df)
-
-    if not t:
-        return None, 0
-
-    score = score_pair(df)
-
-    # 🔥 SOLO ALTA PROBABILIDAD
-    if score < 3:
-        return None, score
-
-    if t == "call" and last["close"] > last["open"]:
-        return "call", score
-
-    if t == "put" and last["close"] < last["open"]:
-        return "put", score
-
-    return None, score
