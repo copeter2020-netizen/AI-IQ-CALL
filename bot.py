@@ -20,7 +20,7 @@ CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 TIMEFRAME = 60
 EXPIRATION = 1
-AMOUNT = 7500
+AMOUNT = 20000
 
 PAIRS = [
     "EURUSD-OTC",
@@ -30,9 +30,14 @@ PAIRS = [
     "AUDCAD-OTC"
 ]
 
+# ================= ESTADO =================
+
 trade_open = False
-last_trade_candle = None
 last_trade_time = 0
+last_trade_candle = None
+bot_active = True  # 🔥 control principal
+
+last_update_id = None
 
 # ================= TELEGRAM =================
 
@@ -43,6 +48,35 @@ def send(msg):
             data={"chat_id": CHAT_ID, "text": msg},
             timeout=5
         )
+    except:
+        pass
+
+
+def check_commands():
+    global bot_active, last_update_id
+
+    try:
+        url = f"https://api.telegram.org/bot{TOKEN}/getUpdates"
+        params = {"timeout": 1, "offset": last_update_id}
+
+        r = requests.get(url, params=params, timeout=5).json()
+
+        for result in r.get("result", []):
+            last_update_id = result["update_id"] + 1
+
+            if "message" not in result:
+                continue
+
+            text = result["message"].get("text", "")
+
+            if text == "/stop":
+                bot_active = False
+                send("⛔ BOT DETENIDO")
+
+            elif text == "/start":
+                bot_active = True
+                send("✅ BOT ACTIVADO")
+
     except:
         pass
 
@@ -57,25 +91,36 @@ if not iq.check_connect():
 
 iq.change_balance("PRACTICE")
 
-print("🔥 BOT PRO ACTIVO (ANTI REBOTE)")
-send("🔥 BOT PRO ACTIVO (ANTI REBOTE)")
+print("🔥 BOT PRO MAX ACTIVO")
+send("🔥 BOT PRO MAX ACTIVO")
 
 # ================= DATOS =================
 
 def get_candles(pair, tf):
-    data = iq.get_candles(pair, tf, 100, time.time())
-    df = pd.DataFrame(data)
-    df.rename(columns={"max": "high", "min": "low"}, inplace=True)
-    return add_indicators(df)
+    try:
+        data = iq.get_candles(pair, tf, 100, time.time())
+        df = pd.DataFrame(data)
+        df.rename(columns={"max": "high", "min": "low"}, inplace=True)
+        return add_indicators(df)
+    except:
+        return None
 
 # ================= ESPERA CIERRE =================
 
 def wait_candle_close():
     while True:
+        check_commands()  # 🔥 SIEMPRE escucha comandos
+
+        if not bot_active:
+            time.sleep(1)
+            continue
+
         t = int(iq.get_server_timestamp())
+
         if t % 60 == 59:
             time.sleep(0.2)
             return
+
         time.sleep(0.05)
 
 # ================= TRADE =================
@@ -83,20 +128,30 @@ def wait_candle_close():
 def trade(pair, direction):
     global trade_open, last_trade_time
 
-    status, _ = iq.buy(AMOUNT, pair, direction, EXPIRATION)
+    try:
+        status, _ = iq.buy(AMOUNT, pair, direction, EXPIRATION)
 
-    if status:
-        trade_open = True
-        last_trade_time = time.time()
+        if status:
+            trade_open = True
+            last_trade_time = time.time()
 
-        msg = f"🎯 {pair} {direction.upper()} (CIERRE)"
-        print(msg)
-        send(msg)
+            msg = f"🎯 {pair} {direction.upper()}"
+            print(msg)
+            send(msg)
+    except:
+        pass
 
 # ================= LOOP =================
 
 while True:
     try:
+        check_commands()  # 🔥 SIEMPRE activo
+
+        if not bot_active:
+            time.sleep(1)
+            continue
+
+        # esperar cierre de operación
         if trade_open:
             if time.time() - last_trade_time > 65:
                 trade_open = False
@@ -104,6 +159,7 @@ while True:
                 time.sleep(1)
                 continue
 
+        # esperar cierre de vela
         wait_candle_close()
 
         server_time = int(iq.get_server_timestamp())
@@ -116,6 +172,9 @@ while True:
 
             df_m1 = get_candles(pair, 60)
             df_m5 = get_candles(pair, 300)
+
+            if df_m1 is None or df_m5 is None:
+                continue
 
             signal = pro_signal(df_m1, df_m5)
 
