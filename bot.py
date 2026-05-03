@@ -2,11 +2,11 @@ import time
 import os
 import requests
 import pandas as pd
+import numpy as np
 import sys
 import logging
 
 from iqoptionapi.stable_api import IQ_Option
-from estrategia import check_signal
 
 # ================= CONFIG =================
 
@@ -19,26 +19,25 @@ TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 TIMEFRAME = 60
-EXPIRATION = 2
-AMOUNT = 2700
+EXPIRATION = 1
+BASE_AMOUNT = 2000  # 🔥 baja riesgo
+
+MAX_LOSS_STREAK = 3
 
 PAIRS = [
     "EURUSD-OTC",
-    "EURGBP-OTC",
     "GBPUSD-OTC",
-    "USDCHF-OTC",
-    "USDZAR-OTC",
     "EURJPY-OTC",
+    "USDCHF-OTC",
     "AUDCAD-OTC"
 ]
 
-bot_active = True
-last_update_id = None
+# ================= ESTADO =================
 
-# 🔥 CONTROL
+trade_open = False
+last_trade_time = 0
 last_trade_candle = None
-last_signal_candle = None
-last_pair = None
+loss_streak = 0
 
 # ================= TELEGRAM =================
 
@@ -63,134 +62,158 @@ if not iq.check_connect():
 
 iq.change_balance("PRACTICE")
 
-print("🔥 BOT LIMPIO (SCORE 10)")
-send("🔥 BOT LIMPIO (SCORE 10)")
+print("🔥 BOT PRO ACTIVO")
+send("🔥 BOT PRO ACTIVO")
 
 # ================= INDICADORES =================
 
-def add_indicators(df):
+def indicators(df):
     df["ema20"] = df["close"].ewm(span=20).mean()
     df["ema50"] = df["close"].ewm(span=50).mean()
-    df["ema200"] = df["close"].ewm(span=200).mean()
 
-    delta = df["close"].diff()
-    gain = (delta.where(delta > 0, 0)).rolling(14).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
-
-    rs = gain / loss
-    df["rsi"] = 100 - (100 / (1 + rs))
-
-    df["range"] = df["high"] - df["low"]
-    df["avg_range"] = df["range"].rolling(10).mean()
+    df["tr"] = np.maximum(df["high"] - df["low"],
+                np.maximum(abs(df["high"] - df["close"].shift()),
+                           abs(df["low"] - df["close"].shift())))
+    df["atr"] = df["tr"].rolling(14).mean()
 
     return df
 
-# ================= SCORE =================
-
-def calculate_score(df, signal):
-    score = 0
-    last = df.iloc[-1]
-    prev = df.iloc[-2]
-
-    if signal == "call" and last["ema20"] > last["ema50"] > last["ema200"]:
-        score += 3
-    elif signal == "put" and last["ema20"] < last["ema50"] < last["ema200"]:
-        score += 3
-
-    if signal == "call" and last["rsi"] < 30 and prev["rsi"] < 35:
-        score += 2
-    elif signal == "put" and last["rsi"] > 70 and prev["rsi"] > 65:
-        score += 2
-
-    body = abs(last["close"] - last["open"])
-    candle_range = last["high"] - last["low"]
-
-    if candle_range > 0 and (body / candle_range) > 0.7:
-        score += 2
-
-    if signal == "call" and last["close"] > prev["high"]:
-        score += 2
-    elif signal == "put" and last["close"] < prev["low"]:
-        score += 2
-
-    if last["range"] > last["avg_range"]:
-        score += 1
-
-    return score
-
 # ================= DATOS =================
 
-def get_candles(pair):
+def get_candles(pair, tf):
     try:
-        candles = iq.get_candles(pair, TIMEFRAME, 100, time.time())
-        df = pd.DataFrame(candles)
+        data = iq.get_candles(pair, tf, 100, time.time())
+        df = pd.DataFrame(data)
 
         df.rename(columns={"max": "high", "min": "low"}, inplace=True)
-        df = add_indicators(df)
+        return indicators(df)
 
-        return df
     except:
         return None
 
+# ================= SNIPER PRO =================
+
+def sniper_pro(df_m1, df_m5):
+
+    last = df_m1.iloc[-1]
+    prev = df_m1.iloc[-2]
+
+    # 🔥 tendencia M5 (filtro fuerte)
+    trend_up = df_m5.iloc[-1]["ema20"] > df_m5.iloc[-1]["ema50"]
+    trend_down = df_m5.iloc[-1]["ema20"] < df_m5.iloc[-1]["ema50"]
+
+    # 🔥 evitar lateral
+    if last["atr"] < df_m1["atr"].mean():
+        return None
+
+    body = abs(last["close"] - last["open"])
+    range_ = last["high"] - last["low"]
+
+    if range_ == 0:
+        return None
+
+    strength = body / range_
+
+    # ================= PUT =================
+    if (
+        prev["close"] > prev["open"] and
+        last["close"] < last["open"] and
+        strength > 0.7 and
+        last["close"] < prev["low"] and
+        trend_down
+    ):
+        return "put"
+
+    # ================= CALL =================
+    if (
+        prev["close"] < prev["open"] and
+        last["close"] > last["open"] and
+        strength > 0.7 and
+        last["close"] > prev["high"] and
+        trend_up
+    ):
+        return "call"
+
+    return None
+
 # ================= TRADE =================
 
-def trade(pair, direction, score):
+def trade(pair, direction):
+    global trade_open, last_trade_time
+
     try:
-        status, _ = iq.buy(AMOUNT, pair, direction, EXPIRATION)
+        status, trade_id = iq.buy(BASE_AMOUNT, pair, direction, EXPIRATION)
 
         if status:
-            msg = f"🔥 {pair} {direction.upper()} | score {score}"
+            trade_open = True
+            last_trade_time = time.time()
+
+            msg = f"🎯 {pair} {direction.upper()}"
             print(msg)
             send(msg)
 
     except:
         pass
 
+# ================= RESULTADO =================
+
+def check_result():
+    global trade_open, loss_streak
+
+    try:
+        if not trade_open:
+            return
+
+        if time.time() - last_trade_time < 65:
+            return
+
+        # simulación básica (puedes mejorar con API)
+        result = iq.get_balance()
+
+        trade_open = False
+
+    except:
+        trade_open = False
+
 # ================= LOOP =================
 
 while True:
     try:
-        server_time = int(iq.get_server_timestamp())
-        current_candle = server_time // 60
+        check_result()
 
-        # 🔥 evitar múltiples señales en misma vela
-        if last_signal_candle == current_candle:
+        if trade_open:
             time.sleep(1)
             continue
 
-        best_pair = None
-        best_signal = None
-        best_score = 0
+        server_time = int(iq.get_server_timestamp())
+        current_candle = server_time // 60
+
+        if last_trade_candle == current_candle:
+            time.sleep(1)
+            continue
 
         for pair in PAIRS:
 
-            df = get_candles(pair)
-            if df is None or len(df) < 50:
+            df_m1 = get_candles(pair, 60)
+            df_m5 = get_candles(pair, 300)
+
+            if df_m1 is None or df_m5 is None:
                 continue
 
-            signal, base_score = check_signal(df)
+            signal = sniper_pro(df_m1, df_m5)
 
-            if not signal:
-                continue
+            if signal:
 
-            score = base_score + calculate_score(df, signal)
+                # 🔥 protección pérdidas
+                if loss_streak >= MAX_LOSS_STREAK:
+                    send("🛑 STOP POR RACHAS")
+                    time.sleep(120)
+                    loss_streak = 0
+                    break
 
-            if score > best_score:
-                best_score = score
-                best_pair = pair
-                best_signal = signal
-
-        # 🔥 SOLO SCORE 10 Y SIN REPETIR PAR
-        if best_pair and best_score >= 10 and best_pair != last_pair:
-
-            trade(best_pair, best_signal, best_score)
-
-            last_trade_candle = current_candle
-            last_signal_candle = current_candle
-            last_pair = best_pair
-
-        else:
-            print(f"…filtrado (score {best_score})")
+                trade(pair, signal)
+                last_trade_candle = current_candle
+                break
 
         time.sleep(1)
 
