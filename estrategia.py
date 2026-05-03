@@ -11,25 +11,55 @@ def add_indicators(df):
                            abs(df["low"] - df["close"].shift())))
     df["atr"] = df["tr"].rolling(14).mean()
 
+    # CCI
+    tp = (df["high"] + df["low"] + df["close"]) / 3
+    sma = tp.rolling(20).mean()
+    mad = (tp - sma).abs().rolling(20).mean()
+    df["cci"] = (tp - sma) / (0.015 * mad)
+
     return df
 
-# ================= SOPORTE / RESISTENCIA =================
+# ================= SOPORTE FUERTE =================
 
-def is_near_sr(df, tolerance=0.0003):
-    if len(df) < 25:
-        return True  # evita operar sin datos suficientes
-
-    last = df.iloc[-1]
-    recent_high = df["high"].rolling(20).max().iloc[-2]
-    recent_low = df["low"].rolling(20).min().iloc[-2]
-
-    if abs(last["close"] - recent_high) < tolerance:
+def strong_support_resistance(df):
+    if len(df) < 40:
         return True
 
-    if abs(last["close"] - recent_low) < tolerance:
+    last = df.iloc[-1]
+    atr = df["atr"].iloc[-1]
+
+    high_zone = df["high"].rolling(30).max().iloc[-2]
+    low_zone = df["low"].rolling(30).min().iloc[-2]
+
+    if abs(last["close"] - high_zone) < atr:
+        return True
+
+    if abs(last["close"] - low_zone) < atr:
         return True
 
     return False
+
+# ================= SOBREEXTENSION =================
+
+def is_overextended(df):
+    if len(df) < 10:
+        return True
+
+    last = df.iloc[-1]
+    move = abs(last["close"] - df["close"].iloc[-5])
+    atr = df["atr"].iloc[-1]
+
+    return move > atr * 2
+
+# ================= VELAS CONSECUTIVAS =================
+
+def too_many_same_candles(df):
+    last3 = df.iloc[-3:]
+
+    bulls = all(c["close"] > c["open"] for _, c in last3.iterrows())
+    bears = all(c["close"] < c["open"] for _, c in last3.iterrows())
+
+    return bulls or bears
 
 # ================= RECHAZO =================
 
@@ -62,19 +92,38 @@ def is_fake_breakout(df):
 
     return False
 
-# ================= SEÑAL =================
+# ================= FILTRO CCI =================
+
+def cci_filter(df, direction):
+    cci = df["cci"].iloc[-1]
+
+    if direction == "call" and cci > 100:
+        return False
+
+    if direction == "put" and cci < -100:
+        return False
+
+    return True
+
+# ================= SEÑAL PRO =================
 
 def pro_signal(df_m1, df_m5):
 
-    if len(df_m1) < 30 or len(df_m5) < 30:
+    if len(df_m1) < 50 or len(df_m5) < 50:
         return None
 
     last = df_m1.iloc[-1]
     prev = df_m1.iloc[-2]
     prev2 = df_m1.iloc[-3]
 
-    # filtros
-    if is_near_sr(df_m1):
+    # 🔥 FILTROS DUROS
+    if strong_support_resistance(df_m1):
+        return None
+
+    if is_overextended(df_m1):
+        return None
+
+    if too_many_same_candles(df_m1):
         return None
 
     if is_fake_breakout(df_m1):
@@ -82,7 +131,7 @@ def pro_signal(df_m1, df_m5):
 
     rejection = has_rejection(df_m1)
 
-    # tendencia M5
+    # 🔥 TENDENCIA M5
     ema20 = df_m5["ema20"].iloc[-1]
     ema50 = df_m5["ema50"].iloc[-1]
 
@@ -92,32 +141,33 @@ def pro_signal(df_m1, df_m5):
     trend_up = ema20 > ema50
     trend_down = ema20 < ema50
 
-    # evitar lateral
+    # 🔥 ATR
     if df_m1["atr"].iloc[-1] < df_m1["atr"].mean():
         return None
 
-    # fuerza
+    # 🔥 FUERZA
     body = abs(last["close"] - last["open"])
     range_ = last["high"] - last["low"]
 
     if range_ == 0:
         return None
 
-    strength = body / range_
-
-    if strength < 0.7:
+    if (body / range_) < 0.7:
         return None
 
-    # evitar tarde
+    # ❌ evitar entrada tarde
     if (prev["close"] > prev2["close"] and last["close"] > prev["close"]) or \
        (prev["close"] < prev2["close"] and last["close"] < prev["close"]):
         return None
 
-    # señales
+    # ================= CALL =================
     if trend_up and last["close"] > prev["high"] and rejection != "down":
-        return "call"
+        if cci_filter(df_m1, "call"):
+            return "call"
 
+    # ================= PUT =================
     if trend_down and last["close"] < prev["low"] and rejection != "up":
-        return "put"
+        if cci_filter(df_m1, "put"):
+            return "put"
 
     return None
