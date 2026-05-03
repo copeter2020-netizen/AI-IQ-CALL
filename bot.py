@@ -20,7 +20,7 @@ CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 TIMEFRAME = 60
 EXPIRATION = 1
-AMOUNT = 7000
+AMOUNT = 7500
 
 PAIRS = [
     "EURUSD-OTC",
@@ -57,8 +57,8 @@ if not iq.check_connect():
 
 iq.change_balance("PRACTICE")
 
-print("🔥 BOT CIERRE DE VELA")
-send("🔥 BOT CIERRE DE VELA")
+print("🔥 BOT PRO ACTIVO (ANTI REBOTE)")
+send("🔥 BOT PRO ACTIVO (ANTI REBOTE)")
 
 # ================= DATOS =================
 
@@ -73,7 +73,7 @@ def get_candles(pair, tf):
 def wait_candle_close():
     while True:
         t = int(iq.get_server_timestamp())
-        if t % 60 == 59:  # justo antes del cambio
+        if t % 60 == 59:
             time.sleep(0.2)
             return
         time.sleep(0.05)
