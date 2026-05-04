@@ -18,16 +18,13 @@ PASSWORD = os.getenv("IQ_PASSWORD")
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-TIMEFRAME = 60
-EXPIRATION = 3
-AMOUNT = 2000
+AMOUNT = 3750
 
+# 🔥 SOLO 3 PARES
 PAIRS = [
     "EURUSD-OTC",
     "GBPUSD-OTC",
-    "EURJPY-OTC",
-    "USDCHF-OTC",
-    "AUDCAD-OTC"
+    "EURJPY-OTC"
 ]
 
 # ================= ESTADO =================
@@ -37,6 +34,7 @@ last_trade_time = 0
 last_trade_candle = None
 bot_active = True
 last_update_id = None
+current_expiration = 1
 
 # ================= TELEGRAM =================
 
@@ -90,8 +88,8 @@ if not iq.check_connect():
 
 iq.change_balance("PRACTICE")
 
-print("🔥 BOT SNIPER ACTIVO")
-send("🔥 BOT SNIPER ACTIVO")
+print("🤖 BOT IA ACTIVO")
+send("🤖 BOT IA ACTIVO")
 
 # ================= DATOS =================
 
@@ -104,7 +102,7 @@ def get_candles(pair, tf):
     except:
         return None
 
-# ================= ESPERA CIERRE =================
+# ================= ESPERA =================
 
 def wait_candle_close():
     while True:
@@ -124,19 +122,21 @@ def wait_candle_close():
 
 # ================= TRADE =================
 
-def trade(pair, direction):
-    global trade_open, last_trade_time
+def trade(pair, direction, expiration):
+    global trade_open, last_trade_time, current_expiration
 
     try:
-        status, _ = iq.buy(AMOUNT, pair, direction, EXPIRATION)
+        status, _ = iq.buy(AMOUNT, pair, direction, expiration)
 
         if status:
             trade_open = True
             last_trade_time = time.time()
+            current_expiration = expiration
 
-            msg = f"🎯 {pair} {direction.upper()} (SNIPER M3)"
+            msg = f"🤖 {pair} {direction.upper()} ({expiration}m)"
             print(msg)
             send(msg)
+
     except:
         pass
 
@@ -150,9 +150,10 @@ while True:
             time.sleep(1)
             continue
 
-        # esperar fin de operación
+        # esperar cierre operación
         if trade_open:
-            if time.time() - last_trade_time > 185:
+            wait_time = current_expiration * 60 + 5
+            if time.time() - last_trade_time > wait_time:
                 trade_open = False
             else:
                 time.sleep(1)
@@ -174,10 +175,10 @@ while True:
             if df_m1 is None or df_m5 is None:
                 continue
 
-            signal = pro_signal(df_m1, df_m5)
+            signal, expiration = pro_signal(df_m1, df_m5)
 
             if signal:
-                trade(pair, signal)
+                trade(pair, signal, expiration)
                 last_trade_candle = current_candle
                 break
 
