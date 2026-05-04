@@ -19,8 +19,8 @@ TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 TIMEFRAME = 60
-EXPIRATION = 1
-AMOUNT = 2000
+EXPIRATION = 3
+AMOUNT = 3500
 
 PAIRS = [
     "EURUSD-OTC",
@@ -90,8 +90,8 @@ if not iq.check_connect():
 
 iq.change_balance("PRACTICE")
 
-print("🔥 BOT M3 ACTIVO")
-send("🔥 BOT M3 ACTIVO")
+print("🔥 BOT PRO ACTIVO")
+send("🔥 BOT PRO ACTIVO")
 
 # ================= DATOS =================
 
@@ -150,7 +150,6 @@ while True:
             time.sleep(1)
             continue
 
-        # ⏳ esperar que termine trade (3 min + buffer)
         if trade_open:
             if time.time() - last_trade_time > 185:
                 trade_open = False
