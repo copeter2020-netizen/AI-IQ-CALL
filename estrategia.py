@@ -14,6 +14,42 @@ def add_indicators(df):
 
     return df
 
+# ================= FILTRO REVERSIÓN =================
+
+def momentum_reversal(df):
+    last = df.iloc[-1]
+    prev = df.iloc[-2]
+
+    body = abs(last["close"] - last["open"])
+    range_ = last["high"] - last["low"]
+
+    if range_ == 0:
+        return False
+
+    strong = (body / range_) > 0.6
+
+    # cambio fuerte de dirección
+    if prev["close"] < prev["open"] and last["close"] > last["open"] and strong:
+        return True
+
+    if prev["close"] > prev["open"] and last["close"] < last["open"] and strong:
+        return True
+
+    return False
+
+# ================= AGOTAMIENTO =================
+
+def trend_exhausted(df):
+    count = 0
+
+    for i in range(-1, -7, -1):
+        if df["close"].iloc[i] < df["open"].iloc[i]:
+            count += 1
+        else:
+            break
+
+    return count >= 4
+
 # ================= SEÑAL =================
 
 def pro_signal(df_m1, df_m5):
@@ -25,6 +61,13 @@ def pro_signal(df_m1, df_m5):
 
     last = df_m1.iloc[-1]
     prev = df_m1.iloc[-2]
+
+    # ❌ BLOQUEOS CLAVE
+    if momentum_reversal(df_m1):
+        return None
+
+    if trend_exhausted(df_m1):
+        return None
 
     # ================= TENDENCIA M5 =================
     ema20 = df_m5["ema20"].iloc[-1]
@@ -54,7 +97,7 @@ def pro_signal(df_m1, df_m5):
     body = abs(last["close"] - last["open"])
     range_ = last["high"] - last["low"]
 
-    if range_ > 0 and (body / range_) > 0.5:  # 🔥 más flexible para M3
+    if range_ > 0 and (body / range_) > 0.5:
         score += 1
 
     # ================= VOLATILIDAD =================
@@ -63,12 +106,10 @@ def pro_signal(df_m1, df_m5):
 
     # ================= FILTROS NEGATIVOS =================
 
-    # sobreextensión (más flexible para M3)
     move = abs(df_m1["close"].iloc[-1] - df_m1["close"].iloc[-7])
     if move > df_m1["atr"].iloc[-1] * 2.5:
         score -= 2
 
-    # zona SR
     high = df_m1["high"].rolling(50).max().iloc[-2]
     low = df_m1["low"].rolling(50).min().iloc[-2]
     atr = df_m1["atr"].iloc[-1]
@@ -77,22 +118,6 @@ def pro_signal(df_m1, df_m5):
         score -= 2
 
     if abs(last["close"] - low) < atr:
-        score -= 2
-
-    # velas consecutivas (menos agresivo para M3)
-    last3 = df_m1.iloc[-3:]
-    if all(c["close"] > c["open"] for _, c in last3.iterrows()) or \
-       all(c["close"] < c["open"] for _, c in last3.iterrows()):
-        score -= 1
-
-    # rechazo
-    upper = last["high"] - max(last["close"], last["open"])
-    lower = min(last["close"], last["open"]) - last["low"]
-
-    if direction == "call" and upper > body * 1.8:
-        score -= 2
-
-    if direction == "put" and lower > body * 1.8:
         score -= 2
 
     # ================= DECISIÓN =================
