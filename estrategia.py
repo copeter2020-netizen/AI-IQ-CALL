@@ -4,7 +4,6 @@ import numpy as np
 
 def add_indicators(df):
     df["ema20"] = df["close"].ewm(span=20).mean()
-    df["ema50"] = df["close"].ewm(span=50).mean()
 
     df["tr"] = np.maximum(df["high"] - df["low"],
                 np.maximum(abs(df["high"] - df["close"].shift()),
@@ -13,51 +12,73 @@ def add_indicators(df):
 
     return df
 
-# ================= LIQUIDEZ FLEXIBLE =================
+# ================= ZONA 3H =================
 
-def liquidity_sweep(df):
-    last = df.iloc[-1]
-    prev = df.iloc[-2]
+def get_zone(df_h3):
+    highs = df_h3["high"].rolling(20).max()
+    lows = df_h3["low"].rolling(20).min()
 
-    # trampa alcista (más flexible)
-    if last["high"] > prev["high"]:
-        if last["close"] < last["high"]:
-            return "bearish"
+    resistance = highs.iloc[-1]
+    support = lows.iloc[-1]
 
-    # trampa bajista
-    if last["low"] < prev["low"]:
-        if last["close"] > last["low"]:
-            return "bullish"
+    return support, resistance
 
-    return None
+# ================= DOBLE TEST =================
 
-# ================= SEÑAL PRINCIPAL =================
+def double_touch(df_m5, level, is_support=True):
+    touches = 0
 
-def pro_signal(df_m1, df_m5):
+    for i in range(-10, 0):
+        candle = df_m5.iloc[i]
 
-    if len(df_m1) < 60 or len(df_m5) < 60:
-        return None, None
+        if is_support:
+            if candle["low"] <= level:
+                touches += 1
+        else:
+            if candle["high"] >= level:
+                touches += 1
 
-    # tendencia real M5
-    trend_up = df_m5["ema20"].iloc[-1] > df_m5["ema50"].iloc[-1]
-    trend_down = df_m5["ema20"].iloc[-1] < df_m5["ema50"].iloc[-1]
+    return touches >= 2
 
-    # 🔥 detectar sweep en vela anterior
-    sweep = liquidity_sweep(df_m1.iloc[:-1])
+# ================= CONFIRMACIÓN =================
 
-    if not sweep:
-        return None, None
-
+def confirmation(df_m1, direction):
     last = df_m1.iloc[-1]
 
-    # ================= CONFIRMACIÓN =================
+    if direction == "call":
+        return last["close"] > last["open"]
 
-    if sweep == "bearish" and trend_down:
-        if last["close"] < last["open"]:
-            return "put", 2
+    if direction == "put":
+        return last["close"] < last["open"]
 
-    if sweep == "bullish" and trend_up:
-        if last["close"] > last["open"]:
-            return "call", 2
+    return False
+
+# ================= SEÑAL =================
+
+def pro_signal(df_m1, df_m5, df_h3):
+
+    if len(df_h3) < 20:
+        return None, None
+
+    support, resistance = get_zone(df_h3)
+    price = df_m1["close"].iloc[-1]
+    atr = df_m1["atr"].iloc[-1]
+
+    # 🔥 margen de zona
+    buffer = atr * 1.2
+
+    # ================= SOPORTE =================
+
+    if abs(price - support) < buffer:
+        if double_touch(df_m5, support, True):
+            if confirmation(df_m1, "call"):
+                return "call", 3
+
+    # ================= RESISTENCIA =================
+
+    if abs(price - resistance) < buffer:
+        if double_touch(df_m5, resistance, False):
+            if confirmation(df_m1, "put"):
+                return "put", 3
 
     return None, None
