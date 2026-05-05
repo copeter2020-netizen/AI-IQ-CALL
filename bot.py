@@ -21,38 +21,9 @@ CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 AMOUNT = 2000
 
 PAIRS = [
-    ""EURUSD-OTC",
-"GBPUSD-OTC",
-"USDJPY-OTC",
-"USDCHF-OTC",
-"USDCAD-OTC",
-"AUDUSD-OTC",
-"NZDUSD-OTC",
-"EURGBP-OTC",
-"EURJPY-OTC",
-"GBPJPY-OTC",
-
-"EURAUD-OTC",
-"EURCHF-OTC",
-"EURCAD-OTC",
-"EURNZD-OTC",
-"GBPAUD-OTC",
-"GBPCHF-OTC",
-"GBPCAD-OTC",
-"GBPNZD-OTC",
-"AUDJPY-OTC",
-"AUDCAD-OTC",
-
-"AUDCHF-OTC",
-"AUDNZD-OTC",
-"CADJPY-OTC",
-"CHFJPY-OTC",
-"NZDJPY-OTC",
-"NZDCAD-OTC",
-"NZDCHF-OTC",
-"USDNOK-OTC",
-"USDSEK-OTC",
-"USDMXN-OTC"
+    "EURUSD-OTC",
+    "GBPUSD-OTC",
+    "EURJPY-OTC"
 ]
 
 # ================= ESTADO =================
@@ -136,7 +107,7 @@ def is_market_dead(df):
     atr = df["atr"].iloc[-1]
     atr_mean = df["atr"].mean()
 
-    return atr < atr_mean * 0.5  # 🔥 evita mercado plano
+    return atr < atr_mean * 0.5
 
 # ================= ESPERA =================
 
@@ -150,7 +121,6 @@ def wait_candle_almost_close():
 
         t = int(iq.get_server_timestamp())
 
-        # 🔥 entrar 1 segundo antes del cierre
         if t % 60 >= 58:
             return
 
@@ -200,7 +170,6 @@ while True:
         server_time = int(iq.get_server_timestamp())
         current_candle = server_time // 60
 
-        # 🔥 BLOQUEO REAL POR VELA
         if last_trade_candle == current_candle:
             continue
 
@@ -212,7 +181,6 @@ while True:
             if df_m1 is None or df_m5 is None:
                 continue
 
-            # 🔥 evitar mercado muerto
             if is_market_dead(df_m1):
                 continue
 
