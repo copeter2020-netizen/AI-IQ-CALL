@@ -1,7 +1,5 @@
 import numpy as np
 
-# ================= INDICADORES =================
-
 def add_indicators(df):
     df["ema20"] = df["close"].ewm(span=20).mean()
     df["ema50"] = df["close"].ewm(span=50).mean()
@@ -13,11 +11,26 @@ def add_indicators(df):
 
     return df
 
-# ================= FILTROS =================
+# ================= LIQUIDEZ =================
 
-def momentum_reversal(df):
+def liquidity_sweep(df):
     last = df.iloc[-1]
     prev = df.iloc[-2]
+
+    # romper máximo previo y cerrar abajo → trampa alcista
+    if last["high"] > prev["high"] and last["close"] < prev["high"]:
+        return "bearish"
+
+    # romper mínimo previo y cerrar arriba → trampa bajista
+    if last["low"] < prev["low"] and last["close"] > prev["low"]:
+        return "bullish"
+
+    return None
+
+# ================= CONFIRMACIÓN =================
+
+def confirmation(df, direction):
+    last = df.iloc[-1]
 
     body = abs(last["close"] - last["open"])
     range_ = last["high"] - last["low"]
@@ -25,92 +38,38 @@ def momentum_reversal(df):
     if range_ == 0:
         return False
 
-    strong = (body / range_) > 0.6
+    strength = body / range_
 
-    if prev["close"] < prev["open"] and last["close"] > last["open"] and strong:
-        return True
+    if direction == "put":
+        return last["close"] < last["open"] and strength > 0.5
 
-    if prev["close"] > prev["open"] and last["close"] < last["open"] and strong:
-        return True
+    if direction == "call":
+        return last["close"] > last["open"] and strength > 0.5
 
     return False
 
-
-def trend_exhausted(df):
-    count = 0
-
-    for i in range(-1, -7, -1):
-        if df["close"].iloc[i] < df["open"].iloc[i]:
-            count += 1
-        else:
-            break
-
-    return count >= 4
-
-# ================= ENTRADA =================
-
-def pullback_entry(df):
-    last = df.iloc[-1]
-    prev = df.iloc[-2]
-
-    ema20 = df["ema20"].iloc[-1]
-    ema50 = df["ema50"].iloc[-1]
-
-    trend_up = ema20 > ema50
-    trend_down = ema20 < ema50
-
-    # PUT
-    if trend_down:
-        pullback = prev["close"] > prev["open"]
-        confirm = last["close"] < last["open"] and last["close"] < prev["low"]
-        if pullback and confirm:
-            return "put"
-
-    # CALL
-    if trend_up:
-        pullback = prev["close"] < prev["open"]
-        confirm = last["close"] > last["open"] and last["close"] > prev["high"]
-        if pullback and confirm:
-            return "call"
-
-    return None
-
-# ================= IA ADAPTATIVA =================
-
-def choose_expiration(df):
-    atr = df["atr"].iloc[-1]
-    atr_mean = df["atr"].mean()
-
-    # volatilidad baja → más tiempo
-    if atr < atr_mean * 0.8:
-        return 3
-
-    # volatilidad media
-    elif atr < atr_mean * 1.2:
-        return 2
-
-    # volatilidad alta → rápido
-    else:
-        return 1
-
-# ================= SEÑAL FINAL =================
+# ================= SEÑAL =================
 
 def pro_signal(df_m1, df_m5):
 
-    if len(df_m1) < 60 or len(df_m5) < 60:
+    if len(df_m1) < 60:
         return None, None
 
-    if momentum_reversal(df_m1):
+    trend_up = df_m5["ema20"].iloc[-1] > df_m5["ema50"].iloc[-1]
+    trend_down = df_m5["ema20"].iloc[-1] < df_m5["ema50"].iloc[-1]
+
+    sweep = liquidity_sweep(df_m1)
+
+    if not sweep:
         return None, None
 
-    if trend_exhausted(df_m1):
-        return None, None
+    # 🎯 lógica institucional
+    if sweep == "bearish" and trend_down:
+        if confirmation(df_m1, "put"):
+            return "put", 2
 
-    signal = pullback_entry(df_m1)
+    if sweep == "bullish" and trend_up:
+        if confirmation(df_m1, "call"):
+            return "call", 2
 
-    if not signal:
-        return None, None
-
-    expiration = choose_expiration(df_m1)
-
-    return signal, expiration
+    return None, None
