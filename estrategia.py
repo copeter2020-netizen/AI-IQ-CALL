@@ -1,5 +1,7 @@
 import numpy as np
 
+# ================= INDICADORES =================
+
 def add_indicators(df):
     df["ema20"] = df["close"].ewm(span=20).mean()
     df["ema50"] = df["close"].ewm(span=50).mean()
@@ -11,65 +13,51 @@ def add_indicators(df):
 
     return df
 
-# ================= LIQUIDEZ =================
+# ================= LIQUIDEZ FLEXIBLE =================
 
 def liquidity_sweep(df):
     last = df.iloc[-1]
     prev = df.iloc[-2]
 
-    # romper máximo previo y cerrar abajo → trampa alcista
-    if last["high"] > prev["high"] and last["close"] < prev["high"]:
-        return "bearish"
+    # trampa alcista (más flexible)
+    if last["high"] > prev["high"]:
+        if last["close"] < last["high"]:
+            return "bearish"
 
-    # romper mínimo previo y cerrar arriba → trampa bajista
-    if last["low"] < prev["low"] and last["close"] > prev["low"]:
-        return "bullish"
+    # trampa bajista
+    if last["low"] < prev["low"]:
+        if last["close"] > last["low"]:
+            return "bullish"
 
     return None
 
-# ================= CONFIRMACIÓN =================
-
-def confirmation(df, direction):
-    last = df.iloc[-1]
-
-    body = abs(last["close"] - last["open"])
-    range_ = last["high"] - last["low"]
-
-    if range_ == 0:
-        return False
-
-    strength = body / range_
-
-    if direction == "put":
-        return last["close"] < last["open"] and strength > 0.5
-
-    if direction == "call":
-        return last["close"] > last["open"] and strength > 0.5
-
-    return False
-
-# ================= SEÑAL =================
+# ================= SEÑAL PRINCIPAL =================
 
 def pro_signal(df_m1, df_m5):
 
-    if len(df_m1) < 60:
+    if len(df_m1) < 60 or len(df_m5) < 60:
         return None, None
 
+    # tendencia real M5
     trend_up = df_m5["ema20"].iloc[-1] > df_m5["ema50"].iloc[-1]
     trend_down = df_m5["ema20"].iloc[-1] < df_m5["ema50"].iloc[-1]
 
-    sweep = liquidity_sweep(df_m1)
+    # 🔥 detectar sweep en vela anterior
+    sweep = liquidity_sweep(df_m1.iloc[:-1])
 
     if not sweep:
         return None, None
 
-    # 🎯 lógica institucional
+    last = df_m1.iloc[-1]
+
+    # ================= CONFIRMACIÓN =================
+
     if sweep == "bearish" and trend_down:
-        if confirmation(df_m1, "put"):
+        if last["close"] < last["open"]:
             return "put", 2
 
     if sweep == "bullish" and trend_up:
-        if confirmation(df_m1, "call"):
+        if last["close"] > last["open"]:
             return "call", 2
 
     return None, None
