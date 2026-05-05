@@ -8,8 +8,6 @@ import logging
 from iqoptionapi.stable_api import IQ_Option
 from estrategia import add_indicators, pro_signal
 
-# ================= CONFIG =================
-
 logging.getLogger().setLevel(logging.CRITICAL)
 sys.stderr = open(os.devnull, 'w')
 
@@ -18,7 +16,7 @@ PASSWORD = os.getenv("IQ_PASSWORD")
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-AMOUNT = 2
+AMOUNT = 2000
 
 PAIRS = [
     "EURUSD-OTC",
@@ -26,11 +24,8 @@ PAIRS = [
     "EURJPY-OTC"
 ]
 
-# ================= ESTADO =================
-
 trade_open = False
 last_trade_time = 0
-last_trade_candle = None
 bot_active = True
 last_update_id = None
 current_expiration = 1
@@ -52,18 +47,16 @@ def check_commands():
     global bot_active, last_update_id
 
     try:
-        url = f"https://api.telegram.org/bot{TOKEN}/getUpdates"
-        params = {"timeout": 1, "offset": last_update_id}
-
-        r = requests.get(url, params=params, timeout=5).json()
+        r = requests.get(
+            f"https://api.telegram.org/bot{TOKEN}/getUpdates",
+            params={"timeout": 1, "offset": last_update_id},
+            timeout=5
+        ).json()
 
         for result in r.get("result", []):
             last_update_id = result["update_id"] + 1
 
-            if "message" not in result:
-                continue
-
-            text = result["message"].get("text", "")
+            text = result.get("message", {}).get("text", "")
 
             if text == "/stop":
                 bot_active = False
@@ -82,69 +75,40 @@ iq = IQ_Option(EMAIL, PASSWORD)
 iq.connect()
 
 if not iq.check_connect():
-    print("❌ Error conectando")
+    print("Error conexión")
     exit()
 
 iq.change_balance("PRACTICE")
 
-print("🔥 BOT REBOTE 3H ACTIVO")
-send("🔥 BOT REBOTE 3H ACTIVO")
+print("🔥 BOT ACTIVO REAL")
+send("🔥 BOT ACTIVO REAL")
 
 # ================= DATOS =================
 
 def get_candles(pair, tf):
     try:
-        data = iq.get_candles(pair, tf, 200, time.time())
+        data = iq.get_candles(pair, tf, 100, time.time())
         df = pd.DataFrame(data)
-
-        df.rename(columns={
-            "max": "high",
-            "min": "low"
-        }, inplace=True)
-
+        df.rename(columns={"max": "high", "min": "low"}, inplace=True)
         return add_indicators(df)
-
     except:
         return None
-
-# ================= ESPERA CIERRE =================
-
-def wait_candle_close():
-    while True:
-        check_commands()
-
-        if not bot_active:
-            time.sleep(1)
-            continue
-
-        t = int(iq.get_server_timestamp())
-
-        # entrar justo al cerrar vela
-        if t % 60 == 59:
-            time.sleep(0.2)
-            return
-
-        time.sleep(0.05)
 
 # ================= TRADE =================
 
 def trade(pair, direction, expiration):
     global trade_open, last_trade_time, current_expiration
 
-    try:
-        status, _ = iq.buy(AMOUNT, pair, direction, expiration)
+    status, _ = iq.buy(AMOUNT, pair, direction, expiration)
 
-        if status:
-            trade_open = True
-            last_trade_time = time.time()
-            current_expiration = expiration
+    if status:
+        trade_open = True
+        last_trade_time = time.time()
+        current_expiration = expiration
 
-            msg = f"🎯 {pair} {direction.upper()} ({expiration}m)"
-            print(msg)
-            send(msg)
-
-    except:
-        pass
+        msg = f"🎯 {pair} {direction.upper()} ({expiration}m)"
+        print(msg)
+        send(msg)
 
 # ================= LOOP =================
 
@@ -156,32 +120,26 @@ while True:
             time.sleep(1)
             continue
 
-        # 🔒 evitar múltiples entradas
+        # evitar múltiples trades
         if trade_open:
-            wait_time = current_expiration * 60 + 5
-
-            if time.time() - last_trade_time > wait_time:
+            if time.time() - last_trade_time > current_expiration * 60:
                 trade_open = False
             else:
                 time.sleep(1)
                 continue
 
-        # esperar cierre de vela
-        wait_candle_close()
+        t = int(iq.get_server_timestamp())
 
-        server_time = int(iq.get_server_timestamp())
-        current_candle = server_time // 60
-
-        if last_trade_candle == current_candle:
+        # 🔥 ventana de entrada (NO SOLO segundo exacto)
+        if t % 60 < 55:
+            time.sleep(0.2)
             continue
-
-        # ================= ANALISIS =================
 
         for pair in PAIRS:
 
-            df_m1 = get_candles(pair, 60)     # entrada
-            df_m5 = get_candles(pair, 300)    # tendencia
-            df_htf = get_candles(pair, 300)   # simula estructura mayor
+            df_m1 = get_candles(pair, 60)
+            df_m5 = get_candles(pair, 300)
+            df_htf = get_candles(pair, 900)  # 🔥 corregido
 
             if df_m1 is None or df_m5 is None or df_htf is None:
                 continue
@@ -190,8 +148,9 @@ while True:
 
             if signal:
                 trade(pair, signal, expiration)
-                last_trade_candle = current_candle
                 break
+
+        time.sleep(1)
 
     except Exception as e:
         print("Error:", e)
