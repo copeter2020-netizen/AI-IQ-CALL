@@ -49,7 +49,7 @@ PAIRS = [
 "NZDCHF-OTC",
 "USDNOK-OTC",
 "USDSEK-OTC",
-"USDMXN-OTC",
+"USDMXN-OTC"
 ]
 
 # ================= ESTADO =================
