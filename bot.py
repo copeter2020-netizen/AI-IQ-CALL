@@ -18,18 +18,20 @@ PASSWORD = os.getenv("IQ_PASSWORD")
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-AMOUNT = 3750
+AMOUNT = 2000
 
-# 🔥 SOLO 3 PARES
 PAIRS = [
-"EURUSD-OTC",
+    ""EURUSD-OTC",
 "GBPUSD-OTC",
+"USDJPY-OTC",
 "USDCHF-OTC",
 "USDCAD-OTC",
-"AUDUSD-OTC", 
+"AUDUSD-OTC",
+"NZDUSD-OTC",
 "EURGBP-OTC",
 "EURJPY-OTC",
 "GBPJPY-OTC",
+
 "EURAUD-OTC",
 "EURCHF-OTC",
 "EURCAD-OTC",
@@ -40,6 +42,7 @@ PAIRS = [
 "GBPNZD-OTC",
 "AUDJPY-OTC",
 "AUDCAD-OTC",
+
 "AUDCHF-OTC",
 "AUDNZD-OTC",
 "CADJPY-OTC",
@@ -56,7 +59,7 @@ PAIRS = [
 
 trade_open = False
 last_trade_time = 0
-last_trade_candle = None
+last_trade_candle = -1
 bot_active = True
 last_update_id = None
 current_expiration = 1
@@ -113,8 +116,8 @@ if not iq.check_connect():
 
 iq.change_balance("PRACTICE")
 
-print("🤖 BOT IA ACTIVO")
-send("🤖 BOT IA ACTIVO")
+print("🔥 BOT SNIPER PRO ACTIVO")
+send("🔥 BOT SNIPER PRO ACTIVO")
 
 # ================= DATOS =================
 
@@ -127,9 +130,17 @@ def get_candles(pair, tf):
     except:
         return None
 
+# ================= FILTRO VOLATILIDAD =================
+
+def is_market_dead(df):
+    atr = df["atr"].iloc[-1]
+    atr_mean = df["atr"].mean()
+
+    return atr < atr_mean * 0.5  # 🔥 evita mercado plano
+
 # ================= ESPERA =================
 
-def wait_candle_close():
+def wait_candle_almost_close():
     while True:
         check_commands()
 
@@ -139,8 +150,8 @@ def wait_candle_close():
 
         t = int(iq.get_server_timestamp())
 
-        if t % 60 == 59:
-            time.sleep(0.2)
+        # 🔥 entrar 1 segundo antes del cierre
+        if t % 60 >= 58:
             return
 
         time.sleep(0.05)
@@ -158,7 +169,7 @@ def trade(pair, direction, expiration):
             last_trade_time = time.time()
             current_expiration = expiration
 
-            msg = f"🤖 {pair} {direction.upper()} ({expiration}m)"
+            msg = f"🎯 {pair} {direction.upper()} ({expiration}m)"
             print(msg)
             send(msg)
 
@@ -175,7 +186,7 @@ while True:
             time.sleep(1)
             continue
 
-        # esperar cierre operación
+        # esperar cierre de operación
         if trade_open:
             wait_time = current_expiration * 60 + 5
             if time.time() - last_trade_time > wait_time:
@@ -184,11 +195,12 @@ while True:
                 time.sleep(1)
                 continue
 
-        wait_candle_close()
+        wait_candle_almost_close()
 
         server_time = int(iq.get_server_timestamp())
         current_candle = server_time // 60
 
+        # 🔥 BLOQUEO REAL POR VELA
         if last_trade_candle == current_candle:
             continue
 
@@ -198,6 +210,10 @@ while True:
             df_m5 = get_candles(pair, 300)
 
             if df_m1 is None or df_m5 is None:
+                continue
+
+            # 🔥 evitar mercado muerto
+            if is_market_dead(df_m1):
                 continue
 
             signal, expiration = pro_signal(df_m1, df_m5)
