@@ -108,8 +108,8 @@ if not iq.check_connect():
 
 iq.change_balance("PRACTICE")
 
-print("🔥 BOT CONTINUIDAD EURUSD ACTIVO")
-send("🔥 BOT CONTINUIDAD EURUSD ACTIVO")
+print("🔥 BOT EURUSD INSTITUCIONAL ACTIVO")
+send("🔥 BOT EURUSD INSTITUCIONAL ACTIVO")
 
 # ================= DATOS =================
 
@@ -120,7 +120,7 @@ def get_candles(pair, tf):
         candles = iq.get_candles(
             pair,
             tf,
-            100,
+            200,
             time.time()
         )
 
@@ -182,13 +182,13 @@ while True:
 
         check_commands()
 
-        # BOT PAUSADO
+        # bot detenido
         if not bot_active:
 
             time.sleep(1)
             continue
 
-        # ESPERAR OPERACIÓN
+        # evitar múltiples trades
         if trade_open:
 
             wait_time = (
@@ -210,7 +210,7 @@ while True:
 
         t = int(iq.get_server_timestamp())
 
-        # 🔥 operar últimos segundos
+        # últimos segundos vela
         if t % 60 < 57:
 
             time.sleep(0.2)
@@ -232,6 +232,8 @@ while True:
             df_m1,
             df_m5
         )
+
+        # ================= TRADE =================
 
         if signal:
 
