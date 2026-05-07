@@ -20,7 +20,7 @@ TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 # ===== CUENTA REAL =====
-AMOUNT = 10
+AMOUNT = 2.5
 
 PAIRS = [
     "EURUSD"
