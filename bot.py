@@ -8,61 +8,87 @@ import logging
 from iqoptionapi.stable_api import IQ_Option
 from estrategia import add_indicators, pro_signal
 
+# ================= CONFIG =================
+
 logging.getLogger().setLevel(logging.CRITICAL)
 sys.stderr = open(os.devnull, 'w')
 
 EMAIL = os.getenv("IQ_EMAIL")
 PASSWORD = os.getenv("IQ_PASSWORD")
+
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 AMOUNT = 2000
 
-PAIRS = [
-    "EURUSD-OTC",
-    "GBPUSD-OTC",
-    "EURJPY-OTC"
-]
+# 🔥 SOLO EURUSD REAL
+PAIR = "EURUSD"
+
+# ================= ESTADO =================
 
 trade_open = False
 last_trade_time = 0
+current_expiration = 1
+
 bot_active = True
 last_update_id = None
-current_expiration = 1
 
 # ================= TELEGRAM =================
 
 def send(msg):
+
     try:
+
         requests.post(
             f"https://api.telegram.org/bot{TOKEN}/sendMessage",
-            data={"chat_id": CHAT_ID, "text": msg},
+            data={
+                "chat_id": CHAT_ID,
+                "text": msg
+            },
             timeout=5
         )
+
     except:
         pass
 
 
 def check_commands():
-    global bot_active, last_update_id
+
+    global bot_active
+    global last_update_id
 
     try:
+
         r = requests.get(
             f"https://api.telegram.org/bot{TOKEN}/getUpdates",
-            params={"timeout": 1, "offset": last_update_id},
+            params={
+                "timeout": 1,
+                "offset": last_update_id
+            },
             timeout=5
         ).json()
 
         for result in r.get("result", []):
+
             last_update_id = result["update_id"] + 1
 
-            text = result.get("message", {}).get("text", "")
+            text = result.get(
+                "message",
+                {}
+            ).get(
+                "text",
+                ""
+            )
 
+            # STOP
             if text == "/stop":
+
                 bot_active = False
                 send("⛔ BOT DETENIDO")
 
+            # START
             elif text == "/start":
+
                 bot_active = True
                 send("✅ BOT ACTIVADO")
 
@@ -72,86 +98,152 @@ def check_commands():
 # ================= IQ =================
 
 iq = IQ_Option(EMAIL, PASSWORD)
+
 iq.connect()
 
 if not iq.check_connect():
-    print("Error conexión")
+
+    print("❌ ERROR CONECTANDO")
     exit()
 
 iq.change_balance("PRACTICE")
 
-print("🔥 BOT ACTIVO REAL")
-send("🔥 BOT ACTIVO REAL")
+print("🔥 BOT CONTINUIDAD EURUSD ACTIVO")
+send("🔥 BOT CONTINUIDAD EURUSD ACTIVO")
 
 # ================= DATOS =================
 
 def get_candles(pair, tf):
+
     try:
-        data = iq.get_candles(pair, tf, 100, time.time())
-        df = pd.DataFrame(data)
-        df.rename(columns={"max": "high", "min": "low"}, inplace=True)
+
+        candles = iq.get_candles(
+            pair,
+            tf,
+            100,
+            time.time()
+        )
+
+        df = pd.DataFrame(candles)
+
+        df.rename(
+            columns={
+                "max": "high",
+                "min": "low"
+            },
+            inplace=True
+        )
+
         return add_indicators(df)
+
     except:
         return None
 
 # ================= TRADE =================
 
 def trade(pair, direction, expiration):
-    global trade_open, last_trade_time, current_expiration
 
-    status, _ = iq.buy(AMOUNT, pair, direction, expiration)
+    global trade_open
+    global last_trade_time
+    global current_expiration
 
-    if status:
-        trade_open = True
-        last_trade_time = time.time()
-        current_expiration = expiration
+    try:
 
-        msg = f"🎯 {pair} {direction.upper()} ({expiration}m)"
-        print(msg)
-        send(msg)
+        status, _ = iq.buy(
+            AMOUNT,
+            pair,
+            direction,
+            expiration
+        )
+
+        if status:
+
+            trade_open = True
+            last_trade_time = time.time()
+            current_expiration = expiration
+
+            msg = (
+                f"🎯 {pair} "
+                f"{direction.upper()} "
+                f"({expiration}m)"
+            )
+
+            print(msg)
+            send(msg)
+
+    except:
+        pass
 
 # ================= LOOP =================
 
 while True:
+
     try:
+
         check_commands()
 
+        # BOT PAUSADO
         if not bot_active:
+
             time.sleep(1)
             continue
 
-        # evitar múltiples trades
+        # ESPERAR OPERACIÓN
         if trade_open:
-            if time.time() - last_trade_time > current_expiration * 60:
+
+            wait_time = (
+                current_expiration * 60
+            ) + 5
+
+            if (
+                time.time() - last_trade_time
+            ) > wait_time:
+
                 trade_open = False
+
             else:
+
                 time.sleep(1)
                 continue
 
+        # ================= TIMING =================
+
         t = int(iq.get_server_timestamp())
 
-        # 🔥 ventana de entrada (NO SOLO segundo exacto)
-        if t % 60 < 55:
+        # 🔥 operar últimos segundos
+        if t % 60 < 57:
+
             time.sleep(0.2)
             continue
 
-        for pair in PAIRS:
+        # ================= DATOS =================
 
-            df_m1 = get_candles(pair, 60)
-            df_m5 = get_candles(pair, 300)
-            df_htf = get_candles(pair, 900)  # 🔥 corregido
+        df_m1 = get_candles(PAIR, 60)
+        df_m5 = get_candles(PAIR, 300)
 
-            if df_m1 is None or df_m5 is None or df_htf is None:
-                continue
+        if df_m1 is None or df_m5 is None:
 
-            signal, expiration = pro_signal(df_m1, df_m5, df_htf)
+            time.sleep(1)
+            continue
 
-            if signal:
-                trade(pair, signal, expiration)
-                break
+        # ================= SEÑAL =================
+
+        signal, expiration = pro_signal(
+            df_m1,
+            df_m5
+        )
+
+        if signal:
+
+            trade(
+                PAIR,
+                signal,
+                expiration
+            )
 
         time.sleep(1)
 
     except Exception as e:
+
         print("Error:", e)
         time.sleep(1)
