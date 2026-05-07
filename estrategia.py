@@ -1,61 +1,61 @@
+import pandas as pd
 import numpy as np
 
 # ================= INDICADORES =================
 
 def add_indicators(df):
 
+    # EMA
     df["ema20"] = df["close"].ewm(span=20).mean()
     df["ema50"] = df["close"].ewm(span=50).mean()
+
+    # ATR
+    high_low = df["high"] - df["low"]
+    high_close = abs(df["high"] - df["close"].shift())
+    low_close = abs(df["low"] - df["close"].shift())
+
+    ranges = pd.concat(
+        [high_low, high_close, low_close],
+        axis=1
+    )
+
+    true_range = ranges.max(axis=1)
+
+    df["atr"] = true_range.rolling(14).mean()
 
     # RSI
     delta = df["close"].diff()
 
-    gain = np.where(delta > 0, delta, 0)
-    loss = np.where(delta < 0, abs(delta), 0)
+    gain = delta.clip(lower=0)
+    loss = -delta.clip(upper=0)
 
-    avg_gain = (
-        np.convolve(gain, np.ones(14)/14, mode='same')
-    )
+    avg_gain = gain.rolling(14).mean()
+    avg_loss = loss.rolling(14).mean()
 
-    avg_loss = (
-        np.convolve(loss, np.ones(14)/14, mode='same')
-    )
-
-    rs = np.where(avg_loss == 0, 0, avg_gain / avg_loss)
+    rs = avg_gain / avg_loss
 
     df["rsi"] = 100 - (100 / (1 + rs))
-
-    # ATR
-    df["tr"] = np.maximum(
-        df["high"] - df["low"],
-        np.maximum(
-            abs(df["high"] - df["close"].shift()),
-            abs(df["low"] - df["close"].shift())
-        )
-    )
-
-    df["atr"] = df["tr"].rolling(14).mean()
 
     return df
 
 # ================= TENDENCIA =================
 
-def trend_direction(df_m5):
+def trend(df):
 
-    ema20 = df_m5["ema20"].iloc[-1]
-    ema50 = df_m5["ema50"].iloc[-1]
+    ema20 = df["ema20"].iloc[-1]
+    ema50 = df["ema50"].iloc[-1]
 
     if ema20 > ema50:
-        return "up"
+        return "call"
 
     if ema20 < ema50:
-        return "down"
+        return "put"
 
     return None
 
 # ================= IMPULSO =================
 
-def strong_body(candle):
+def strong_candle(candle):
 
     body = abs(candle["close"] - candle["open"])
     full = candle["high"] - candle["low"]
@@ -67,19 +67,19 @@ def strong_body(candle):
 
 # ================= CONTINUIDAD =================
 
-def continuation_signal(df_m1, direction):
+def continuation(df, direction):
 
-    last = df_m1.iloc[-1]
-    prev = df_m1.iloc[-2]
+    c1 = df.iloc[-1]
+    c2 = df.iloc[-2]
 
     # CALL
     if direction == "call":
 
         if (
-            last["close"] > last["open"] and
-            prev["close"] > prev["open"] and
-            last["close"] > prev["close"] and
-            strong_body(last)
+            c1["close"] > c1["open"] and
+            c2["close"] > c2["open"] and
+            c1["close"] > c2["close"] and
+            strong_candle(c1)
         ):
             return True
 
@@ -87,68 +87,117 @@ def continuation_signal(df_m1, direction):
     if direction == "put":
 
         if (
-            last["close"] < last["open"] and
-            prev["close"] < prev["open"] and
-            last["close"] < prev["close"] and
-            strong_body(last)
+            c1["close"] < c1["open"] and
+            c2["close"] < c2["open"] and
+            c1["close"] < c2["close"] and
+            strong_candle(c1)
         ):
             return True
 
     return False
 
-# ================= FILTRO RSI =================
+# ================= SOPORTE / RESISTENCIA =================
 
-def rsi_filter(df, direction):
+def support_resistance(df):
 
-    rsi = df["rsi"].iloc[-1]
+    highs = []
+    lows = []
 
-    if direction == "call":
-        return rsi > 52 and rsi < 75
+    # buscar pivotes
+    for i in range(10, len(df)-10):
 
-    if direction == "put":
-        return rsi < 48 and rsi > 25
+        high = df["high"].iloc[i]
+        low = df["low"].iloc[i]
+
+        # resistencia
+        if (
+            high == max(df["high"].iloc[i-5:i+5])
+        ):
+            highs.append(high)
+
+        # soporte
+        if (
+            low == min(df["low"].iloc[i-5:i+5])
+        ):
+            lows.append(low)
+
+    return highs, lows
+
+# ================= FILTRO REVERSION =================
+
+def near_reversal_zone(df):
+
+    price = df["close"].iloc[-1]
+    atr = df["atr"].iloc[-1]
+
+    highs, lows = support_resistance(df)
+
+    zone_distance = atr * 0.40
+
+    # cerca resistencia
+    for h in highs:
+
+        if abs(price - h) < zone_distance:
+            return True
+
+    # cerca soporte
+    for l in lows:
+
+        if abs(price - l) < zone_distance:
+            return True
 
     return False
 
-# ================= FILTRO VOLATILIDAD =================
+# ================= VOLATILIDAD =================
 
 def volatility_ok(df):
 
     atr = df["atr"].iloc[-1]
-    atr_mean = df["atr"].mean()
+    mean_atr = df["atr"].mean()
 
-    return atr > atr_mean * 0.7
+    return atr > mean_atr * 0.7
+
+# ================= RSI FILTER =================
+
+def rsi_ok(df, direction):
+
+    rsi = df["rsi"].iloc[-1]
+
+    if direction == "call":
+        return 50 < rsi < 75
+
+    if direction == "put":
+        return 25 < rsi < 50
+
+    return False
 
 # ================= SEÑAL PRINCIPAL =================
 
 def pro_signal(df_m1, df_m5):
 
-    if len(df_m1) < 60 or len(df_m5) < 60:
+    if len(df_m1) < 80:
         return None, None
 
+    # volatilidad
     if not volatility_ok(df_m1):
         return None, None
 
-    trend = trend_direction(df_m5)
+    # tendencia
+    direction = trend(df_m5)
 
-    # ================= CALL =================
+    if direction is None:
+        return None, None
 
-    if trend == "up":
+    # 🔥 NO operar en soporte/resistencia
+    if near_reversal_zone(df_m1):
+        return None, None
 
-        if continuation_signal(df_m1, "call"):
+    # continuidad
+    if not continuation(df_m1, direction):
+        return None, None
 
-            if rsi_filter(df_m1, "call"):
+    # RSI
+    if not rsi_ok(df_m1, direction):
+        return None, None
 
-                return "call", 1
-
-    # ================= PUT =================
-
-    if trend == "down":
-
-        if continuation_signal(df_m1, "put"):
-
-            if rsi_filter(df_m1, "put"):
-
-                return "put", 1
-
-    return None, None
+    return direction, 1
