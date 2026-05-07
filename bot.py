@@ -19,7 +19,8 @@ PASSWORD = os.getenv("IQ_PASSWORD")
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-AMOUNT = 2000
+# ===== CUENTA REAL =====
+AMOUNT = 10
 
 PAIRS = [
     "EURUSD"
@@ -39,7 +40,9 @@ last_update_id = None
 # ================= TELEGRAM =================
 
 def send(msg):
+
     try:
+
         requests.post(
             f"https://api.telegram.org/bot{TOKEN}/sendMessage",
             data={
@@ -48,15 +51,18 @@ def send(msg):
             },
             timeout=5
         )
+
     except:
         pass
 
 
 def check_commands():
+
     global bot_active
     global last_update_id
 
     try:
+
         response = requests.get(
             f"https://api.telegram.org/bot{TOKEN}/getUpdates",
             params={
@@ -75,7 +81,7 @@ def check_commands():
 
             text = result["message"].get("text", "").lower()
 
-            # ================= STOP =================
+            # ===== STOP =====
 
             if text == "/stop":
 
@@ -84,7 +90,7 @@ def check_commands():
                 print("BOT DETENIDO")
                 send("⛔ BOT DETENIDO")
 
-            # ================= START =================
+            # ===== START =====
 
             elif text == "/start":
 
@@ -99,22 +105,26 @@ def check_commands():
 # ================= IQ OPTION =================
 
 iq = IQ_Option(EMAIL, PASSWORD)
+
 iq.connect()
 
 if not iq.check_connect():
-    print("❌ Error conectando IQ Option")
+
+    print("❌ ERROR CONECTANDO IQ OPTION")
     exit()
 
-iq.change_balance("PRACTICE")
+# ===== CUENTA REAL =====
+iq.change_balance("REAL")
 
-print("🔥 BOT IA ACTIVO")
-send("🔥 BOT IA ACTIVO")
+print("🔥 BOT IA REAL ACTIVO")
+send("🔥 BOT IA REAL ACTIVO")
 
 # ================= CANDLES =================
 
 def get_candles(pair, timeframe):
 
     try:
+
         candles = iq.get_candles(
             pair,
             timeframe,
@@ -179,19 +189,25 @@ def execute_trade(pair, direction):
             last_trade_time = time.time()
 
             msg = (
-                f"🎯 ENTRADA\n"
+                f"🎯 ENTRADA EJECUTADA\n\n"
                 f"PAR: {pair}\n"
                 f"DIRECCIÓN: {direction.upper()}\n"
+                f"MONTO: ${AMOUNT}\n"
                 f"EXPIRACIÓN: {EXPIRATION}m"
             )
 
             print(msg)
             send(msg)
 
+        else:
+
+            print("❌ ERROR EJECUTANDO TRADE")
+
     except Exception as e:
+
         print("ERROR TRADE:", e)
 
-# ================= LOOP =================
+# ================= LOOP PRINCIPAL =================
 
 while True:
 
@@ -199,25 +215,29 @@ while True:
 
         check_commands()
 
-        # ================= BOT DETENIDO =================
+        # ===== BOT DETENIDO =====
 
         if not bot_active:
+
             time.sleep(1)
             continue
 
-        # ================= ESPERA FIN TRADE =================
+        # ===== ESPERA FIN OPERACION =====
 
         if trade_open:
 
-            if time.time() - last_trade_time > (EXPIRATION * 60 + 5):
+            wait_time = (EXPIRATION * 60) + 5
+
+            if time.time() - last_trade_time > wait_time:
 
                 trade_open = False
 
             else:
+
                 time.sleep(1)
                 continue
 
-        # ================= ESPERAR CIERRE VELA =================
+        # ===== ESPERAR CIERRE DE VELA =====
 
         wait_candle_close()
 
@@ -227,7 +247,7 @@ while True:
         if last_trade_candle == current_candle:
             continue
 
-        # ================= ANALISIS =================
+        # ===== ANALISIS =====
 
         for pair in PAIRS:
 
@@ -239,7 +259,7 @@ while True:
 
             signal = pro_signal(df_m1, df_m5)
 
-            # ================= ENTRADA =================
+            # ===== ENTRADA =====
 
             if signal:
 
